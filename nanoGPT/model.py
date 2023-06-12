@@ -42,7 +42,7 @@ class CausalSelfAttention_with_MHA(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        assert config.n_embd % config.n_head == 0
+        assert config.n_embd % config.n_head == 0       
         
         if config.quantize:
             # key, query, value projections for all heads, but in a batch
@@ -50,6 +50,8 @@ class CausalSelfAttention_with_MHA(nn.Module):
             # output projection
             self.c_proj = qnn.QuantLinear(config.n_embd, config.n_embd, bias=config.bias, weight_bit_width=8, bias_bit_width=32)
             CausalSelfAttention
+            self.mha = qnn.QuantMultiheadAttention(config.n_embd, config.n_head, batch_first=True)
+            self.attn_mask = torch.tril(torch.ones((config.block_size,config.block_size)))
         else:
             # key, query, value projections for all heads, but in a batch
             self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
@@ -64,7 +66,6 @@ class CausalSelfAttention_with_MHA(nn.Module):
         self.n_embd = config.n_embd
         self.dropout = config.dropout
         self.quantize = config.quantize
-        print("Set self.config.quantize to ", self.quantize) # debug
         # flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0
         self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
         if not self.flash or self.quantize:
@@ -77,10 +78,9 @@ class CausalSelfAttention_with_MHA(nn.Module):
     def forward(self, x):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
         q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
-
+ 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
         if self.flash and not self.quantize:
-
             # calculate query, key, values for all heads in batch and move head forward to be the batch dim
             
             k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
@@ -94,9 +94,7 @@ class CausalSelfAttention_with_MHA(nn.Module):
 
         else:
             # manual implementation of attention
-            attn_mask = torch.tril(torch.ones((T,T)))
-            mha = qnn.QuantMultiheadAttention(C, self.n_head, batch_first=True)
-            y, weights = mha(x, x, x, attn_mask=attn_mask) # Q, K, V, attn_mask for causality
+            y, weights = self.mha(x, x, x, attn_mask=self.attn_mask) # Q, K, V, attn_mask for causality
 
         
         # output projection
@@ -128,7 +126,7 @@ class CausalSelfAttention(nn.Module):
         self.resid_dropout = nn.Dropout(config.dropout)
         self.n_head = config.n_head
         self.n_embd = config.n_embd
-        self.dropout = config.dropout
+        self.dropout = config.dropoutq
         self.quantize = config.quantize
         # flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0
         self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
