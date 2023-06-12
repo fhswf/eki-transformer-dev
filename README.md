@@ -1,1 +1,1 @@
-# Home of the Transformer Use Case of the eki Project
+# Transformer Use Case of the eki Project
