@@ -52,6 +52,7 @@ class CausalSelfAttention_with_MHA(nn.Module):
             CausalSelfAttention
             self.mha = qnn.QuantMultiheadAttention(config.n_embd, config.n_head, batch_first=True)
             self.attn_mask = torch.tril(torch.ones((config.block_size,config.block_size)))
+
         else:
             # key, query, value projections for all heads, but in a batch
             self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
@@ -94,7 +95,7 @@ class CausalSelfAttention_with_MHA(nn.Module):
 
         else:
             # manual implementation of attention
-            y, weights = self.mha(x, x, x, attn_mask=self.attn_mask) # Q, K, V, attn_mask for causality
+            y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None) # Q, K, V, attn_mask for causality
 
         
         # output projection
@@ -216,6 +217,7 @@ class GPT(nn.Module):
         assert config.vocab_size is not None
         assert config.block_size is not None
         self.config = config
+        print("Building GPT with quantize=%s" % (config.quantize))
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
