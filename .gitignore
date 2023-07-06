@@ -1,0 +1,3 @@
+*.bin
+*/data/*/input.txt
+.ipython*/**
