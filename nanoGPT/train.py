@@ -46,7 +46,7 @@ wandb_run_name = 'gpt2' # 'run' + str(time.time())
 # data
 dataset = 'openwebtext'
 gradient_accumulation_steps = 5 * 8 # used to simulate larger batch sizes
-batch_size = 12 # if gradient_accumulation_steps > 1, this is the micro-batch size
+batch_size = 6 # if gradient_accumulation_steps > 1, this is the micro-batch size
 block_size = 1024
 # model
 n_layer = 12
@@ -64,15 +64,25 @@ grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
-quantize = True # whether to quantize the model
+quantize = False # whether to quantize the model
 lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
 min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
 # DDP settings
 backend = 'nccl' # 'nccl', 'gloo', etc.
 # system
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
-dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
-compile = True # use PyTorch 2.0 to compile the model to be faster
+dtype = 'float16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler, bfloat16 was nanoGPT default?
+compile = False # use PyTorch 2.0 to compile the model to be faster
+# model components
+_transformer_active_funcs = {
+    'LeakyReLU': torch.nn.LeakyReLU,
+    'Hardswish' : torch.nn.Hardswish,
+    'ReLU6': torch.nn.ReLU6,
+    'ELU': torch.nn.ELU,
+    'CELU': torch.nn.CELU,
+}
+transformer_active_func = 'LeakyReLU' # all valid torch.nn functions  getattr(torch.nn, transformer_active_func)
+
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
@@ -145,8 +155,10 @@ if os.path.exists(meta_path):
     print(f"found vocab_size = {meta_vocab_size} (inside {meta_path})")
 
 # model init
-model_args = dict(n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
+print(transformer_active_func)
+model_args = dict(transformer_active_func=transformer_active_func, n_layer=n_layer, n_head=n_head, n_embd=n_embd, block_size=block_size,
                   bias=bias, vocab_size=None, dropout=dropout, quantize=quantize) # start with model_args from command line
+print(model_args)
 if init_from == 'scratch':
     # init a new model from scratch
     print("Initializing a new model from scratch")

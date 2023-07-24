@@ -1,4 +1,5 @@
 *.bin
 */data/*/input.txt
 .ipython*/**
-**/__pycache__
+**/__pycache__/**
+**/out/**
