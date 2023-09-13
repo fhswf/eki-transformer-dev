@@ -55,12 +55,12 @@ n_embd = 768
 dropout = 0.0 # for pretraining 0 is good, for finetuning try 0.1+
 bias = False # do we use bias inside LayerNorm and Linear layers?
 # adamw optimizer
-learning_rate = 6e-4 # max learning rate
+learning_rate = 1.5e-4 # max learning rate
 max_iters = 600000 # total number of training iterations
 weight_decay = 1e-1
 beta1 = 0.9
 beta2 = 0.95
-grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
+grad_clip = 0.7 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
 warmup_iters = 2000 # how many steps to warm up for
@@ -80,8 +80,9 @@ _transformer_active_funcs = {
     'ReLU6': torch.nn.ReLU6,
     'ELU': torch.nn.ELU,
     'CELU': torch.nn.CELU,
+    'GELU': torch.nn.CELU
 }
-transformer_active_func = 'LeakyReLU' # all valid torch.nn functions  getattr(torch.nn, transformer_active_func)
+transformer_active_func = 'GELU' # all valid torch.nn functions  getattr(torch.nn, transformer_active_func)
 
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
