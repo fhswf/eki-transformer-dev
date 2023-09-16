@@ -2,3 +2,6 @@
 */data/*/input.txt
 **/.ipynb*/**
 **/__pycache__/**
+**/out/**
+**/outputs/**
+**/output/**	
