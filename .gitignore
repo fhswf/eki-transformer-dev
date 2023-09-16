@@ -3,3 +3,6 @@
 **/.ipynb*/**
 **/__pycache__/**
 **/out/**
+**/output/**
+**/outputs/**
+**/runs/**
