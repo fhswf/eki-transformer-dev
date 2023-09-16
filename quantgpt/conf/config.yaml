@@ -1,0 +1,27 @@
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}
+  #verbose: [__main__]
+
+defaults:
+  - model: gpt_2_small
+  - dataset: openwebtext
+  - train: default
+  - c: ???
+  - override hydra/job_logging: custom
+  - override hydra/help: main
+
+  #- override hydra/job_logging: colorlog
+  #- override hydra/hydra_logging: colorlog
+  - _self_
+
+dataset:  
+  dtype: 'bfloat16' # 'float32', 'bfloat16', or 'float16'
+device : 'cuda'
+debug: False
+
+# DDP settings
+#backend : 'nccl' # 'nccl', 'gloo', etc.

@@ -1,0 +1,36 @@
+version: 1
+formatters:
+  simple:
+    format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+  color:
+    (): colorlog.ColoredFormatter
+    format: '[ %(cyan)s%(asctime)s %(reset)s][%(white)s%(name)s%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
+    reset: True
+    log_colors:
+      DEBUG:    'bold_blue'
+      INFO:     'green'
+      WARNING:  'yellow'
+      ERROR:    'bold_red'
+      CRITICAL: 'bold_purple'
+    secondary_log_colors:
+      message: 
+        DEBUG:    'blue'
+        INFO:     ''
+        WARNING:  'yellow'
+        ERROR:    'red'
+        CRITICAL: 'bold_purple'
+
+handlers:
+  #https://docs.python.org/3/library/logging.handlers.html
+  console:
+    class: logging.StreamHandler
+    formatter: color
+    stream: ext://sys.stdout
+  jobfile:
+    class: logging.handlers.WatchedFileHandler #RotatingFileHandler,TimedRotatingFileHandler
+    formatter: simple
+    filename: "${hydra.runtime.output_dir}/log.txt"
+root:
+  handlers: [console, jobfile]
+
+disable_existing_loggers: false
