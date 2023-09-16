@@ -3,3 +3,5 @@
 **/.ipynb*/**
 **/__pycache__/**
 **/out/**
+**/outputs/**
+**/output/**	
