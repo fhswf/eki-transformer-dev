@@ -16,11 +16,11 @@ setup_args = dict(
     license="MIT",
     python_requires=">=3.10",
     include_package_data=True,
-    #entry_points={
-    # 'console_scripts': [
-    #    'quantgpt = quantgpt:main',
-    #    ]
-    #},
+    entry_points={
+     'console_scripts': [
+        'qtransform = qtransform:main',
+        ]
+    },
 )
 
 setup_args['install_requires'] = install_requires = []

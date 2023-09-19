@@ -10,14 +10,15 @@ def main(cfg: DictConfig):
         root_log = logging.getLogger("root")
         root_log.setLevel(logging.DEBUG)
         log.debug("DEBUG ENABLED")
-    log.info("launched with config: " + str(cfg))
+    log.debug("launched with config: " + str(cfg))
     log.warning("App is not ready to run")
-
     match cfg.run.command:
         case "train":          
-            pass
+            from qtransform.run import train
+            return  train.train(cfg)
         case "eval":
-            pass
+            from qtransform.run import eval
+            return  eval.eval(cfg)
         case "bench":
             pass 
         case "infer":
