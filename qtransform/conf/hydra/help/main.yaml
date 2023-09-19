@@ -21,16 +21,11 @@ template: |-
   ${hydra.help.header}
 
   This is ${hydra.help.app_name}!
-  You can choose a db driver by appending
-  == Configuration groups ==
-  Compose your configuration from those groups (db=mysql)
 
   $APP_CONFIG_GROUPS
-
   == Config ==
   This is the config generated for this run.
-  You can override everything, for example:
-  python my_app.py db.user=foo db.pass=bar
+  python my_app.py cmd=train
   -------
   $CONFIG
   -------

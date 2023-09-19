@@ -3,8 +3,7 @@ import hydra
 from omegaconf import DictConfig
 import logging
 
-
-@hydra.main(version_base=None, config_path="conf", config_name="config.yaml")
+@hydra.main(version_base=None, config_path="../conf", config_name="config.yaml")
 def main(cfg: DictConfig):
     log = logging.getLogger(__name__)
     if cfg.debug:
@@ -14,11 +13,8 @@ def main(cfg: DictConfig):
     log.info("launched with config: " + str(cfg))
     log.warning("App is not ready to run")
 
-    match cfg.c:
-        case "train":
-            match cfg.train:
-                case "":
-                    pass            
+    match cfg.run.command:
+        case "train":          
             pass
         case "eval":
             pass

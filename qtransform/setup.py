@@ -4,10 +4,10 @@ with open("README.md", encoding="utf8") as f:
     readme = f.read()
 
 setup_args = dict(
-    name="quantgpt",
+    name="qtransform",
     packages=find_packages(),
-    version='0.0.1dev',
-    description="Customized Version of nanoGPT with quantization",
+    version='0.0.2dev',
+    description="Various transformers with quantization",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     author="Max Kuhmichel, FH SWF",
