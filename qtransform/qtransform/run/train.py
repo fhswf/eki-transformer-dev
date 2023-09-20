@@ -1,67 +1,144 @@
 import logging
 from omegaconf import DictConfig
+
+import torch
+from torch import nn
+
+from torch.utils.tensorboard import SummaryWriter
+from datetime import datetime
+
 log = logging.getLogger(__name__)
 
-def train(cfg: DictConfig):
+def run(cfg: DictConfig):
+    """ launches training with provided config"""
     log.info("================")
     log.info("Running Training")
     log.info("================")
 
-    import torch
-    import torchvision
-    import torchvision.transforms as transforms
 
-    # PyTorch TensorBoard support
-    from torch.utils.tensorboard import SummaryWriter
-    from datetime import datetime
-    
+    #### From nanoGPT
+    #torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
+    #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
+    #device_type = 'cuda' if 'cuda' in device else 'mps' if 'mps' in device else 'cpu' # for later use in torch.autocast
+    ## note: float16 data type will automatically use a GradScaler
+    #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+    #ctx = nullcontext() if device_type == 'cpu' or device_type=='mps' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    writer = SummaryWriter('runs/fashion_trainer_{}'.format(timestamp))
-    epoch_number = 0
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
+    gen = None
+    if cfg.run.resume:
+        log.info(f"Resuming training from epoch {cfg.run.resume_from}")
+        gen = range(cfg.run.resume_from + 1, cfg.run.epochs + 1)
+    else:
+        log.info(f"Starting new training")
+        gen = range(cfg.run.epochs + 1)
+    # TODO load model
+    model = None
+    #model.set_train()
+    # TODO load data
+    dataset = None
+    evaldata = None
+    optimizer = None
 
-    EPOCHS = 5
+    # training loop
+    for epoch in gen:
+        log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
+        metrics = train_one_epoch(cfg, model, dataset, optimizer)
+        log.info(str(metrics))
 
-    best_vloss = 1_000_000.
-
-    for epoch in range(EPOCHS):
-        print('EPOCH {}:'.format(epoch_number + 1))
-
-        # Make sure gradient tracking is on, and do a pass over the data
-        model.train(True)
-        avg_loss = train_one_epoch(epoch_number, writer)
-
-
-        running_vloss = 0.0
-        # Set the model to evaluation mode, disabling dropout and using population
-        # statistics for batch normalization.
-        model.eval()
-
-        # Disable gradient computation and reduce memory consumption.
-        with torch.no_grad():
-            for i, vdata in enumerate(validation_loader):
-                vinputs, vlabels = vdata
-                voutputs = model(vinputs)
-                vloss = loss_fn(voutputs, vlabels)
-                running_vloss += vloss
-
-        avg_vloss = running_vloss / (i + 1)
-        print('LOSS train {} valid {}'.format(avg_loss, avg_vloss))
-
-        # Log the running loss averaged per batch
-        # for both training and validation
-        writer.add_scalars('Training vs. Validation Loss',
-                        { 'Training' : avg_loss, 'Validation' : avg_vloss },
-                        epoch_number + 1)
-        writer.flush()
-
-        # Track best performance, and save the model's state
-        if avg_vloss < best_vloss:
-            best_vloss = avg_vloss
-            model_path = 'model_{}_{}'.format(timestamp, epoch_number)
-            torch.save(model.state_dict(), model_path)
+        # eval
+        if epoch % cfg.run.eval_epoch_interval == 0:
+            eval_result = eval_model(cfg, model, evaldata)
+        
+        # save model checkpoint
+        if epoch % cfg.run.save_epoch_interval == 0:
+            torch.save(model.state_dict(), f'model_{timestamp}_{epoch}')
 
     return
+
+
+def train_one_epoch(cfg: DictConfig, model: nn.Module, dataset, optimizer):
+    """ training loop over steps/batches """
+    # TODO comute more metrics
+    last_loss = 0
+    running_loss = 0
+    for i, data in enumerate(dataset.training_loader):
+        inputs, labels = data
+
+        # Zero your gradients for every batch!
+        optimizer.zero_grad()
+
+        outputs = model(inputs)
+        loss = optimizer.loss_fn(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+        if i % cfg.run.log_steps_interval == 0:
+            last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
+            log.info(f'  batch {i+1} loss: {last_loss}')
+            running_loss = 0
+            ## TODO tensorboard logging and other types of reporting
+
+    return last_loss    
+
+
+def eval_model(cfg: DictConfig, model: nn.Module, evaldata):
+    """ run one validation round for the model during training """
+    # Disable gradient computation and reduce memory consumption.
+    with torch.no_grad():
+        for i, vdata in enumerate(validation_loader):
+            vinputs, vlabels = vdata
+            voutputs = model(vinputs)
+            vloss = loss_fn(voutputs, vlabels)
+            running_vloss += vloss
+
+    avg_vloss = running_vloss / (i + 1)
+    print('LOSS train {} valid {}'.format(avg_loss, avg_vloss))
+
+    # Log the running loss averaged per batch
+    # for both training and validation
+    writer.add_scalars('Training vs. Validation Loss',
+                    { 'Training' : avg_loss, 'Validation' : avg_vloss },
+                    epoch_number + 1)
+    writer.flush()
+
+    pass
+
+
+# helps estimate an arbitrarily accurate loss over either split using many batches
+@torch.no_grad()
+def estimate_loss(cfg: DictConfig, model: nn.Module):
+    out = {}
+    model.eval()
+    for split in ['train', 'val']:
+        losses = torch.zeros(eval_iters)
+        for k in range(eval_iters):
+            X, Y = get_batch(split)
+            with ctx:
+                logits, loss = model(X, Y)
+            losses[k] = loss.item()
+        out[split] = losses.mean()
+    model.train()
+    return out
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"""
 
 import os
 import time
@@ -270,3 +347,6 @@ while True:
     # termination conditions
     if iter_num > max_iters:
         break
+
+        
+"""

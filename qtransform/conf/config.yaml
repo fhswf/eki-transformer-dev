@@ -11,7 +11,6 @@ defaults:
   - _self_
   - model: gpt_2_small
   - dataset: openwebtext
-  - train: default
   - run: ???
   - override hydra/job_logging: custom
   - override hydra/help: main
