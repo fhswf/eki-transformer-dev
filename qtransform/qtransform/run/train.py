@@ -1,9 +1,12 @@
 import logging
+from typing import Any
 from omegaconf import DictConfig
 
 import torch
 from torch import nn
-
+from torch import optim
+from torch.optim import lr_scheduler as scheduler
+from torch.utils import data
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 
@@ -15,7 +18,6 @@ def run(cfg: DictConfig):
     log.info("Running Training")
     log.info("================")
 
-
     #### From nanoGPT
     #torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
     #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
@@ -24,49 +26,93 @@ def run(cfg: DictConfig):
     #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
     #ctx = nullcontext() if device_type == 'cpu' or device_type=='mps' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
-    gen = None
-    if cfg.run.resume:
-        log.info(f"Resuming training from epoch {cfg.run.resume_from}")
-        gen = range(cfg.run.resume_from + 1, cfg.run.epochs + 1)
+    cuda = None
+    if "cuda" in cfg:
+        cuda = cfg.cuda and torch.cuda.is_available()
     else:
-        log.info(f"Starting new training")
-        gen = range(cfg.run.epochs + 1)
-    # TODO load model
-    model = None
-    #model.set_train()
-    # TODO load data
+        cuda = torch.cuda.is_available()
+    mps = None
+    if "mps" in cfg:
+        mps = cfg.mps and torch.backends.mps.is_available()
+    else:
+        mps = torch.backends.mps.is_available()
+
+    torch.manual_seed(cfg.seed)    
+    train_kwargs = {'batch_size': cfg.train.batch_size}
+    test_kwargs = {'batch_size': cfg.train.batch_size}
+
+    if cuda:
+        device = torch.device("cuda")
+        cuda_kwargs = {'num_workers': cfg.train.num_workers,
+                       'pin_memory': True,
+                       'shuffle': True}
+        train_kwargs.update(cuda_kwargs)
+        test_kwargs.update(cuda_kwargs)
+    elif mps:
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
+    log.info(f"using device: {str(device)}")
+    log.info(f"number of torch dataloader: {str(cfg.train.num_workers)}")
+
+    from qtransform.model import get_model
+    model = get_model(cfg.model)
+    model.train()
+    model.to(device)
+
+    from qtransform.data import get_data
+    dataloader = get_data(cfg.data)()
     dataset = None
     evaldata = None
-    optimizer = None
 
+    from qtransform.optim import get_schedule
+    optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+    scheduler = scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma)
+
+    train()
+
+def train(cfg: DictConfig, device, model: nn.Module, train_data: data.Dataset, eval_data: data.Dataset,
+           optimizer: optim.Optimizer, scheduler: scheduler.LRScheduler) -> Any:
+    """ training over epochs with periodic logging and saving"""
+    current_epoch = None
+    if cfg.run.resume:
+        log.info(f"Resuming training from epoch {cfg.run.resume_from}")
+        current_epoch = range(cfg.run.resume_from + 1, cfg.run.epochs + 1)
+    else:
+        log.info(f"Starting new training")
+        current_epoch = range(cfg.run.epochs + 1)
+        
     # training loop
-    for epoch in gen:
+    for epoch in current_epoch:
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
-        metrics = train_one_epoch(cfg, model, dataset, optimizer)
+        metrics = train_one_epoch(cfg, device, model, train_data, optimizer)
         log.info(str(metrics))
 
-        # eval
-        if epoch % cfg.run.eval_epoch_interval == 0:
-            eval_result = eval_model(cfg, model, evaldata)
-        
+        ## eval
+        #if epoch % cfg.run.eval_epoch_interval == 0:
+        #    eval_result = eval_model(cfg, device, model, eval_data)
+        #    # TODO log data
+
         # save model checkpoint
         if epoch % cfg.run.save_epoch_interval == 0:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
             torch.save(model.state_dict(), f'model_{timestamp}_{epoch}')
+        
+        # advance learning rate
+        scheduler.step()
 
-    return
 
-
-def train_one_epoch(cfg: DictConfig, model: nn.Module, dataset, optimizer):
+def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.Dataset,
+           optimizer: optim.Optimizer) -> Any:
     """ training loop over steps/batches """
     # TODO comute more metrics
     last_loss = 0
     running_loss = 0
-    for i, data in enumerate(dataset.training_loader):
+    for i, data in enumerate(train_data.training_loader):
+        optimizer.zero_grad()  # Zero your gradients for every batch
+        # TODO 
+        data.to(device)
         inputs, labels = data
-
-        # Zero your gradients for every batch!
-        optimizer.zero_grad()
 
         outputs = model(inputs)
         loss = optimizer.loss_fn(outputs, labels)
@@ -83,30 +129,22 @@ def train_one_epoch(cfg: DictConfig, model: nn.Module, dataset, optimizer):
     return last_loss    
 
 
-def eval_model(cfg: DictConfig, model: nn.Module, evaldata):
-    """ run one validation round for the model during training """
-    # Disable gradient computation and reduce memory consumption.
-    with torch.no_grad():
-        for i, vdata in enumerate(validation_loader):
-            vinputs, vlabels = vdata
-            voutputs = model(vinputs)
-            vloss = loss_fn(voutputs, vlabels)
-            running_vloss += vloss
 
+
+
+
+
+@torch.no_grad()
+def eval_model(cfg: DictConfig, device, model: nn.Module, evaldata: data.Dataset):
+    for i, vdata in enumerate(evaldata.loader):
+        vinputs, vlabels = vdata
+        voutputs = model(vinputs)
+        vloss = loss_fn(voutputs, vlabels)
+        running_vloss += vloss
     avg_vloss = running_vloss / (i + 1)
-    print('LOSS train {} valid {}'.format(avg_loss, avg_vloss))
-
-    # Log the running loss averaged per batch
-    # for both training and validation
-    writer.add_scalars('Training vs. Validation Loss',
-                    { 'Training' : avg_loss, 'Validation' : avg_vloss },
-                    epoch_number + 1)
-    writer.flush()
-
-    pass
+    return avg_loss, avg_vloss
 
 
-# helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
 def estimate_loss(cfg: DictConfig, model: nn.Module):
     out = {}

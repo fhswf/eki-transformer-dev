@@ -10,7 +10,7 @@ hydra:
 defaults:
   - _self_
   - model: gpt_2_small
-  - dataset: openwebtext
+  - data: openwebtext
   - run: ???
   - override hydra/job_logging: custom
   - override hydra/help: main
@@ -18,10 +18,11 @@ defaults:
   #- override hydra/job_logging: colorlog
   #- override hydra/hydra_logging: colorlog
 
-dataset:  
+data:  
   dtype: 'bfloat16' # 'float32', 'bfloat16', or 'float16'
 device : 'cuda'
 debug: False
 
+seed: 1234567890
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.
