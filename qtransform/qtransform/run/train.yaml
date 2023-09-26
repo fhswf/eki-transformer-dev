@@ -1,12 +1,10 @@
 command: train
-num_workers: 4
 
 always_save_checkpoint : True # if True, always save a checkpoint after each eval
 init_from : 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 
 epochs: 2
 gradient_accumulation_steps : 5 * 8 # used to simulate larger batch sizes, leave empty for no accumulation
-batch_size : 24 
 
 validation_epoch_interval : 1000
 save_epoch_interval: 1

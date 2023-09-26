@@ -4,8 +4,6 @@ import numpy as np
 from torch.utils import data
 import glob
 
-
-data.Sampler
 class DynamicFileSystemDataset(data.Dataset):
     def __init__(self, file_path: str) -> None:
         super().__init__()
@@ -17,8 +15,7 @@ class DynamicFileSystemDataset(data.Dataset):
         pass
 
     def __getitem__(self, index: int) -> Any:
-
-        return img_tensor, class_id
+        return None
     
     def _gather_files(self, file_path: str):
         self.file_path = file_path

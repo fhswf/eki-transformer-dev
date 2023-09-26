@@ -38,36 +38,30 @@ def run(cfg: DictConfig):
         mps = torch.backends.mps.is_available()
 
     torch.manual_seed(cfg.seed)    
-    train_kwargs = {'batch_size': cfg.run.batch_size}
-    test_kwargs = {'batch_size': cfg.run.batch_size}
-
     if cuda:
         device = torch.device("cuda")
-        cuda_kwargs = {'num_workers': cfg.train.num_workers,
-                       'pin_memory': True,
-                       'shuffle': True}
-        train_kwargs.update(cuda_kwargs)
-        test_kwargs.update(cuda_kwargs)
+        cuda_kwargs = {'pin_memory': True,}
+        cfg.dataset.dataloader.update(cuda_kwargs)
     elif mps:
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
     log.info(f"using device: {str(device)}")
-    log.info(f"number of torch dataloader: {str(cfg.run.num_workers)}")
+    log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
     from qtransform.model import get_model
     model = get_model(cfg.model)
     model.train()
     model.to(device)
 
-    from qtransform.data import get_data
-    dataloader = get_data(cfg.data)()
-    dataset = None
-    evaldata = None
+    from qtransform.dataset import get_data, get_loader
+    train_data, eval_data = get_data(cfg.dataset)()
+    train_datalaoder = get_loader(train_data, cfg.dataset.dataloader)
+    eval_dataoader   = get_loader(eval_data, cfg.dataset.dataloader)
 
-    from qtransform.optim import get_schedule
-    optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
-    scheduler = scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma)
+    from qtransform.optim import get_optim, get_scheduler
+    #optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+    #scheduler = scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma)
 
     train()
 

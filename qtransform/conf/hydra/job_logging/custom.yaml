@@ -17,10 +17,10 @@ formatters:
       message: 
         TRACE:   'purple'
         DEBUG:    'blue'
-        INFO:     ''
+        INFO:     'green'
         WARNING:  'yellow'
-        ERROR:    'bold_red'
-        CRITICAL: 'red,bg_white'
+        ERROR:    'red'
+        CRITICAL: 'bold_red'
 
 handlers:
   #https://docs.python.org/3/library/logging.handlers.html
