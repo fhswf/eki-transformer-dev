@@ -1,7 +1,6 @@
 module: torchvision
 name: ???
 args:
-root_path
 
 defaults:
   - dataloader/default

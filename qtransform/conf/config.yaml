@@ -14,7 +14,6 @@ defaults:
   - run: ???
   - override hydra/job_logging: custom
   - override hydra/help: main
-
   #- override hydra/job_logging: colorlog
   #- override hydra/hydra_logging: colorlog
 
@@ -22,6 +21,9 @@ data:
   dtype: 'bfloat16' # 'float32', 'bfloat16', or 'float16'
 device : 'cuda'
 debug: False
+
+dataset:
+  root_path: ~/.qtransform/cache
 
 seed: 1234567890
 # DDP settings
