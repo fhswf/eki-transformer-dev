@@ -1,4 +1,5 @@
 command: train
+num_workers: 4
 
 always_save_checkpoint : True # if True, always save a checkpoint after each eval
 init_from : 'scratch' # 'scratch' or 'resume' or 'gpt2*'

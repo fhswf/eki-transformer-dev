@@ -38,8 +38,8 @@ def run(cfg: DictConfig):
         mps = torch.backends.mps.is_available()
 
     torch.manual_seed(cfg.seed)    
-    train_kwargs = {'batch_size': cfg.train.batch_size}
-    test_kwargs = {'batch_size': cfg.train.batch_size}
+    train_kwargs = {'batch_size': cfg.run.batch_size}
+    test_kwargs = {'batch_size': cfg.run.batch_size}
 
     if cuda:
         device = torch.device("cuda")
@@ -53,7 +53,7 @@ def run(cfg: DictConfig):
     else:
         device = torch.device("cpu")
     log.info(f"using device: {str(device)}")
-    log.info(f"number of torch dataloader: {str(cfg.train.num_workers)}")
+    log.info(f"number of torch dataloader: {str(cfg.run.num_workers)}")
 
     from qtransform.model import get_model
     model = get_model(cfg.model)

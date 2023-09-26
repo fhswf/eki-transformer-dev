@@ -4,21 +4,23 @@ formatters:
     format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
   color:
     (): colorlog.ColoredFormatter
-    format: '[ %(cyan)s%(asctime)s %(reset)s][%(white)s%(name)s%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
+    format: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
     reset: True
     log_colors:
-      DEBUG:    'bold_blue'
+      TRACE:    'purple'
+      DEBUG:    'blue'
       INFO:     'green'
       WARNING:  'yellow'
-      ERROR:    'bold_red'
-      CRITICAL: 'bold_purple'
+      ERROR:    'red'
+      CRITICAL: 'red,bg_white'
     secondary_log_colors:
       message: 
+        TRACE:   'purple'
         DEBUG:    'blue'
         INFO:     ''
         WARNING:  'yellow'
-        ERROR:    'red'
-        CRITICAL: 'bold_purple'
+        ERROR:    'bold_red'
+        CRITICAL: 'red,bg_white'
 
 handlers:
   #https://docs.python.org/3/library/logging.handlers.html

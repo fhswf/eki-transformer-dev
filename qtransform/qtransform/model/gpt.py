@@ -6,7 +6,7 @@ from typing import Optional
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
-from modules import LayerNorm, TransformerBlock
+from qtransform.model.modules import LayerNorm, TransformerBlock 
 from brevitas import nn as qnn
     
 @dataclass
@@ -27,7 +27,6 @@ class GPT(nn.Module):
         assert config.block_size is not None
         self.config = config
         print("Building GPT with quantize=%s" % (config.quantize))
-
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
             wpe = nn.Embedding(config.block_size, config.n_embd),
