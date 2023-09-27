@@ -1,6 +1,8 @@
 module: torchvision
 name: ???
+
 args:
+  split: 0.2
 
 defaults:
   - dataloader/default

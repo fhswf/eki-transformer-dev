@@ -6,6 +6,7 @@ log = logging.getLogger(__name__)
 
 def get_model(model_cfg: DictConfig) -> nn.Module:
     """ get model info and return a configured torch nn.Module instance """
+    log.debug(f"get_model config: {model_cfg}")
     from qtransform import model as _model
     models = get_classes(_model,nn.Module)
     #models = get_model_classes()

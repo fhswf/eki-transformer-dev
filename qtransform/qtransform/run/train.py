@@ -62,7 +62,6 @@ def run(cfg: DictConfig):
     from qtransform.optim import get_optim, get_scheduler
     #optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
     #scheduler = scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma)
-
     train()
 
 def train(cfg: DictConfig, device, model: nn.Module, train_data: data.Dataset, eval_data: data.Dataset,
