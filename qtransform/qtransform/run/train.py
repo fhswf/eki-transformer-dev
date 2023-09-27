@@ -5,10 +5,11 @@ from omegaconf import DictConfig
 import torch
 from torch import nn
 from torch import optim
-from torch.optim import lr_scheduler as scheduler
+from torch.optim import lr_scheduler
 from torch.utils import data
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
+import torch.nn.functional as F
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ def run(cfg: DictConfig):
     #ctx = nullcontext() if device_type == 'cpu' or device_type=='mps' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 
     cuda = None
+    device = None
     if "cuda" in cfg:
         cuda = cfg.cuda and torch.cuda.is_available()
     else:
@@ -55,20 +57,25 @@ def run(cfg: DictConfig):
     model.to(device)
 
     from qtransform.dataset import get_data, get_loader
-    train_data, eval_data = get_data(cfg.dataset)()
-    train_datalaoder = get_loader(train_data, cfg.dataset.dataloader)
-    eval_dataoader   = get_loader(eval_data, cfg.dataset.dataloader)
+    train_data, eval_data = get_data(cfg.dataset)
+    train_datalaoder = get_loader(data=train_data, dataloader_cfg=cfg.dataset.dataloader)
+    eval_dataoader   = get_loader(data=eval_data, dataloader_cfg=cfg.dataset.dataloader)
 
-    from qtransform.optim import get_optim, get_scheduler
-    #optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
-    #scheduler = scheduler.StepLR(optimizer, step_size=1, gamma=args.gamma)
-    train()
+    # from qtransform.optim import get_optim, get_scheduler
+    log.debug(f"optim config: {cfg.optim}")
+    optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=1)
 
-def train(cfg: DictConfig, device, model: nn.Module, train_data: data.Dataset, eval_data: data.Dataset,
-           optimizer: optim.Optimizer, scheduler: scheduler.LRScheduler) -> Any:
+    # lets go
+    train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler)
+
+
+
+def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
+           optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler) -> Any:
     """ training over epochs with periodic logging and saving"""
     current_epoch = None
-    if cfg.run.resume:
+    if "resume" in cfg.run and cfg.run.resume:
         log.info(f"Resuming training from epoch {cfg.run.resume_from}")
         current_epoch = range(cfg.run.resume_from + 1, cfg.run.epochs + 1)
     else:
@@ -78,7 +85,7 @@ def train(cfg: DictConfig, device, model: nn.Module, train_data: data.Dataset, e
     # training loop
     for epoch in current_epoch:
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
-        metrics = train_one_epoch(cfg, device, model, train_data, optimizer)
+        metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer)
         log.info(str(metrics))
 
         ## eval
@@ -95,20 +102,20 @@ def train(cfg: DictConfig, device, model: nn.Module, train_data: data.Dataset, e
         scheduler.step()
 
 
-def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.Dataset,
+def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.DataLoader,
            optimizer: optim.Optimizer) -> Any:
     """ training loop over steps/batches """
     # TODO comute more metrics
     last_loss = 0
     running_loss = 0
-    for i, data in enumerate(train_data.training_loader):
+    for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
         # TODO 
-        data.to(device)
+        #data.to(device)
         inputs, labels = data
 
         outputs = model(inputs)
-        loss = optimizer.loss_fn(outputs, labels)
+        loss = F.nll_loss(outputs, labels)
         loss.backward()
         optimizer.step()
 
