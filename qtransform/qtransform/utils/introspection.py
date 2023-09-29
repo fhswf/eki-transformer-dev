@@ -5,6 +5,7 @@ from omegaconf import DictConfig
 from torch import nn
 import logging
 import pkgutil, inspect, importlib
+import sys
 
 log = logging.getLogger(__name__)
 def get_classes(module: ModuleType, parent_class: ...):
@@ -39,4 +40,30 @@ def get_classes(module: ModuleType, parent_class: ...):
                     classes[name] = obj
     return classes
     
-
+def _get_module(module_name, package_name = None, scope = None):
+    """
+    find and import the module "module_name" dynamically either in current directory/path if scope variable is set to the path
+    or from all known python modules (sys.path) if scope = None
+    in order to correctly import a module with importlib.import_module, the name of the package in python notation must be provided
+    (package.).
+    package_name  is the name of the package in python notation (__name__), 
+    scope is the path to the package (__path__)
+    """
+    if scope == None:
+        scope = sys.path
+    log.debug(f'searching for module {module_name} within scope: {scope}')
+    #__path__ makes the search limit to only the current module, not all modules under sys.path
+    l = list(filter(lambda x: x.name==module_name, pkgutil.iter_modules(scope)))
+    log.debug(f"Found dataset module: {l}")
+    if len(l) == 0:
+        log.error(f"Dataset type module_name: {module_name} not found")
+        log.error(f"Options are: {list(map(lambda x:x.name, pkgutil.iter_modules(scope)))}")
+        raise KeyError
+    if len(l) > 1:
+        log.critical(f"Found more than one module to import for {module_name}, is something wrong with the search path?")
+        raise KeyError
+    _module_name = l[0].name
+    if package_name == None:
+        #import the module found from the first package in sys.path
+        return importlib.import_module(_module_name)
+    return importlib.import_module('..' + _module_name, package_name+'.')
