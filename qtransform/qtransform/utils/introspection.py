@@ -1,5 +1,4 @@
 from types import ModuleType
-import types 
 from typing import Iterable
 from omegaconf import DictConfig
 from torch import nn
@@ -8,7 +7,7 @@ import pkgutil, inspect, importlib
 import sys
 
 log = logging.getLogger(__name__)
-def get_classes(module: ModuleType, parent_class: ...):
+def get_classes(module: ModuleType, parent_class: type):
     """
     'module' should be either a list of paths to look for
     modules in or a python module.
@@ -32,11 +31,11 @@ def get_classes(module: ModuleType, parent_class: ...):
             if parent_class is not None: 
                 if inspect.isclass(obj) and issubclass(obj, parent_class):
                     if name not in classes:
-                        log.debug(f"nn.Module class found: {name}={obj}")
+                        log.debug(f"{parent_class.__name__} class found: {name}={obj}")
                         classes[name] = obj
             elif inspect.isclass(obj):
                 if name not in classes:
-                    log.debug(f"nn.Module class found: {name}={obj}")
+                    log.debug(f"{parent_class.__name__} class found: {name}={obj}")
                     classes[name] = obj
     return classes
     

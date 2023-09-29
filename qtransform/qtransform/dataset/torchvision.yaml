@@ -1,4 +1,4 @@
-module: torchvision
+module: TorchvisionDataset #name of class within torchvision.py
 name: ???
 
 args:
