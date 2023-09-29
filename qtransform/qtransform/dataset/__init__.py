@@ -3,6 +3,7 @@ from omegaconf import DictConfig
 import logging
 from torch.utils.data import Dataset, DataLoader
 from qtransform.utils.introspection import _get_module, get_classes
+import qtransform.classloader
 log = logging.getLogger(__name__)
 
 
@@ -23,7 +24,7 @@ def deprecated_get_data(dataset_cfg: DictConfig) -> Any:
     else:
         return m.load_dataset(dataset_cfg.name, dataset_cfg)
 
-def get_data(dataset_cfg: DictConfig) -> Dataset:
+def dep_get_data(dataset_cfg: DictConfig) -> Dataset:
     log.debug(f"get_data config: {dataset_cfg}")
     import qtransform.dataset as package_self
     #get all classes which are subclasses of DatasetWrapper within own package context
@@ -32,6 +33,11 @@ def get_data(dataset_cfg: DictConfig) -> Dataset:
         log.error(f"DatasetWrapper {dataset_cfg.module} not found in {package_self.__package__}")
         raise KeyError
     dataset_wrapper: DatasetWrapper = c[dataset_cfg.module]
+    return dataset_wrapper.load_dataset(dataset_cfg)
+
+def get_data(dataset_cfg: DictConfig) -> Dataset:
+    import qtransform.dataset as package_self
+    dataset_wrapper: DatasetWrapper = qtransform.classloader.get_data(log, package_self, dataset_cfg.module, DatasetWrapper)
     return dataset_wrapper.load_dataset(dataset_cfg)
 
 def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:
