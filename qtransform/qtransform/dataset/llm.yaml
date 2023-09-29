@@ -1,0 +1,13 @@
+module: FileSystemLLMDataset #name of class within torchvision.py
+name: ???
+encoding: ???
+dtype: int32 #dtype has to exist in numpy and pytorch
+
+args:
+  split: 0.2
+
+defaults:
+  - dataloader/default
+    
+links:
+  - shakespeare: "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
