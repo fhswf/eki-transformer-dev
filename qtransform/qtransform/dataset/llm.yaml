@@ -1,13 +1,16 @@
 module: FileSystemLLMDataset #name of class within torchvision.py
+#either has to match an entry from links, a dataset from torchvision or a filename (excluding encoding) within dataset directory
 name: ???
 encoding: ???
 dtype: int32 #dtype has to exist in numpy and pytorch
 
+#are args being used currently?
 args:
   split: 0.2
 
 defaults:
   - dataloader/default
     
+
 links:
   - shakespeare: "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"

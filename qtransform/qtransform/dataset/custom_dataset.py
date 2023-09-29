@@ -7,6 +7,7 @@ from qtransform.utils.introspection import get_classes
 from qtransform.dataset import DatasetInfo, DatasetWrapper
 import os
 import glob
+log = logging.getLogger(__name__)
 
 class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
     """
@@ -16,36 +17,48 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
         pass
 
     def load_dataset(data_cfg: DictConfig) -> Dataset:
-        pass
-        # TODO find good structure for all our data
         #e.g.: ~/.qtransform/cache/data/llm/tokenized/shakespeare/shakespeare-gpt2.bin
+        # TODO find good structure for all our data
         root_path = os.path.join(data_cfg.root_path, "data", "llm", "tokenized", data_cfg.name, 
-            data_cfg.name + "-" + data_cfg.encoding + ".bin")
-        dtype = get_classes('', np.dtype )
-        dataset = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size )
-
-        transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
-        train = available_datasets[cfg.name](root=root_path, train=True, download=True, transform=transform)
-        test = available_datasets[cfg.name](root=root_path, train=False, transform=transform)
+                        data_cfg.name + "-" + data_cfg.encoding + ".bin")
+        #get dtype class to pass onto Dataset class
+        dtype = None
+        np_dtype_string = 'dtype['+data_cfg.dtype+']'
+        for np_dtype in np.dtype.__subclasses__():
+            if np_dtype_string == np_dtype:
+                dtype = np_dtype
+        if dtype == None:
+            log.critical(f'Datatype {data_cfg.dtype} not found within numpy datatype scope')
+            raise KeyError()
+        train = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, download=True)
+        test = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, download=False, start= data_cfg.args.split)
+        #transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
         return train, test
 
     
 #TODO: implement using datasets from huggingface or pytorch
 #TODO: implement download=True option
-class _FileSystemLLMDataset(torch.utils.data.Dataset):
+class _FileSystemLLMDataset(Dataset):
     
-    def __init__(self, token_file: str, dtype, block_size, download = True, split = 0):
+    def __init__(self, token_file: str, dtype: np.dtype, block_size: int, download = True, start: float=0.0, end: float = 1.0):
+        """
+            start: offset in dataset by <start> bytes
+            end: end memmap by <end> entries of dtype
+            For now, np.memmap is used with offset being start 
+            and end being a slice of the memmap
+        """
         super().__init__()
         np.int32.b
         self.token_file = token_file
         self.dtype = dtype
         if download and not os.path.exists(token_file):
-            #download file from datasets.json
-            ""
-        #used for splitting training data
+            #download corresponding file from hydra config
+            pass
+        #size of data in bytes, used for splitting training data
         size = os.path.getsize(token_file)
         #todo: make it somehow more efficient
-        self.data = np.memmap(token_file, dtype=dtype, mode='r', offset=size*split*dtype.bit_count / 8)
+        length_memmap = size * dtype.bit_count / 8
+        self.data = np.memmap(token_file, dtype=dtype, mode='r', offset=int(start * length_memmap))[:int(length_memmap*end)]
         self.length = len(self.data)
         self.block_size = block_size
         
