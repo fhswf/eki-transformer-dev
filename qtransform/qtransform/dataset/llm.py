@@ -7,6 +7,7 @@ from qtransform.utils.introspection import get_classes
 from qtransform.dataset import DatasetInfo, DatasetWrapper
 import os
 import glob
+import logging
 log = logging.getLogger(__name__)
 
 class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
@@ -20,18 +21,19 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
         #e.g.: ~/.qtransform/cache/data/llm/tokenized/shakespeare/shakespeare-gpt2.bin
         # TODO find good structure for all our data
         root_path = os.path.join(data_cfg.root_path, "data", "llm", "tokenized", data_cfg.name, 
-                        data_cfg.name + "-" + data_cfg.encoding + ".bin")
+                        data_cfg.name + "-" + data_cfg.tokenizer.encoding + ".bin")
         #get dtype class to pass onto Dataset class
         dtype = None
         np_dtype_string = 'dtype['+data_cfg.dtype+']'
         for np_dtype in np.dtype.__subclasses__():
-            if np_dtype_string == np_dtype:
+            if np_dtype_string == np_dtype.__name__:
                 dtype = np_dtype
         if dtype == None:
             log.critical(f'Datatype {data_cfg.dtype} not found within numpy datatype scope')
-            raise KeyError()
-        train = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, download=True)
-        test = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, download=False, start= data_cfg.args.split)
+            raise KeyError() 
+        log.info(f'Loading dataset: {data_cfg.name}, with encoding: {data_cfg.tokenizer.encoding} and dtype: {data_cfg.dtype}')
+        train = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, end= 1.0 - data_cfg.args.split)
+        test = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, start= data_cfg.args.split)
         #transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
         return train, test
 
@@ -40,7 +42,7 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
 #TODO: implement download=True option
 class _FileSystemLLMDataset(Dataset):
     
-    def __init__(self, token_file: str, dtype: np.dtype, block_size: int, download = True, start: float=0.0, end: float = 1.0):
+    def __init__(self, token_file: str, dtype: np.dtype, block_size: int, start: float=0.0, end: float = 1.0):
         """
             start: offset in dataset by <start> bytes
             end: end memmap by <end> entries of dtype
@@ -48,11 +50,11 @@ class _FileSystemLLMDataset(Dataset):
             and end being a slice of the memmap
         """
         super().__init__()
-        np.int32.b
+        #np.int32.b
         self.token_file = token_file
         self.dtype = dtype
-        if download and not os.path.exists(token_file):
-            #download corresponding file from hydra config
+        if not os.path.exists(token_file):
+            log.warning(f"Tokenized dataset under \"{token_file}\" not found. Creating one...")
             pass
         #size of data in bytes, used for splitting training data
         size = os.path.getsize(token_file)
