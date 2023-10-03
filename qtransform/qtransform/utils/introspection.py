@@ -5,6 +5,7 @@ from torch import nn
 import logging
 import pkgutil, inspect, importlib
 import sys
+from os.path import join
 
 log = logging.getLogger(__name__)
 def get_classes(module: ModuleType, parent_class: type):
@@ -66,3 +67,14 @@ def _get_module(module_name, package_name = None, scope = None):
         #import the module found from the first package in sys.path
         return importlib.import_module(_module_name)
     return importlib.import_module('..' + _module_name, package_name+'.')
+
+def concat_paths(paths: list) -> str:
+    """
+        Concatinates paths of a list by joining them with os.path.join
+    """
+    if len(paths) == 0:
+        raise ValueError("Error, cannot concatinate paths when argument is empty.")
+    main_path = ""
+    for path in paths:
+        main_path = join(main_path, path)
+    return main_path

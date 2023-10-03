@@ -1,15 +1,16 @@
-module: FileSystemLLMDataset #name of class within torchvision.py
+wrapper: FileSystemLLMDataset #name of class within torchvision.py
 #either has to match an entry from links, a dataset from torchvision or a filename (excluding encoding) within dataset directory
 name: ???
-encoding: ???
-dtype: int32 #dtype has to exist in numpy and pytorch
-
+dtype: ${data.dtype} #dtype has to exist in numpy and pytorch
+block_size: ${model.args.block_size}
+module: llm
 #are args being used currently?
 args:
   split: 0.2
 
 defaults:
   - dataloader/default
+  - tokenizer: tiktoken
     
 
 links:

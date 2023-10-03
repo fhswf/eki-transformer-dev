@@ -13,7 +13,7 @@ def deprecated_get_data(dataset_cfg: DictConfig) -> Any:
     """
     log.debug(f"get_data config: {dataset_cfg}")
     #TODO: split module into module: (custom|torchvision,huggingface...) and module_name 
-    m = _get_module(dataset_cfg.module, __name__, __path__)
+    m = _get_module(dataset_cfg.wrapper, __name__, __path__)
     log.debug(f'loaded module: {m}')
     #c = get_classes(m, Dataset)
     if not hasattr(m, "load_dataset"):
@@ -29,15 +29,15 @@ def dep_get_data(dataset_cfg: DictConfig) -> Dataset:
     import qtransform.dataset as package_self
     #get all classes which are subclasses of DatasetWrapper within own package context
     c = get_classes(package_self, DatasetWrapper)
-    if dataset_cfg.module not in c:
-        log.error(f"DatasetWrapper {dataset_cfg.module} not found in {package_self.__package__}")
+    if dataset_cfg.wrapper not in c:
+        log.error(f"DatasetWrapper {dataset_cfg.wrapper} not found in {package_self.__package__}")
         raise KeyError
-    dataset_wrapper: DatasetWrapper = c[dataset_cfg.module]
+    dataset_wrapper: DatasetWrapper = c[dataset_cfg.wrapper]
     return dataset_wrapper.load_dataset(dataset_cfg)
 
 def get_data(dataset_cfg: DictConfig) -> Dataset:
     import qtransform.dataset as package_self
-    dataset_wrapper: DatasetWrapper = qtransform.classloader.get_data(log, package_self, dataset_cfg.module, DatasetWrapper)
+    dataset_wrapper: DatasetWrapper = qtransform.classloader.get_data(log, package_self, dataset_cfg.wrapper, DatasetWrapper)
     return dataset_wrapper.load_dataset(dataset_cfg)
 
 def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:

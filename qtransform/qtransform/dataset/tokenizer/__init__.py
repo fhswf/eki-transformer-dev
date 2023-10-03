@@ -37,5 +37,5 @@ def get_tokenizer(tokenizer_cfg: DictConfig) -> Tokenizer:
         the Dataset class for Dataset exists
     """
     import qtransform.dataset as package_self
-    dataset_wrapper: Tokenizer = get_data(log, package_self, dataset_cfg.module, DatasetWrapper)
-    return dataset_wrapper.load_dataset(dataset_cfg)
+    dataset_wrapper: Tokenizer = get_data(log, package_self, tokenizer_cfg.name, Tokenizer)
+    return dataset_wrapper.load_dataset(tokenizer_cfg)

@@ -3,8 +3,9 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset
 from omegaconf import DictConfig
-from qtransform.utils.introspection import get_classes
+from qtransform.utils.introspection import get_classes, concat_paths
 from qtransform.dataset import DatasetInfo, DatasetWrapper
+from qtransform.dataset.tokenizer import get_tokenizer
 import os
 import glob
 import logging
@@ -18,10 +19,10 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
         pass
 
     def load_dataset(data_cfg: DictConfig) -> Dataset:
-        #e.g.: ~/.qtransform/cache/data/llm/tokenized/shakespeare/shakespeare-gpt2.bin
         # TODO find good structure for all our data
-        root_path = os.path.join(data_cfg.root_path, "data", "llm", "tokenized", data_cfg.name, 
-                        data_cfg.name + "-" + data_cfg.tokenizer.encoding + ".bin")
+        paths: list = data_cfg.dataset_dir
+        paths.extend(["tokenized", data_cfg.name + "-" + data_cfg.tokenizer.encoding + "-" + data_cfg.dtype + ".bin"])
+        root_path = concat_paths(paths)
         #get dtype class to pass onto Dataset class
         dtype = None
         np_dtype_string = 'dtype['+data_cfg.dtype+']'
@@ -44,23 +45,29 @@ class _FileSystemLLMDataset(Dataset):
     
     def __init__(self, token_file: str, dtype: np.dtype, block_size: int, start: float=0.0, end: float = 1.0):
         """
-            start: offset in dataset by <start> bytes
+            The seperation of a dataset in training and validation splits is done with the start and end parameter
+
+            start: offset in dataset by <start> bytes (start counting after the first start percent items)
             end: end memmap by <end> entries of dtype
             For now, np.memmap is used with offset being start 
             and end being a slice of the memmap
         """
         super().__init__()
-        #np.int32.b
+        log.info(f"Attempting to retrieve tokenized dataset under \"{token_file}\"")
         self.token_file = token_file
-        self.dtype = dtype
-        if not os.path.exists(token_file):
-            log.warning(f"Tokenized dataset under \"{token_file}\" not found. Creating one...")
+        self.dtype = np.uint16
+        if not os.path.exists(self.token_file):
+            log.warning(f"Dataset not found. Creating one...")
             pass
         #size of data in bytes, used for splitting training data
-        size = os.path.getsize(token_file)
+        #size is dtype * number_of_entries
+        dataset_filesize = os.path.getsize(self.token_file)
         #todo: make it somehow more efficient
-        length_memmap = size * dtype.bit_count / 8
-        self.data = np.memmap(token_file, dtype=dtype, mode='r', offset=int(start * length_memmap))[:int(length_memmap*end)]
+        #the method of retrieving the byte size is somewhat inspired from the stackoverflow article
+        #https://stackoverflow.com/questions/19599864/easy-way-of-getting-number-of-bits-from-a-numpy-type
+        amnt_tokens = dataset_filesize / dtype().itemsize
+        #skip the first start * entries_memmap and the last entries_memmap * end items
+        self.data = np.memmap(self.token_file, dtype=dtype, mode='r', offset=int(start * dataset_filesize))#[:int(size * end)]
         self.length = len(self.data)
         self.block_size = block_size
         
