@@ -59,15 +59,17 @@ class _FileSystemLLMDataset(Dataset):
         if not os.path.exists(self.token_file):
             log.warning(f"Dataset not found. Creating one...")
             pass
-        #size of data in bytes, used for splitting training data
-        #size is dtype * number_of_entries
-        dataset_filesize = os.path.getsize(self.token_file)
         #todo: make it somehow more efficient
         #the method of retrieving the byte size is somewhat inspired from the stackoverflow article
         #https://stackoverflow.com/questions/19599864/easy-way-of-getting-number-of-bits-from-a-numpy-type
-        amnt_tokens = dataset_filesize / dtype().itemsize
+        self.datatype = dtype()
+        self.bytes = self.datatype.itemsize
+        amnt_tokens = os.path.getsize(self.token_file) / self.bytes
+        offset = int(amnt_tokens * start)
+        #rounding to the nearest multiplicative of datatype to make sure not to read half a token too much
+        offset -= offset % self.bytes
         #skip the first start * entries_memmap and the last entries_memmap * end items
-        self.data = np.memmap(self.token_file, dtype=dtype, mode='r', offset=int(start * dataset_filesize))#[:int(size * end)]
+        self.data = np.memmap(self.token_file, dtype=self.datatype, mode='r', offset=offset)#[:int(size * end)]
         self.length = len(self.data)
         self.block_size = block_size
         
