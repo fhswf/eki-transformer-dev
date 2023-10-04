@@ -25,11 +25,9 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
         root_path = concat_paths(paths)
         #get dtype class to pass onto Dataset class
         dtype = None
-        np_dtype_string = 'dtype['+data_cfg.dtype+']'
-        for np_dtype in np.dtype.__subclasses__():
-            if np_dtype_string == np_dtype.__name__:
-                dtype = np_dtype
-        if dtype == None:
+        try:
+            dtype = np.dtype(data_cfg.dtype)
+        except:
             log.critical(f'Datatype {data_cfg.dtype} not found within numpy datatype scope')
             raise KeyError() 
         log.info(f'Loading dataset: {data_cfg.name}, with encoding: {data_cfg.tokenizer.encoding} and dtype: {data_cfg.dtype}')
@@ -55,21 +53,22 @@ class _FileSystemLLMDataset(Dataset):
         super().__init__()
         log.info(f"Attempting to retrieve tokenized dataset under \"{token_file}\"")
         self.token_file = token_file
-        self.dtype = np.uint16
+        self.dtype = dtype
         if not os.path.exists(self.token_file):
             log.warning(f"Dataset not found. Creating one...")
             pass
         #todo: make it somehow more efficient
         #the method of retrieving the byte size is somewhat inspired from the stackoverflow article
         #https://stackoverflow.com/questions/19599864/easy-way-of-getting-number-of-bits-from-a-numpy-type
-        self.datatype = dtype()
+        self.datatype = dtype
         self.bytes = self.datatype.itemsize
         amnt_tokens = os.path.getsize(self.token_file) / self.bytes
         offset = int(amnt_tokens * start)
         #rounding to the nearest multiplicative of datatype to make sure not to read half a token too much
         offset -= offset % self.bytes
         #skip the first start * entries_memmap and the last entries_memmap * end items
-        self.data = np.memmap(self.token_file, dtype=self.datatype, mode='r', offset=offset)#[:int(size * end)]
+        self.data = np.memmap(self.token_file, dtype=self.datatype, mode='r', offset=offset)[:int(amnt_tokens * end)]
+        log.debug(f'memmap has been created with dtype: {dtype}')
         self.length = len(self.data)
         self.block_size = block_size
         
