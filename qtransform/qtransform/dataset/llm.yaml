@@ -10,7 +10,7 @@ args:
 
 defaults:
   - dataloader/default
-  - tokenizer: tiktoken
+  - tokenizer: character
     
 
 links:

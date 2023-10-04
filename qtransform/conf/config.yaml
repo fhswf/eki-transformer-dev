@@ -33,6 +33,14 @@ dataset:
     - ${dataset.root_path}
     - data
     - ${dataset.name}
+  tokenizer: 
+      dataset_dir: 
+      - ${dataset.root_path}
+      - data
+      - ${dataset.name}
+      #name of dataset
+      name: ${dataset.name}
+      dtype: ${data.dtype}
 seed: 1234567890
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.

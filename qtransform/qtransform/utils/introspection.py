@@ -6,6 +6,7 @@ import logging
 import pkgutil, inspect, importlib
 import sys
 from os.path import join
+from numpy import dtype as np_dtype
 
 log = logging.getLogger(__name__)
 def get_classes(module: ModuleType, parent_class: type):
@@ -78,3 +79,12 @@ def concat_paths(paths: list) -> str:
     for path in paths:
         main_path = join(main_path, path)
     return main_path
+
+def get_dtype(dtype: str) -> np_dtype:
+    dtype = None
+    try:
+        dtype = np_dtype(dtype)
+    except:
+        log.critical(f'Datatype {dtype} not found within numpy datatype scope')
+        raise KeyError()
+    return dtype

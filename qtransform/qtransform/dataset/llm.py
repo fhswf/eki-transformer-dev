@@ -3,9 +3,9 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset
 from omegaconf import DictConfig
-from qtransform.utils.introspection import get_classes, concat_paths
+from qtransform.utils.introspection import get_classes, concat_paths, get_dtype
 from qtransform.dataset import DatasetInfo, DatasetWrapper
-from qtransform.dataset.tokenizer import get_tokenizer
+from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
 import os
 import glob
 import logging
@@ -24,14 +24,15 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
         paths.extend(["tokenized", data_cfg.name + "-" + data_cfg.tokenizer.encoding + "-" + data_cfg.dtype + ".bin"])
         root_path = concat_paths(paths)
         #get dtype class to pass onto Dataset class
-        dtype = None
-        try:
-            dtype = np.dtype(data_cfg.dtype)
-        except:
-            log.critical(f'Datatype {data_cfg.dtype} not found within numpy datatype scope')
-            raise KeyError() 
+        dtype = get_dtype(data_cfg.dtype)
         log.info(f'Loading dataset: {data_cfg.name}, with encoding: {data_cfg.tokenizer.encoding} and dtype: {data_cfg.dtype}')
-        train = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, end= 1.0 - data_cfg.args.split)
+        #somewhat scuffed
+        try:
+            train = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, end= 1.0 - data_cfg.args.split)
+        except ValueError:
+            tokenizer: Tokenizer = get_tokenizer(data_cfg.tokenizer)
+            tokenizer.tokenize(data_cfg.tokenizer)
+            train = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, end= 1.0 - data_cfg.args.split)
         test = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, start= data_cfg.args.split)
         #transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
         return train, test
@@ -55,18 +56,17 @@ class _FileSystemLLMDataset(Dataset):
         self.token_file = token_file
         self.dtype = dtype
         if not os.path.exists(self.token_file):
-            log.warning(f"Dataset not found. Creating one...")
-            pass
-        #todo: make it somehow more efficient
+            #raise error, TODO: implement download=True option from torchvision datasets
+            raise ValueError('Tokenized file {token_file} not found')
+        self.datatype = dtype
         #the method of retrieving the byte size is somewhat inspired from the stackoverflow article
         #https://stackoverflow.com/questions/19599864/easy-way-of-getting-number-of-bits-from-a-numpy-type
-        self.datatype = dtype
         self.bytes = self.datatype.itemsize
         amnt_tokens = os.path.getsize(self.token_file) / self.bytes
         offset = int(amnt_tokens * start)
         #rounding to the nearest multiplicative of datatype to make sure not to read half a token too much
         offset -= offset % self.bytes
-        #skip the first start * entries_memmap and the last entries_memmap * end items
+        #skip the first start * amnt_tokens and the last amnt_tokens * end items
         self.data = np.memmap(self.token_file, dtype=self.datatype, mode='r', offset=offset)[:int(amnt_tokens * end)]
         log.debug(f'memmap has been created with dtype: {dtype}')
         self.length = len(self.data)
