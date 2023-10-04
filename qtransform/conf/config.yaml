@@ -35,9 +35,9 @@ dataset:
     - ${dataset.name}
   tokenizer: 
       dataset_dir: 
-      - ${dataset.root_path}
-      - data
-      - ${dataset.name}
+        - ${dataset.root_path}
+        - data
+        - ${dataset.name}
       #name of dataset
       name: ${dataset.name}
       dtype: ${data.dtype}

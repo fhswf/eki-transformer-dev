@@ -7,6 +7,7 @@ import pkgutil, inspect, importlib
 import sys
 from os.path import join
 from numpy import dtype as np_dtype
+from os.path import expanduser
 
 log = logging.getLogger(__name__)
 def get_classes(module: ModuleType, parent_class: type):
@@ -71,11 +72,14 @@ def _get_module(module_name, package_name = None, scope = None):
 
 def concat_paths(paths: list) -> str:
     """
-        Concatinates paths of a list by joining them with os.path.join
+        Concatinates paths of a list by joining them with os.path.join.
+        In order to avoid issues, the shortcut ~ is translated into the directory of the user 
+        executing the module.
     """
-    if len(paths) == 0:
+    if paths == None or len(paths) == 0:
         raise ValueError("Error, cannot concatinate paths when argument is empty.")
     main_path = ""
+    paths[0] = paths[0].replace('~', expanduser('~'))
     for path in paths:
         main_path = join(main_path, path)
     return main_path
