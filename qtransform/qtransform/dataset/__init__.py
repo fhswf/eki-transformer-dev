@@ -1,29 +1,21 @@
 from typing import Any
 from omegaconf import DictConfig
 import logging
-import pkgutil, inspect, importlib
 from torch.utils.data import Dataset, DataLoader
+from qtransform.utils.introspection import _get_module, get_classes
+import qtransform.classloader
 log = logging.getLogger(__name__)
 
-def _get_module(module_name):
-    """
-    find and import the module "module_name" dynamicly in current directory/path
-    """
-    l = list(filter(lambda x: x.name==module_name, pkgutil.iter_modules(__path__)))
-    log.debug(f"Found dataset module: {l}")
-    if len(l) == 0:
-        log.error(f"Dataset type module_name: {module_name} not found")
-        log.error(f"Options are: {list(map(lambda x:x.name, pkgutil.iter_modules(__path__)))}")
-        raise KeyError
-    if len(l) > 1:
-        log.critical(f"Found more then one module to import for {module_name}, is something wrong with the search path?")
-        raise KeyError
-    return importlib.import_module(__name__ + "." + l[0][1])
 
-def get_data(dataset_cfg: DictConfig) -> Any:
-    """ load data from module and config spec. """
+def deprecated_get_data(dataset_cfg: DictConfig) -> Any:
+    """ load data from module and config spec. it does so by importing a module within its own package and calling 
+        the load_dataset method directly.
+    """
     log.debug(f"get_data config: {dataset_cfg}")
-    m = _get_module(dataset_cfg.module)
+    #TODO: split module into module: (custom|torchvision,huggingface...) and module_name 
+    m = _get_module(dataset_cfg.wrapper, __name__, __path__)
+    log.debug(f'loaded module: {m}')
+    #c = get_classes(m, Dataset)
     if not hasattr(m, "load_dataset"):
         log.critical(f"module {m} does not have a 'load_dataset' function")
         raise NotImplementedError
@@ -31,6 +23,22 @@ def get_data(dataset_cfg: DictConfig) -> Any:
         return m.load_dataset(dataset_cfg.name, dataset_cfg)
     else:
         return m.load_dataset(dataset_cfg.name, dataset_cfg)
+
+def dep_get_data(dataset_cfg: DictConfig) -> Dataset:
+    log.debug(f"get_data config: {dataset_cfg}")
+    import qtransform.dataset as package_self
+    #get all classes which are subclasses of DatasetWrapper within own package context
+    c = get_classes(package_self, DatasetWrapper)
+    if dataset_cfg.wrapper not in c:
+        log.error(f"DatasetWrapper {dataset_cfg.wrapper} not found in {package_self.__package__}")
+        raise KeyError
+    dataset_wrapper: DatasetWrapper = c[dataset_cfg.wrapper]
+    return dataset_wrapper.load_dataset(dataset_cfg)
+
+def get_data(dataset_cfg: DictConfig) -> Dataset:
+    import qtransform.dataset as package_self
+    dataset_wrapper: DatasetWrapper = qtransform.classloader.get_data(log, package_self, dataset_cfg.wrapper, DatasetWrapper)
+    return dataset_wrapper.load_dataset(dataset_cfg)
 
 def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:
     log.debug(f"get_loader config: {dataloader_cfg}")
@@ -62,7 +70,7 @@ class DatasetWrapper(ABC):
     and provide information on whether the dataset contained in this wrapper provides training, eval/test or benchmark data.
     """
     @abstractclassmethod
-    def load_dataset():
+    def load_dataset(cfg: DictConfig) -> Dataset:
         pass
     def get_dataloader():
         pass
