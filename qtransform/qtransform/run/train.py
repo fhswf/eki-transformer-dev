@@ -18,7 +18,8 @@ def run(cfg: DictConfig):
     log.info("================")
     log.info("Running Training")
     log.info("================")
-
+    timestamp = datetime.now().strftime('%Y-%m-%d,%H:%M')
+    log.info(f"time is: {timestamp}")
     #### From nanoGPT
     #torch.backends.cuda.matmul.allow_tf32 = True # allow tf32 on matmul
     #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
@@ -66,18 +67,56 @@ def run(cfg: DictConfig):
     optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1)
 
+    """
+    model = Net()
+    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+
+    checkpoint = torch.load(PATH)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    loss = checkpoint['loss']
+    """
     # lets go
-    train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler)
+    train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp)
 
 
 
 def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
-           optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler) -> Any:
+           optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
     current_epoch = None
-    if "resume" in cfg.run and cfg.run.resume:
-        log.info(f"Resuming training from epoch {cfg.run.resume_from}")
-        current_epoch = range(cfg.run.resume_from + 1, cfg.run.epochs + 1)
+    if "resume_from" in cfg.run and cfg.run.resume_from:
+        log.info(f"Resuming training from {cfg.run.resume_from}")
+        checkpoint = torch.load(cfg.run.resume_from)
+        from_epoch = 0    
+        try:
+            i = str(cfg.run.resume_from).index("epoch:")
+            import re
+            p = re.compile("[0-9]+")
+            from_epoch = int(p.search(str(cfg.run.resume_from)[i:]).group(0))
+        except ValueError or AttributeError:
+            if 'epoch' in checkpoint:
+                from_epoch = checkpoint['epoch']
+            else:
+                log.warn("Modelcheckpint does not contain epoch information")
+
+        log.info(f"Epoch is {from_epoch}, running for {cfg.run.epochs}")
+        current_epoch = range(from_epoch + 1, cfg.run.epochs + 1)
+  
+        if 'model_state_dict' not in checkpoint:
+            log.error("Can not load checkpoint with no model_state_dict")
+            raise KeyError
+        if 'optimizer_state_dict' not in checkpoint:
+            log.error("Can not load checkpoint with no optimizer_state_dict")
+            raise KeyError
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        metrics = {}
+        if 'metrics' not in checkpoint:
+            log.warn("no metrics found in checkpoint")
+        else:
+            metrics = checkpoint['metrics']
     else:
         log.info(f"Starting new training")
         current_epoch = range(cfg.run.epochs + 1)
@@ -95,8 +134,7 @@ def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.Dat
 
         # save model checkpoint
         if epoch % cfg.run.save_epoch_interval == 0:
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S,%f')[:-3]
-            torch.save(model.state_dict(), f'model_{timestamp}_{epoch}')
+            torch.save(model.state_dict(), f'model_{timestamp}__epoch:{epoch}')
         
         # advance learning rate
         scheduler.step()

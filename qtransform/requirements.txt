@@ -1,5 +1,10 @@
+colorlog
 tzdata
 datasets
 torch 
 hydra-core
+setuptools_rust
 tiktoken
+tensorboard
+brevitas
+torchvision

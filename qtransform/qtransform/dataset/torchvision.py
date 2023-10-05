@@ -10,23 +10,21 @@ from omegaconf import DictConfig
 import logging
 log = logging.getLogger(__name__)
 
-class TorchvisionDataset(Dataset, DatasetInfo, DatasetWrapper):
+class TorchvisionDataset(DatasetInfo, DatasetWrapper):
     def __init__(self) -> None:
         pass
-    def load_dataset():
-        pass
+    def load_dataset(cfg: DictConfig) -> Dataset:
+        available_datasets = get_classes(datasets, Dataset)
+        if cfg.name not in available_datasets:
+            log.error(f"Dataset {cfg.name} not found in {datasets.__package__}")
+            raise KeyError
+        
+        # TODO find good structure for all our data
+        root_path = os.path.join(cfg.root_path, "data", "torchvision", "datasets", cfg.name)
+        transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
+        train = available_datasets[cfg.name](root=root_path, train=True, download=True, transform=transform)
+        test = available_datasets[cfg.name](root=root_path, train=False, transform=transform)
+        return train, test
+
     def get_dataloader() -> DataLoader:
         return None
-
-def load_dataset(name, cfg: DictConfig) -> Dataset:
-    available_datasets = get_classes(datasets, Dataset)
-    if name not in available_datasets:
-        log.error(f"Dataset {name} not found in {datasets.__package__}")
-        raise KeyError
-    
-    # TODO find good structure for all our data
-    root_path = os.path.join(cfg.root_path, "data", "torchvision", "datasets", name)
-    transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
-    train = available_datasets[name](root=root_path, train=True, download=True, transform=transform)
-    test = available_datasets[name](root=root_path, train=False, transform=transform)
-    return train, test

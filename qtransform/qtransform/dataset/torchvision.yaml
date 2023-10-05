@@ -1,6 +1,7 @@
+wrapper: TorchvisionDataset #name of class within torchvision.py
 module: torchvision
 name: ???
-
+type: torchvision
 args:
   split: 0.2
 

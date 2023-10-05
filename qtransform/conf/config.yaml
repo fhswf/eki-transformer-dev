@@ -19,13 +19,28 @@ defaults:
   #- override hydra/hydra_logging: colorlog
 
 data:  
-  dtype: 'bfloat16' # 'float32', 'bfloat16', or 'float16'
+  dtype: 'bfloat16' # 'float32', 'bfloat16', or 'float16'. if llms are used, the dtype has to be supported by torch.Tensor and numpy
 device : 'cuda'
 debug: False
 
 dataset:
+  wrapper: ??? #name of dataset wrapper to use which returns an instance of type Dataset
   root_path: ~/.qtransform/cache
-
+  #points to the directory containing the dataset used for training/validation etc. 
+  #the list is composed of subentries under root_path (root_path included) in hierarchical order
+  #the filename of the dataset is not included as it could be split into multiple files (take MNIST for example)
+  dataset_dir: 
+    - ${dataset.root_path}
+    - data
+    - ${dataset.name}
+  tokenizer: 
+      dataset_dir: 
+        - ${dataset.root_path}
+        - data
+        - ${dataset.name}
+      #name of dataset
+      name: ${dataset.name}
+      dtype: ${data.dtype}
 seed: 1234567890
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.

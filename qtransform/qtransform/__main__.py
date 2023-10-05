@@ -24,9 +24,6 @@ def main(cfg: DictConfig):
         case "train":          
             from qtransform.run import train
             return  train.run(cfg)
-        case "eval":
-            from qtransform.run import test
-            return  test.run(cfg)
         case "bench":
             from qtransform.run import bench
             return  bench.run(cfg)

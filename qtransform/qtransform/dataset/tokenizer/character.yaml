@@ -1,0 +1,2 @@
+wrapper: CharacterTokenizer
+encoding: character #ignored, character encoding
