@@ -73,7 +73,7 @@ def _get_module(module_name, package_name = None, scope = None):
 def concat_paths(paths: list) -> str:
     """
         Concatinates paths of a list by joining them with os.path.join.
-        In order to avoid issues, the shortcut ~ is translated into the directory of the user 
+        In order to avoid issues, the shortcut ~ is translated into the home directory of the user 
         executing the module.
     """
     if paths == None or len(paths) == 0:
@@ -84,11 +84,11 @@ def concat_paths(paths: list) -> str:
         main_path = join(main_path, path)
     return main_path
 
-def get_dtype(dtype: str) -> np_dtype:
+def get_dtype(dtype_alias: str) -> np_dtype:
     dtype = None
     try:
-        dtype = np_dtype(dtype)
+        dtype = np_dtype(dtype_alias)
     except:
-        log.critical(f'Datatype {dtype} not found within numpy datatype scope')
+        log.critical(f'Datatype {dtype_alias} not found within numpy datatype scope')
         raise KeyError()
     return dtype

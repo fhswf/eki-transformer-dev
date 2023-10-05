@@ -62,4 +62,5 @@ class CharacterTokenizer(Tokenizer):
             mkdir(output_dir)
         with open(output_dir + filename + '-meta.pkl', 'wb') as f:
             pickle.dump(meta, f)
+        #write numpy array to a binary file
         ids.tofile(output_dir + filename + ".bin")
