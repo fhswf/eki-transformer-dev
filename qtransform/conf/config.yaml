@@ -19,7 +19,7 @@ defaults:
   #- override hydra/hydra_logging: colorlog
 
 data:  
-  dtype: 'bfloat16' # 'float32', 'bfloat16', or 'float16'. if llm is used, np dtypes are necessary
+  dtype: 'bfloat16' # 'float32', 'bfloat16', or 'float16'. if llms are used, the dtype has to be supported by torch.Tensor and numpy
 device : 'cuda'
 debug: False
 
@@ -33,6 +33,14 @@ dataset:
     - ${dataset.root_path}
     - data
     - ${dataset.name}
+  tokenizer: 
+      dataset_dir: 
+        - ${dataset.root_path}
+        - data
+        - ${dataset.name}
+      #name of dataset
+      name: ${dataset.name}
+      dtype: ${data.dtype}
 seed: 1234567890
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.
