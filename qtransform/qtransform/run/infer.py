@@ -9,7 +9,7 @@ def run(cfg : DictConfig):
     log.info("=================")
     log.info("Running Inference")
     log.info("=================")
-
+    return
     cuda = None
     device = None
     if "cuda" in cfg:
@@ -42,7 +42,7 @@ def run(cfg : DictConfig):
     return infer(cfg, model)
 
 
-def infer(cfg: DictConfig, model: nn.Model):
+def infer(cfg: DictConfig, model: nn.Module):
     """
     Sample from a trained model
     """
