@@ -11,6 +11,7 @@ from torch.utils import data
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import torch.nn.functional as F
+from qtransform.utils import load_checkpoint, save_checkpoint
 
 log = logging.getLogger(__name__)
 
@@ -87,42 +88,11 @@ def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.Dat
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
     epochs_to_run = None
-    if "resume_from" in cfg.run and cfg.run.resume_from:
-        log.info(f"Resuming training from {cfg.run.resume_from}")
-
-        chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
-        if "model_dir" in cfg.run:
-            if os.path.isabs(cfg.run.resume_from):
-                checkpoint_path = cfg.run.resume_from
-                if not os.path.isfile(checkpoint_path):
-                    log.error(f"Checkpoint {checkpoint_path} is not a file")
-            elif os.path.isabs(cfg.run.model_dir) and not os.path.isabs(cfg.run.resume_from):
-                chkpt_folder = cfg.run.model_dir
-                checkpoint_path = os.path.join(chkpt_folder, cfg.run.resume_from) 
-                if not os.path.isfile(checkpoint_path):
-                    log.error(f"Checkpoint {checkpoint_path} is not a file")
-                    raise FileNotFoundError
-            elif not os.path.isabs(cfg.run.model_dir) and not os.path.isabs(cfg.run.resume_from):
-                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
-                checkpoint_path = os.path.join(chkpt_folder, cfg.run.resume_from)
-
-        log.info(f"Loading checkpoint from {checkpoint_path}")
-        from_epoch = 0    
-        checkpoint = torch.load(checkpoint_path)
-        if 'epoch' in checkpoint:
-            from_epoch = checkpoint['epoch']
-        else:
-            try:
-                i = str(cfg.run.resume_from).index("epoch:")
-                import re
-                p = re.compile("[0-9]+")
-                from_epoch = int(p.search(str(cfg.run.resume_from)[i:]).group(0))
-            except ValueError or AttributeError:
-                log.warn("Modelcheckpint does not contain epoch information")
-                    
+    if "from_checkpoint" in cfg.run and cfg.run.from_checkpoint:
+        log.info(f"Resuming training from {cfg.run.from_checkpoint}")
+        from_epoch, checkpoint = load_checkpoint(cfg)
         log.info(f"Epoch is {from_epoch}, running for {cfg.run.epochs}")
         cfg.run.epochs = from_epoch + cfg.run.epochs
-        epochs_to_run = range(from_epoch + 1, cfg.run.epochs + 1)
   
         if 'model_state_dict' not in checkpoint:
             log.error("Can not load checkpoint with no model_state_dict")
@@ -133,10 +103,12 @@ def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.Dat
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         metrics = {}
+        
         if 'metrics' not in checkpoint:
             log.warn("no metrics found in checkpoint")
         else:
             metrics = checkpoint['metrics']
+        epochs_to_run = range(from_epoch + 1, cfg.run.epochs + 1)
     else:
         log.info(f"Starting new training")
         epochs_to_run = range(1, cfg.run.epochs + 1)
@@ -151,31 +123,11 @@ def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.Dat
         #if epoch % cfg.run.eval_epoch_interval == 0:
         #    eval_result = eval_model(cfg, device, model, eval_data)
         #    # TODO log data
-
-        # save model checkpoint
-        # in case we want this stuff to be configurable via env, then this should maybe be handled by hydra
-        #if  __package__.split(".")[0].upper() + "_" + "model_dir".upper() in os.environ:
-        #    chkpt_folder = __package__.split(".")[0].upper() + "_" + "model_dir".upper()
-        #else:
-
-        chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
-        if "model_dir" in cfg.run:
-            if os.path.isabs(cfg.run.model_dir):
-                chkpt_folder = cfg.run.model_dir
-            else:
-                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
-        os.makedirs(chkpt_folder, exist_ok=True)
         if epoch % cfg.run.save_epoch_interval == 0:
-            checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{timestamp}__epoch:{epoch}')
-            torch.save(obj={
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "epoch": epoch,
-                "metrics": metrics,
-                }, f=checkpoint_path)
-            log.info(f"Model checkpoint saved to {checkpoint_path}")
-        # advance learning rate
+            save_checkpoint(cfg, model, optimizer, timestamp, metrics, epoch)
+    
         scheduler.step()
+
 
 
 def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.DataLoader,
@@ -203,8 +155,6 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
             ## TODO tensorboard logging and other types of reporting
 
     return last_loss    
-
-
 
 
 

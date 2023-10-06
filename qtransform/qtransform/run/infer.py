@@ -9,7 +9,7 @@ def run(cfg : DictConfig):
     log.info("=================")
     log.info("Running Inference")
     log.info("=================")
-    return
+    
     cuda = None
     device = None
     if "cuda" in cfg:
@@ -32,7 +32,6 @@ def run(cfg : DictConfig):
     else:
         device = torch.device("cpu")
     log.info(f"using device: {str(device)}")
-    log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
     from qtransform.model import get_model
     model = get_model(cfg.model)
@@ -60,7 +59,7 @@ def infer(cfg: DictConfig, model: nn.Module):
     compile = False # use PyTorch 2.0 to compile the model to be faster
     exec(open('configurator.py').read()) # overrides from command line or config file
     # -----------------------------------------------------------------------------
-
+    
     # model
     if init_from == 'resume':
         # init from a model saved in a specific directory
