@@ -44,3 +44,6 @@ dataset:
 seed: 1234567890
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.
+
+model: 
+  calc_loss_in_model: False #loss is not calculated in model

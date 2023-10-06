@@ -189,9 +189,11 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
         # TODO 
         #data.to(device)
         inputs, labels = data
-
-        outputs = model(inputs)
-        loss = F.nll_loss(outputs, labels)
+        if cfg.model.calc_loss_in_model:
+            outputs, loss = model(inputs, labels)
+        else:
+            outputs = model(inputs)
+            loss = F.nll_loss(outputs, labels)
         loss.backward()
         optimizer.step()
 
