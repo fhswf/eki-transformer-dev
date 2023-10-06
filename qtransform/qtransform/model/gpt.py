@@ -8,6 +8,26 @@ from torch import nn as nn
 from torch.nn import functional as F
 from qtransform.model.modules import LayerNorm, TransformerBlock 
 from brevitas import nn as qnn
+
+
+from abc import ABC, abstractmethod
+class Model(ABC):
+    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+        """ foward pass, generating num_tokens"""    
+        raise NotImplementedError
+    def get_num_params(self):
+        """ get the number of trainable model params """
+        raise NotImplementedError
+    @abstractmethod
+    def get_config(self):
+        """ return model config """
+        raise NotImplementedError
+    def estimate_size(self):
+        """
+        Get an estimate of the raw size of the model. 
+        This does not refelct the required size during training and might also not be accurate in your hardware.
+        """
+        raise NotImplementedError
     
 @dataclass
 class GPTConfig:
