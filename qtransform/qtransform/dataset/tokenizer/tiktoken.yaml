@@ -1,2 +1,2 @@
-wrapper: tiktoken
+wrapper: TikTokenizer
 encoding: ???

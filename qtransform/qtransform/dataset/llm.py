@@ -27,7 +27,9 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
         dtype = get_dtype(data_cfg.dtype)
         log.info(f'Loading dataset: {data_cfg.name}, with encoding: {data_cfg.tokenizer.encoding} and dtype: {data_cfg.dtype}')
         if not os.path.exists(root_path):
+            #no instance, only classname
             tokenizer: Tokenizer = get_tokenizer(data_cfg.tokenizer)
+            log.critical(f'{data_cfg.tokenizer}')
             tokenizer.tokenize(data_cfg.tokenizer)
         split = data_cfg.args.split
         if split == None:
