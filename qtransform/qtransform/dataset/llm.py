@@ -69,8 +69,9 @@ class _FileSystemLLMDataset(Dataset):
         offset -= offset % self.bytes
         #skip the first start * amnt_tokens and the last amnt_tokens * end items
         log.debug(f'Tokenized file has {amnt_tokens} tokens of datatype: {dtype}. Attempting to start at token: {offset}')
-        self.data = np.memmap(self.token_file, dtype=self.datatype, mode='r', offset=offset)[:int(amnt_tokens * end)]
-        log.debug(f'memmap has been created with dtype: {dtype}')
+        #torch.nn.Embedding only takes inputs of type int (32b, 64b)
+        self.data = np.memmap(self.token_file, dtype=self.datatype, mode='r', offset=offset)[:int(amnt_tokens * end)].astype(np.int64)
+        #log.debug(f'all unique tokens in dataset: {set(self.data)}, length: {len(set(self.data))}')
         self.length = len(self.data)
         self.block_size = block_size
         if self.length < self.block_size:
