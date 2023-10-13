@@ -79,11 +79,28 @@ def run(cfg: DictConfig):
     loss = checkpoint['loss']
     """
     # lets go
-        
-    train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
+    quant_cfg = cfg.get('quant')
+    if quant_cfg and quant_cfg.quantize:    
+        from qtransform.quant import get_quantized_model
+        #add qat qparams (scale and zero)
+        model = get_quantized_model(model, cfg)
+        from torch.ao.quantization import quantize_qat, convert
+        #calibrate the scales for each weight and activation
+        quantize_qat(model, 
+                    train, 
+                    #omited parameter: model
+                    [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp], 
+                    inplace=False)    
+        #actually quantize the model by applying the qparams to the weight
+        model = convert(model)
+        for param in model.params():
+            log.warning(f'param: {param}, dtype: {param.dtype}')
+
+    else:
+        train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
 
-def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
+def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
     epochs_to_run = None
@@ -157,7 +174,8 @@ def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.Dat
         #if  __package__.split(".")[0].upper() + "_" + "model_dir".upper() in os.environ:
         #    chkpt_folder = __package__.split(".")[0].upper() + "_" + "model_dir".upper()
         #else:
-
+        if epoch % 100 == 0:
+            return
         chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
         if "model_dir" in cfg.run:
             if os.path.isabs(cfg.run.model_dir):
@@ -166,7 +184,7 @@ def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.Dat
                 chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
         os.makedirs(chkpt_folder, exist_ok=True)
         if epoch % cfg.run.save_epoch_interval == 0:
-            checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{timestamp}__epoch:{epoch}')
+            checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{timestamp}__epoch_{epoch}')
             torch.save(obj={
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),

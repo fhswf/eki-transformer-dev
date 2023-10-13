@@ -1,0 +1,11 @@
+quantize: True
+kind: qat #ptq, dtq
+#initial clipping range for the scale is set to be an exact mapping from float to int8
+args:
+    dtype: qint8 #quantizated dtype, have to see if conventional dtypes are allowed
+    scheme: affine #https://pytorch.org/docs/stable/quantization-support.html#quantized-dtypes-and-quantization-schemes
+    observer: minmax #minmax: chooses the clipping range based on the min and max value of the tensor. for other observers, view pytorch quantization api
+    #scope: either tensor or channel
+    #tensor: qparams (scale and zero value) is applied to an entire layer; 
+    #channel: qparams are applied for each weight within the layer
+    scope: tensor 
