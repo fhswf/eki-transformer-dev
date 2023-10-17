@@ -51,3 +51,4 @@ model:
 
 quant:
   quantize: False
+  device: ${device}

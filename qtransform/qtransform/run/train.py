@@ -80,21 +80,19 @@ def run(cfg: DictConfig):
     """
     # lets go
     quant_cfg = cfg.get('quant')
+    #calibration of qparams
     if quant_cfg and quant_cfg.quantize:    
         from qtransform.quant import get_quantized_model
         #add qat qparams (scale and zero)
-        model = get_quantized_model(model, cfg)
-        from torch.ao.quantization import quantize_qat, convert
+        model, convert, quantize_qat = get_quantized_model(model, quant_cfg)
         #calibrate the scales for each weight and activation
         quantize_qat(model, 
                     train, 
                     #omited parameter: model
                     [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp], 
                     inplace=False)    
-        #actually quantize the model by applying the qparams to the weight
+        #actually quantize the model by applying the qparams to the corresponding weights
         model = convert(model)
-        for param in model.params():
-            log.warning(f'param: {param}, dtype: {param.dtype}')
 
     else:
         train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
