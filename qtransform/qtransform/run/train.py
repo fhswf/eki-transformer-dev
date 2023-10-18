@@ -82,17 +82,23 @@ def run(cfg: DictConfig):
     quant_cfg = cfg.get('quant')
     #calibration of qparams
     if quant_cfg and quant_cfg.quantize:    
-        from qtransform.quant import get_quantized_model
+        quant_cfg.device = device.type
+        from qtransform.quant import TorchQuant#get_quantized_model
         #add qat qparams (scale and zero)
-        model, convert, quantize_qat = get_quantized_model(model, quant_cfg)
+        model, convert, calibrate = TorchQuant.get_quantized_model(model, quant_cfg)
         #calibrate the scales for each weight and activation
-        quantize_qat(model, 
+        model = calibrate(model, 
                     train, 
                     #omited parameter: model
                     [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp], 
-                    inplace=False)    
+                    inplace=False)
+        log.debug(f'Quantized model: \n{model}')    
         #actually quantize the model by applying the qparams to the corresponding weights
+        #if present, the (de)quant stubs are replaced with (de)quantize operations respectively
         model = convert(model)
+        output_path = os.path.join('outputs/models',f'quantized_{cfg.model.cls}_{timestamp}')
+        torch.save(model, output_path)
+        log.info(f'Quantized model saved in \"{output_path}\"')
 
     else:
         train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
@@ -205,11 +211,16 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
         # TODO 
         #data.to(device)
         inputs, labels = data
+        if model.quant:
+            #fake quantize inputs
+            inputs = model.quant(inputs)
         if cfg.model.calc_loss_in_model:
             outputs, loss = model(inputs, labels)
         else:
             outputs = model(inputs)
             loss = F.nll_loss(outputs, labels)
+        if model.dequant:
+            outputs = model.dequant(outputs)
         loss.backward()
         optimizer.step()
 
