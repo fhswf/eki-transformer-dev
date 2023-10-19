@@ -1,40 +1,26 @@
 import torch
 import torch.nn as nn
-import torch.ao.quantization as quant #eager mode quantization api (https://pytorch.org/docs/stable/quantization-support.html#quantization-api-reference)
-from omegaconf import DictConfig
+import torch.ao.quantization as qnn #eager mode quantization api (https://pytorch.org/docs/stable/quantization-support.html#quantization-api-reference)
 import logging
 from dataclasses import dataclass
 from qtransform.utils.introspection import get_classes
 from typing import Tuple
+from qtransform.quantization import QuantConfig, Quantizer
 
+log = logging.getLogger(__package__)
 
-log = logging.getLogger(__name__)
-#dtypes = [torch.qint8, torch.quint8, torch.quint32]
-
-"""
-    Supported quant Layers by Brevitas:
-    quant_eltwise, quant_convtranspose, quant_max_pool, quant_accumulator, 
-    quant_rnn, quant_linear, quant_activation, quant_avg_pool, quant_upsample, equalized_layer, utils, quant_mha, quant_embedding, 
-    quant_dropout, quant_conv, quant_bn, quant_scale_bias, hadamard_classifier, __init__, quant_layer
-"""
-
-@dataclass
-class QuantArgs:
-    dtype: str
-    observer: str
-    scheme: str
-    scope: str
-
-@dataclass
-class QuantConfig():
-    quantize: bool
-    kind: str
-    device: str
-    args: QuantArgs
-
-class TorchQuant():
+#DeprecationWarning prevents this class from being found by qtransform.classloader.get_data()
+#@DeprecationWarning
+class TorchQuantizer(Quantizer):
+    """
+        Deprecated implementation of pytorch QAT based on a hydra qconfig file. It quantizes a model in CPU.
+        It is not used within this project as GPU support is not natively provided by Torch and instead done with TensorRT. 
+        This results in license complications.
+    """
+    def __init__(self, quant_cfg: QuantConfig):
+        super().__init__(quant_cfg)
     #TODO: Support BackendConfig (https://pytorch.org/docs/stable/generated/torch.ao.quantization.backend_config.BackendConfig.html#torch.ao.quantization.backend_config.BackendConfig)
-    def get_quantized_model(model: nn.Module, quant_cfg: DictConfig) -> Tuple[nn.Module, any, any]:
+    def get_quantized_model(self, model: nn.Module) -> nn.Module:
         """
             !!!This function only supports CPU Quantization currently as Torch GPU Quantization requires TensorRT!!!
 
@@ -45,15 +31,12 @@ class TorchQuant():
             needed to train the model and convert it supporting the torch backend it is supposed to train on.
             The returned model is not quantized yet, that has to be done with the supplied convert method.
         """
-        log.debug(f'Quantizing with parameters: {quant_cfg}')
         #based on quant_cfg return functions for quantization
-        convert_fn: function = quant.convert
-        prepare_fn: function = quant.prepare_qat
-        quantize_fn: function = quant.quantize_qat
-
-        q_cfg = QuantConfig(**quant_cfg)
+        self.convert_fn: function = qnn.convert
+        self.prepare_fn: function = qnn.prepare_qat
+        self.quantize_fn: function = qnn.quantize_qat
         #eager mode quantization supports cpu, fxgraph supports gpu
-        if q_cfg.device == 'cuda':
+        if self.quant_cfg.device == 'cuda':
             
             #from platform import processor
             #backend = 'x86' if 'x86' in processor() else 'qnnpack'
@@ -61,20 +44,20 @@ class TorchQuant():
             raise ValueError()
             #import torch.ao.quantization.quantize_fx as quant_fx #for gpu support
             #backend = 'TensorRT'
-            #convert_fn = quant_fx.convert_fx
-            #prepare_fn = quant_fx.prepare_qat_fx
-        elif q_cfg.device == 'cpu':
+            #self.convert_fn = quant_fx.convert_fx
+            #self.prepare_fn = quant_fx.prepare_qat_fx
+        elif self.quant_cfg.device == 'cpu':
             #only x86 and ARM are supported currently
             from platform import processor
             backend = 'x86' if 'x86' in processor() else 'qnnpack'
         else:
-            log.warning(f'Pytorch quantization currently only supports CPU and GPU devices, not {q_cfg.device}. Unexpected behavior might happen.')
+            log.warning(f'Pytorch quantization currently only supports CPU and GPU devices, not {self.quant_cfg.device}. Unexpected behavior might happen.')
         torch.backends.quantized.engine = backend
         log.debug(f'Using backend: {torch.backends.quantized.engine} for quantization')
         model = model.train()
 
         #scheme
-        _qscheme = 'per_' + q_cfg.args.scope + '_' + q_cfg.args.scheme
+        _qscheme = 'per_' + self.quant_cfg.args.scope + '_' + self.quant_cfg.args.scheme
         try:
             qscheme =  getattr(torch, _qscheme)
         except AttributeError:
@@ -82,23 +65,23 @@ class TorchQuant():
             qscheme = torch.per_channel_affine
 
         #only QAT is supported currently
-        if q_cfg.kind == 'qat':
-            #fake quant
-            model.quant = quant.QuantStub()
-            model.dequant = quant.DeQuantStub() 
+        if self.quant_cfg.kind == 'qat':
+            #fake quant, TODO: dynamically add quant to beginning of forward and dequant to end of forward
+            model.quant = qnn.QuantStub()
+            model.dequant = qnn.DeQuantStub() 
             try:
-                dtype: torch.dtype = getattr(torch, q_cfg.args.dtype)
+                dtype: torch.dtype = getattr(torch, self.quant_cfg.args.dtype)
             except AttributeError:
-                log.warning(f'Cannot quantize model with dtype: {quant_cfg.dtype}. Defaulting to qint8')
+                log.warning(f'Cannot quantize model with dtype: {self.quant_cfg.dtype}. Defaulting to qint8')
                 dtype: torch.dtype = torch.qint8
             quant_max = torch.iinfo(dtype).max
             quant_min = torch.iinfo(dtype).min
-            activation=quant.observer.MinMaxObserver.with_args(dtype=dtype, quant_min = quant_min, quant_max = quant_max, qscheme=qscheme)
-            weight=quant.observer.default_observer.with_args(dtype=dtype, quant_min = quant_min, quant_max = quant_max, qscheme=qscheme)
-            model.qconfig = quant.qconfig.QConfig(weight, activation)
+            activation=qnn.observer.MinMaxObserver.with_args(dtype=dtype, quant_min = quant_min, quant_max = quant_max, qscheme=qscheme)
+            weight=qnn.observer.default_observer.with_args(dtype=dtype, quant_min = quant_min, quant_max = quant_max, qscheme=qscheme)
+            model.qconfig = qnn.qconfig.QConfig(weight, activation)
             #adds qparams to the model directly without copying it for memory usage reasons
             try:
-                model_qat = prepare_fn(model, inplace=True)
+                model_qat = self.prepare_fn(model, inplace=False)
             except torch.fx.proxy.TraceError:
                 log.error(f'Model cannot be quantized without changing its structure due Torch\'s FXGraph Quant API requiring models to be symbolically traceable.')
                 #TODO: Change structure of model
@@ -107,4 +90,15 @@ class TorchQuant():
             log.critical(f'No quantization options other than QAT are supported as of currently.')
             raise ValueError()
         #depending on quant_config return the next steps for quantization
-        return model_qat, convert_fn, quantize_fn
+        return model_qat
+    
+    def train_qat(self, model: nn.Module, function: any, args: list) -> nn.Module:   
+        log.info(f'Performing QAT with torch quantization framework.')
+        return self.quantize_fn(model, function, args, inplace = False)
+    
+    def export_model(self, model: nn.Module, filepath: str) -> None:
+        #actually quantize the model by applying the qparams to the corresponding weights
+        #if present, the (de)quant stubs are replaced with (de)quantize operations respectively
+        model = self.convert_fn(model.eval())
+        torch.save(model, filepath)
+        log.info(f'Quantized model saved in \"{filepath}\"')

@@ -13,7 +13,7 @@ defaults:
   - dataset: openwebtext
   - optim: default
   - run: ???
-  - quant: None
+  - quantization: None
   - override hydra/job_logging: custom
   - override hydra/help: main
   #- override hydra/job_logging: colorlog
@@ -49,6 +49,6 @@ seed: 1234567890
 model: 
   calc_loss_in_model: False #loss is not calculated in model
 
-quant:
+quantization:
   quantize: False
   device: ${device}

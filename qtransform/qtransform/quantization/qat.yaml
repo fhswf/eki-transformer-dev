@@ -1,6 +1,8 @@
 quantize: True
 kind: qat #ptq, dtq
+type: TorchQuantizer #The Framework that supports quantization, appended with Quantizer (corresponds to the classes in this package)
 #initial clipping range for the scale is set to be an exact mapping from float to int8
+#TODO: unify torch and brevitas configs
 args:
     dtype: qint8 #qint8, quint8, qint32
     #scheme: either affine or symmetric

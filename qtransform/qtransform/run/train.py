@@ -79,27 +79,18 @@ def run(cfg: DictConfig):
     loss = checkpoint['loss']
     """
     # lets go
-    quant_cfg = cfg.get('quant')
-    #calibration of qparams
+    quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:    
         quant_cfg.device = device.type
-        from qtransform.quant import TorchQuant#get_quantized_model
+        from qtransform.quantization import get_quantizer
+        quantizer = get_quantizer(quant_cfg)
         #add qat qparams (scale and zero)
-        model, convert, calibrate = TorchQuant.get_quantized_model(model, quant_cfg)
+        model = quantizer.get_quantized_model(model)
         #calibrate the scales for each weight and activation
-        model = calibrate(model, 
-                    train, 
-                    #omited parameter: model
-                    [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp], 
-                    inplace=False)
+        model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
         log.debug(f'Quantized model: \n{model}')    
-        #actually quantize the model by applying the qparams to the corresponding weights
-        #if present, the (de)quant stubs are replaced with (de)quantize operations respectively
-        model = convert(model)
         output_path = os.path.join('outputs/models',f'quantized_{cfg.model.cls}_{timestamp}')
-        torch.save(model, output_path)
-        log.info(f'Quantized model saved in \"{output_path}\"')
-
+        model = quantizer.export_model(model, output_path)
     else:
         train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
