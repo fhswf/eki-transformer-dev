@@ -6,7 +6,46 @@ from omegaconf import DictConfig
 from typing import Tuple, Union
 from dataclasses import dataclass
 from qtransform.classloader import get_data
+from enum import Enum
+from brevitas.inject.enum import FloatToIntImplType
 
+
+#TODO: refactor config in quantizers for new yaml config and create configs for each layer
+
+class QuantScope(Enum):
+    TENSOR = 1
+    CHANNEL = 2
+
+@dataclass
+class GenericQuantArgs:
+    signed: bool
+    bit_width: 8 #if pytorch is used: bit_width restricted to 8 or 32 for int, 16 for float
+    #https://pytorch.org/docs/stable/quantization-support.html#quantized-dtypes-and-quantization-schemes
+    scheme: str #affine or symmetric
+    #TODO: apparently for brevitas, minmax is applied with two properties instead of one
+    #   -> scaling_impl_type = ScalingImplType.STATS to let the scale be based off of statisstics
+    #   -> scaling_stats_op = StatsOp.MAX to make the clipping range be based off of minmax values
+    scaling_impl_type: str #specify how the clipping range for the scale qparam is applied. minmax: take min and max value of scope
+    #scope: either tensor or channel
+    #tensor: qparams (scale and zero value) is applied to an entire layer; 
+    #channel: qparams are applied for each weight within the layer
+    scope: QuantScope
+    ######PARAMS BELOW ONLY SUPPORTED BY BREVITAS#####
+    quant_type: str #INT, BINARY, TERNARY, FP (floating point)
+    bit_width_learnable: bool #if set to true: bit width is backpropagated and optimized (e.g. from 8 bits to 17 bits after calibration)
+    float_to_int_impl_type: FloatToIntImplType #sets how quantized values are clipped, other options: CEIL, FLOOR, ROUND_TO_ZERO, DPU, LEARNED_ROUND
+    zero_point_impl: str #zzpoint: zero qparam is always 0, other options: classes from brevitas.core.zero_point
+
+@dataclass
+class WeightQuantArgs(GenericQuantArgs):
+    pass
+
+@dataclass
+class ActQuantArgs(GenericQuantArgs):
+    max_value: Union[float, None]
+    min_value: Union[float, None]
+
+@DeprecationWarning
 @dataclass
 class QuantArgs:
     signed: bool
@@ -18,6 +57,7 @@ class QuantArgs:
     max_value: Union[int, None]
     min_value: Union[int, None]
 
+@DeprecationWarning
 @dataclass
 class QuantConfig():
     quantize: bool

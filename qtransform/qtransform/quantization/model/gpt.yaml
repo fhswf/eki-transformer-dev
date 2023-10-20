@@ -5,6 +5,7 @@
 #idea: iterate through all nn.Module elements within the quant script and manually set the quant parameters based on this yaml config
 #problem: apply correct properties to corresponding layer based on name
 #problem: call brevitas config efficiently with properties (QuantLinear(**kwargs))
+#TODO: translate premade configs from brevitas classes into yaml files 
 name: gpt
 model:
   transformer:

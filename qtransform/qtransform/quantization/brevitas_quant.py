@@ -1,4 +1,5 @@
 from brevitas import nn as qnn
+from brevitas.quant import scaled_int as scaled_int
 import brevitas
 from torch.nn import Module
 import logging
@@ -12,38 +13,19 @@ from omegaconf import DictConfig
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
 #the default for linear layers is for example Int8WeightPerTensorFloat (8 bits, int, per tensor, etc.)
 
-@dataclass 
-class ModelQuantConfig():
-    name: str
-    model: DictConfig #key-value pair of each layer within the model along with its quantization parameters
-
-@dataclass
-class WeightConfig():
-    """
-        Configuration to override the attributes from brevitas quantizers (e.g. Int8WeightPerTensorFloat).
-    """
-    bit_width: int
-    signed: bool
-    scaling_per_output_channel: bool #Scope of scale for weights; False: per tensor, True: per channel
-    pass
-
-@dataclass 
-class ActivationConfig():
-    pass
-
 log = logging.getLogger(__package__)
 
 class BrevitasQuantizer(Quantizer):
     """
         Quantizes a model based on a specified hydra configuration based on the brevitas framework (https://github.com/Xilinx/brevitas).
         As it stands, the dev branch of brevitas is used for quantization. As opposed to pytorch, brevitas offers native GPU
-        quantization as well as allowing quantization on a specified number of bits. 
+        quantization as well as allowing quantization on a specified number of bits among other hyperparameters specified in the .yaml files of this module.
     """
     def get_quantized_model(self, model: Module) -> Module:
 
-        for module_name, quant_args in ModelQuantConfig().model.items():
-            
-            #
+        for module_name, quant_args in self.quant_cfg:
+            pass
+            #replace old submodule with quantized module
             new_module = ""
             model[module_name] = new_module
 
