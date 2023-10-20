@@ -3,22 +3,27 @@ from abc import ABC, abstractclassmethod
 import logging
 from torch.nn import Module
 from omegaconf import DictConfig
-from typing import Tuple
+from typing import Tuple, Union
 from dataclasses import dataclass
 from qtransform.classloader import get_data
 
 @dataclass
 class QuantArgs:
-    dtype: str
+    signed: bool
+    bit_width: int
+    #dtype: str
     observer: str
     scheme: str
     scope: str
+    max_value: Union[int, None]
+    min_value: Union[int, None]
 
 @dataclass
 class QuantConfig():
     quantize: bool
     type: str
     kind: str
+    models: DictConfig
     device: str
     args: QuantArgs
 

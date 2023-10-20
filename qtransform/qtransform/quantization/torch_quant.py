@@ -1,10 +1,8 @@
+from typing import Tuple, Union
 import torch
 import torch.nn as nn
 import torch.ao.quantization as qnn #eager mode quantization api (https://pytorch.org/docs/stable/quantization-support.html#quantization-api-reference)
 import logging
-from dataclasses import dataclass
-from qtransform.utils.introspection import get_classes
-from typing import Tuple
 from qtransform.quantization import QuantConfig, Quantizer
 
 log = logging.getLogger(__package__)
@@ -37,9 +35,6 @@ class TorchQuantizer(Quantizer):
         self.quantize_fn: function = qnn.quantize_qat
         #eager mode quantization supports cpu, fxgraph supports gpu
         if self.quant_cfg.device == 'cuda':
-            
-            #from platform import processor
-            #backend = 'x86' if 'x86' in processor() else 'qnnpack'
             log.critical(f'Pytorch GPU quantization support requires tensorrt. That is not supported by this project yet.')
             raise ValueError()
             #import torch.ao.quantization.quantize_fx as quant_fx #for gpu support
@@ -49,7 +44,7 @@ class TorchQuantizer(Quantizer):
         elif self.quant_cfg.device == 'cpu':
             #only x86 and ARM are supported currently
             from platform import processor
-            backend = 'x86' if 'x86' in processor() else 'qnnpack'
+            backend = 'x86' if 'x86' in processor() else 'fbgemm'
         else:
             log.warning(f'Pytorch quantization currently only supports CPU and GPU devices, not {self.quant_cfg.device}. Unexpected behavior might happen.')
         torch.backends.quantized.engine = backend
@@ -69,13 +64,11 @@ class TorchQuantizer(Quantizer):
             #fake quant, TODO: dynamically add quant to beginning of forward and dequant to end of forward
             model.quant = qnn.QuantStub()
             model.dequant = qnn.DeQuantStub() 
-            try:
-                dtype: torch.dtype = getattr(torch, self.quant_cfg.args.dtype)
-            except AttributeError:
-                log.warning(f'Cannot quantize model with dtype: {self.quant_cfg.dtype}. Defaulting to qint8')
-                dtype: torch.dtype = torch.qint8
-            quant_max = torch.iinfo(dtype).max
-            quant_min = torch.iinfo(dtype).min
+            dtype = TorchQuantizer.get_dtype(bits=self.quant_cfg.args.bit_width, signed=self.quant_cfg.args.signed)
+            quant_max, quant_min = TorchQuantizer.get_clipping_range_dtype(
+                _quant_max = self.quant_cfg.args.max_value, 
+                _quant_min = self.quant_cfg.args.min_value, 
+                dtype=dtype)
             activation=qnn.observer.MinMaxObserver.with_args(dtype=dtype, quant_min = quant_min, quant_max = quant_max, qscheme=qscheme)
             weight=qnn.observer.default_observer.with_args(dtype=dtype, quant_min = quant_min, quant_max = quant_max, qscheme=qscheme)
             model.qconfig = qnn.qconfig.QConfig(weight, activation)
@@ -102,3 +95,31 @@ class TorchQuantizer(Quantizer):
         model = self.convert_fn(model.eval())
         torch.save(model, filepath)
         log.info(f'Quantized model saved in \"{filepath}\"')
+
+    def get_dtype(bits: int, signed: bool) -> torch.dtype:
+        """
+            Constructs the torch.dtype class from the hydra config based on the bit length and
+            whether the dtype is supposed to capsule negative values or not. It will default
+            to qint8 if it the dtype is not found within torch, currently only int representations
+            are supported by torch quantization (except for qfloat16 which is omited in this project).
+        """
+        _dtype = 'q' + 'u' if signed else '' + 'int' + bits
+        try:
+            dtype: torch.dtype = getattr(torch, _dtype)
+        except AttributeError:
+            log.warning(f'Pytorch does not have dtype: {_dtype}. Defaulting to qint8')
+            dtype: torch.dtype = torch.qint8
+        return dtype
+
+    def get_clipping_range_dtype(_quant_max: Union[int, None], _quant_min: Union[int, None], dtype: torch.dtype) -> Tuple[int, int]:
+        """
+            Infer the clipping range for the pytorch observers based on either the hydra config (if present)
+            or the underlying dtype used during quantization. It returns a tuple with the maximum and minimum
+            value.
+        """
+        log.critical(f'quant_max: {_quant_max} {type(_quant_max)}')
+        if not _quant_max:
+            quant_max = torch.iinfo(dtype).max
+        if not _quant_min:
+            quant_min = torch.iinfo(dtype).min
+        return (quant_max, quant_min)
