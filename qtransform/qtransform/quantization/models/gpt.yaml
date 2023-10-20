@@ -1,0 +1,21 @@
+
+# template for quantization of models 
+
+
+#idea: iterate through all nn.Module elements within the quant script and manually set the quant parameters based on this yaml config
+#problem: apply correct properties to corresponding layer based on name
+#problem: call brevitas config efficiently with properties (QuantLinear(**kwargs))
+name: gpt
+model:
+  transformer:
+    name_layer: 
+      quantized: True
+    name_layer_2:
+      signed: True
+      bits: 0-32
+      scope: tensor #channel
+      symmetry: affine #symmetric
+      max_value: null
+      min_value: null
+  ...
+      
