@@ -57,9 +57,11 @@ def run(cfg: DictConfig):
     model.to(device)
 
     from qtransform.dataset import get_data, get_loader
-    train_data, eval_data = get_data(cfg.dataset)
-    train_datalaoder = get_loader(data=train_data, dataloader_cfg=cfg.dataset.dataloader)
-    eval_dataoader   = get_loader(data=eval_data, dataloader_cfg=cfg.dataset.dataloader)
+    train_datalaoder, eval_dataoader = get_data(cfg.dataset)
+    if not isinstance(train_datalaoder, data.DataLoader):
+        train_datalaoder = get_loader(data=train_datalaoder, dataloader_cfg=cfg.dataset.dataloader)
+    if not isinstance(eval_dataoader, data.DataLoader):
+        eval_dataoader   = get_loader(data=eval_dataoader, dataloader_cfg=cfg.dataset.dataloader)
 
     # from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
@@ -120,14 +122,16 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     # TODO comute more metrics
     last_loss = 0
     running_loss = 0
+    
+    print(str(train_data.dataset))
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
+
         # TODO 
         #data.to(device)
-        inputs, labels = data
-
-        outputs = model(inputs)
-        loss = F.nll_loss(outputs, labels)
+        #log.debug(str(data))
+        log.debug(len(data))
+        outputs, loss = model(data)
         loss.backward()
         optimizer.step()
 

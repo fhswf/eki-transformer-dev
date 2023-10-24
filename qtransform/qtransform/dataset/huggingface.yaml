@@ -1,0 +1,8 @@
+wrapper: HuggingfaceDataset #name of class within torchvision.py
+module: huggingface
+name: ???
+type: huggingface
+args:
+
+defaults:
+  - dataloader/default

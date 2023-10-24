@@ -10,7 +10,7 @@ hydra:
 defaults:
   - _self_
   - model: gpt_2_small
-  - dataset: openwebtext
+  - dataset: ???
   - optim: default
   - run: ???
   - override hydra/job_logging: custom
@@ -18,7 +18,7 @@ defaults:
   #- override hydra/job_logging: colorlog
   #- override hydra/hydra_logging: colorlog
 
-data:  
+data:
   dtype: 'bfloat16' # 'float32', 'bfloat16', or 'float16'. if llms are used, the dtype has to be supported by torch.Tensor and numpy
 device : 'cuda'
 debug: False
@@ -42,5 +42,6 @@ dataset:
       name: ${dataset.name}
       dtype: ${data.dtype}
 seed: 1234567890
+
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.
