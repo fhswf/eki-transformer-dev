@@ -1,72 +1,79 @@
 #dtypes = [torch.qint8, torch.quint8, torch.quint32]
 from abc import ABC, abstractclassmethod
 import logging
+import sys
 from torch.nn import Module
 from omegaconf import DictConfig
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union, Dict
 from dataclasses import dataclass
 from qtransform.classloader import get_data
 from enum import Enum
-from brevitas.inject.enum import FloatToIntImplType
+from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
+from brevitas.jit import ScriptModule
+from brevitas.core.zero_point import __all__
 
 
-#TODO: refactor config in quantizers for new yaml config and create configs for each layer
+#TODO: add bias quantization config
 
-class QuantScope(Enum):
-    TENSOR = 1
-    CHANNEL = 2
+"""
+class QuantConfig(Enum):
+    ACT: str = "act"
+    WEIGHT: str = "weight"
+    BIAS: str = "bias"
+"""
 
-@dataclass
-class GenericQuantArgs:
-    signed: bool
-    bit_width: 8 #if pytorch is used: bit_width restricted to 8 or 32 for int, 16 for float
-    #https://pytorch.org/docs/stable/quantization-support.html#quantized-dtypes-and-quantization-schemes
-    scheme: str #affine or symmetric
-    #TODO: apparently for brevitas, minmax is applied with two properties instead of one
-    #   -> scaling_impl_type = ScalingImplType.STATS to let the scale be based off of statisstics
-    #   -> scaling_stats_op = StatsOp.MAX to make the clipping range be based off of minmax values
-    scaling_impl_type: str #specify how the clipping range for the scale qparam is applied. minmax: take min and max value of scope
-    #scope: either tensor or channel
-    #tensor: qparams (scale and zero value) is applied to an entire layer; 
-    #channel: qparams are applied for each weight within the layer
-    scope: QuantScope
-    ######PARAMS BELOW ONLY SUPPORTED BY BREVITAS#####
-    quant_type: str #INT, BINARY, TERNARY, FP (floating point)
-    bit_width_learnable: bool #if set to true: bit width is backpropagated and optimized (e.g. from 8 bits to 17 bits after calibration)
-    float_to_int_impl_type: FloatToIntImplType #sets how quantized values are clipped, other options: CEIL, FLOOR, ROUND_TO_ZERO, DPU, LEARNED_ROUND
-    zero_point_impl: str #zzpoint: zero qparam is always 0, other options: classes from brevitas.core.zero_point
-
-@dataclass
-class WeightQuantArgs(GenericQuantArgs):
+@dataclass 
+class QuantArgs:
     pass
 
 @dataclass
-class ActQuantArgs(GenericQuantArgs):
-    max_value: Union[float, None]
-    min_value: Union[float, None]
+class WeightQuantArgs(QuantArgs):
+    quant_type : QuantType #Integer, binary, ternary, fixed point integer
+    bit_width_impl_type : BitWidthImplType #is the bit width backpropagated and optimised
+    float_to_int_impl_type : FloatToIntImplType #how should the quantized values be clipped to fit into the quantized datatype
+    narrow_range : bool #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
+    signed : bool #can quantized values take on negative values
+    zero_point_impl : ScriptModule #how is zero point infered
 
-@DeprecationWarning
-@dataclass
-class QuantArgs:
-    signed: bool
-    bit_width: int
-    #dtype: str
-    observer: str
-    scheme: str
-    scope: str
-    max_value: Union[int, None]
-    min_value: Union[int, None]
+    scaling_impl_type : ScalingImplType #how is the scale calculated, for now: statistics
 
-@DeprecationWarning
+    #attributes only applied when scaling_impl_type is statistics
+    scaling_stats_op : StatsOp #max value, minmax etc.
+    scaling_min_val : float #minimum value that the scale is going to have during calibration
+
+    scaling_per_output_channel : bool #per tensor or per channel quantization
+    restrict_scaling_type : RestrictValueType #restrict range of values that scale qparam can have
+    bit_width : int #bit width of quantized values
+
+class BiasQuantArgs(QuantArgs):
+    pass
+
 @dataclass
-class QuantConfig():
+class ActQuantArgs(QuantArgs):
+    """
+        WIP
+    """
+    max_value: Optional[float]
+    min_value: Optional[float]
+
+@dataclass
+class LayerQuantArgs:
     quantize: bool
-    type: str
-    kind: str
-    models: DictConfig
-    device: str
-    args: QuantArgs
+    kind: Optional[str]
+    weight: Optional[WeightQuantArgs]
+    bias: Optional[BiasQuantArgs]
+    act: Optional[ActQuantArgs] #bias/ weight and act cancel each other out
 
+#TODO: find out if Dict works with hydra
+@dataclass
+class SubModuleQuantArgs:
+    name: str
+    layers: Dict[str, LayerQuantArgs]
+
+@dataclass
+class ModelQuantArgs:
+    name: str
+    modules: Dict[str, SubModuleQuantArgs]
 
 """
     Supported torch.nn modules for quantization by Brevitas:
@@ -82,7 +89,7 @@ class Quantizer(ABC):
         As it stands right now, brevitas should be chosen for QAT related purposes.
     """
 
-    def __init__(self, quant_cfg: QuantConfig):
+    def __init__(self, quant_cfg: ModelQuantArgs):
         self.quant_cfg = quant_cfg
     
     @abstractclassmethod
@@ -110,8 +117,11 @@ log = logging.getLogger(__name__)
 import qtransform.quantization as package_self
 
 def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
+    log.warning(_quant_cfg)
     log.debug(f'Quantizing with parameters: {_quant_cfg}')
-    quant_cfg = QuantConfig(**_quant_cfg)
+    quant_cfg = ModelQuantArgs(**_quant_cfg.model)
+    log.debug(quant_cfg)
+    sys.exit(100)
     #get_classes necessary, otherwise a circular import error will occur
     quantizer: Quantizer = get_data(log, package_self, quant_cfg.type, Quantizer, quant_cfg)
     return quantizer

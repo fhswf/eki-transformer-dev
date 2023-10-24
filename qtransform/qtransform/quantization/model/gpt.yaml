@@ -7,16 +7,18 @@
 #problem: call brevitas config efficiently with properties (QuantLinear(**kwargs))
 #TODO: translate premade configs from brevitas classes into yaml files 
 name: gpt
-model:
-  transformer:
-    name_layer: 
-      quantized: True
-    name_layer_2:
-      signed: True
-      bits: 0-32
-      scope: tensor #channel
-      symmetry: affine #symmetric
-      max_value: null
-      min_value: null
-  ...
-      
+modules:
+  transformer: #name of submodule
+    wte: #name of layer
+      quantize: True
+      kind: weight
+      weight: templates/weight_round_minmax.yaml
+      #bias: template_bias
+    gelu:
+      quantize: True
+      kind: act
+      act: 
+        min_value: 0.0
+        max_value: 100.0
+    another_layer:
+      quantize: False
