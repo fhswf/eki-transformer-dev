@@ -4,7 +4,7 @@ import logging
 import sys
 from torch.nn import Module
 from omegaconf import DictConfig
-from typing import Optional, Dict
+from typing import Optional, Dict, get_args
 from dataclasses import dataclass, fields
 from qtransform.classloader import get_data
 from enum import Enum
@@ -23,28 +23,29 @@ class QuantConfig(Enum):
 
 @dataclass 
 class QuantArgs:
-    from_template: bool
-    template: str
     pass
 
 @dataclass
 class WeightQuantArgs(QuantArgs):
-    quant_type : QuantType #Integer, binary, ternary, fixed point integer
-    bit_width_impl_type : BitWidthImplType #is the bit width backpropagated and optimised
-    float_to_int_impl_type : FloatToIntImplType #how should the quantized values be clipped to fit into the quantized datatype
-    narrow_range : bool #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
-    signed : bool #can quantized values take on negative values
-    zero_point_impl : ScriptModule #how is zero point infered
+    """
+        Everything is optional as not every single quantization parameter has to be set in brevitas
+    """
+    quant_type : Optional[QuantType] #Integer, binary, ternary, fixed point integer
+    bit_width_impl_type : Optional[BitWidthImplType] #is the bit width backpropagated and optimised
+    float_to_int_impl_type : Optional[FloatToIntImplType] #how should the quantized values be clipped to fit into the quantized datatype
+    narrow_range : Optional[bool] #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
+    signed : Optional[bool] #can quantized values take on negative values
+    zero_point_impl : Optional[ScriptModule] #how is zero point infered
 
-    scaling_impl_type : ScalingImplType #how is the scale calculated, for now: statistics
+    scaling_impl_type : Optional[ScalingImplType] #how is the scale calculated, for now: statistics
 
     #attributes only applied when scaling_impl_type is statistics
-    scaling_stats_op : StatsOp #max value, minmax etc.
-    scaling_min_val : float #minimum value that the scale is going to have during calibration
+    scaling_stats_op : Optional[StatsOp] #max value, minmax etc.
+    scaling_min_val : Optional[float] #minimum value that the scale is going to have during calibration
 
-    scaling_per_output_channel : bool #per tensor or per channel quantization
-    restrict_scaling_type : RestrictValueType #restrict range of values that scale qparam can have
-    bit_width : int #bit width of quantized values
+    scaling_per_output_channel : Optional[bool] #per tensor or per channel quantization
+    restrict_scaling_type : Optional[RestrictValueType] #restrict range of values that scale qparam can have
+    bit_width : Optional[int] #bit width of quantized values
 
 class BiasQuantArgs(QuantArgs):
     """
@@ -77,7 +78,10 @@ class ModelQuantArgs:
 
     def __post_init__(self):
         """
-            Check if the types are correct in order to prevent future issues with Brevitas.
+            Check if the types are correct in order to prevent future issues with Brevitas. To do so,
+            it iterates through the entire dict representation of the yaml config file and creates instances the corresponding
+            dataclasses if necessary. For example, if a module is not of type LayerQuantArgs, the method creates an instance of
+            LayerQuantArgs with the parameters supplied in the current version of the object.
         """
         if not isinstance(self.modules, Dict):
             log.error(f'Model config has to contain a dictionary of quantized submodules, not type: {type(self.modules)}.')
@@ -98,18 +102,22 @@ class ModelQuantArgs:
                     if not layer.quantize:
                         continue
                     #type cleanup for all defined properties
-                    for field in (x for x in fields(layer)):
-                        attr = getattr(layer, field)
+                    for field in (x for x in fields(layer) if x.name != 'quantize'):
+                        attr = getattr(layer, field.name)
                         if attr == None:
                             continue
-                        try:
-                            #setattr(self.modules[module_name][layer_name], field, attr)
-                            pass
-                        except:
-                            pass
+                        #TODO: get type of attribute and call constructor
+                        if not isinstance(attr, field.type) and isinstance(field.type, QuantArgs):
+                            #Error: Need to unwrap Optional[type] into type for it to work
+                            for quant_field in fields(field.type):
+                                pass
+                        elif not isinstance(attr, field.type):
+                            #get_args(field.type)[0](attr): call constructor of type with arguments from attr
+                            #for correct typing in attribute
+                            #sort of buggy when type is str instead of Optional[str]
+                            setattr(self.modules[module_name][layer_name], field.name, get_args(field.type)[0](attr))
                     #log.error(f'Layer \"{layer_name}\" has to be of type LayerQuantArgs, not {type(layer_cfg)}')
                     #raise TypeError
-
 
 """
     Supported torch.nn modules for quantization by Brevitas:
@@ -158,7 +166,6 @@ def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
     #TODO: typecheck for brevitas and add type (weight, bias, act) to qparams
     quant_cfg = ModelQuantArgs(**_quant_cfg.model)
     log.debug(quant_cfg)
-    sys.exit(100)
     #get_classes necessary, otherwise a circular import error will occur
     quantizer: Quantizer = get_data(log, package_self, quant_cfg.type, Quantizer, quant_cfg)
     return quantizer
