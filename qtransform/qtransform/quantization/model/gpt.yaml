@@ -1,19 +1,39 @@
 
 # template for quantization of models 
-
-
-#idea: iterate through all nn.Module elements within the quant script and manually set the quant parameters based on this yaml config
-#problem: apply correct properties to corresponding layer based on name
-#problem: call brevitas config efficiently with properties (QuantLinear(**kwargs))
-#TODO: translate premade configs from brevitas classes into yaml files 
+# in this template, you can specify the layers and modules that should be quantized. for easy debugging, you can change the property "quantize" to toggle quantization
+# for that layer/ module.
 name: gpt
 modules:
   transformer: #name of submodule
     wte: #name of layer
       quantize: True
       kind: weight
-      weight: templates/weight_round_minmax.yaml
-      #bias: template_bias
+      from_template: False
+      template: ""
+      weight: 
+        quant_type : INT #Integer, binary, ternary, fixed point integer
+        bit_width_impl_type : CONST #is the bit width backpropagated and optimised
+        float_to_int_impl_type : ROUND #how should the quantized values be clipped to fit into the quantized datatype
+        narrow_range : TRUE #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
+        signed : True #can quantized values take on negative values
+        zero_point_impl : ZeroZeroPoint #how is zero point infered
+
+        scaling_impl_type : STATS #how is the scale calculated, for now: statistics
+
+        #attributes only applied when scaling_impl_type is statistics
+        scaling_stats_op : MIN_MAX #max value, minmax etc.
+        scaling_min_val : 1e-10 #minimum value that the scale is going to have during calibration
+
+        scaling_per_output_channel : True #per tensor or per channel quantization
+        restrict_scaling_type : FP #restrict range of values that scale qparam can have
+        bit_width : 6 #bit width of quantized values
+      bias: default #use default brevitas config for bias
+    linear:
+      quantize: True
+      kind: weight
+      from_template: True
+      template: templates/weight_round_minmax.yaml
+      weight: ""
     gelu:
       quantize: True
       kind: act

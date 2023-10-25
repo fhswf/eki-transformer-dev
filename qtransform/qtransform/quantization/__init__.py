@@ -4,8 +4,8 @@ import logging
 import sys
 from torch.nn import Module
 from omegaconf import DictConfig
-from typing import Optional, Tuple, Union, Dict
-from dataclasses import dataclass
+from typing import Optional, Dict
+from dataclasses import dataclass, fields
 from qtransform.classloader import get_data
 from enum import Enum
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
@@ -15,15 +15,16 @@ from brevitas.core.zero_point import __all__
 
 #TODO: add bias quantization config
 
-"""
 class QuantConfig(Enum):
     ACT: str = "act"
     WEIGHT: str = "weight"
     BIAS: str = "bias"
-"""
+
 
 @dataclass 
 class QuantArgs:
+    from_template: bool
+    template: str
     pass
 
 @dataclass
@@ -46,6 +47,9 @@ class WeightQuantArgs(QuantArgs):
     bit_width : int #bit width of quantized values
 
 class BiasQuantArgs(QuantArgs):
+    """
+        WIP
+    """
     pass
 
 @dataclass
@@ -59,21 +63,53 @@ class ActQuantArgs(QuantArgs):
 @dataclass
 class LayerQuantArgs:
     quantize: bool
-    kind: Optional[str]
-    weight: Optional[WeightQuantArgs]
-    bias: Optional[BiasQuantArgs]
-    act: Optional[ActQuantArgs] #bias/ weight and act cancel each other out
-
-#TODO: find out if Dict works with hydra
-@dataclass
-class SubModuleQuantArgs:
-    name: str
-    layers: Dict[str, LayerQuantArgs]
+    from_template: Optional[bool] = None
+    template: Optional[str] = None
+    kind: Optional[str] = None
+    weight: Optional[WeightQuantArgs] = None
+    bias: Optional[BiasQuantArgs] = None
+    act: Optional[ActQuantArgs] = None #bias/ weight and act cancel each other out
 
 @dataclass
 class ModelQuantArgs:
     name: str
-    modules: Dict[str, SubModuleQuantArgs]
+    modules: Dict[str, Dict[str, LayerQuantArgs]]
+
+    def __post_init__(self):
+        """
+            Check if the types are correct in order to prevent future issues with Brevitas.
+        """
+        if not isinstance(self.modules, Dict):
+            log.error(f'Model config has to contain a dictionary of quantized submodules, not type: {type(self.modules)}.')
+            raise TypeError
+        for module_name, module_cfg in self.modules.items():
+            if not isinstance(module_cfg, Dict):
+                log.error(f'Submodule \"{module_name}\" has to be a dictionary, not {type(module_cfg)}')
+                raise TypeError
+            for layer_name, layer_cfg in module_cfg.items():
+                if not isinstance(layer_cfg, LayerQuantArgs):
+                    #convert dict to dataclass
+                    try:
+                        layer_cfg.quantize = bool(layer_cfg.quantize)
+                        self.modules[module_name][layer_name] = layer = LayerQuantArgs(**layer_cfg)
+                    except:
+                        log.error(f'Layer {layer_name} has to contain property \"quantize\" of type boolean')
+                        raise TypeError
+                    if not layer.quantize:
+                        continue
+                    #type cleanup for all defined properties
+                    for field in (x for x in fields(layer)):
+                        attr = getattr(layer, field)
+                        if attr == None:
+                            continue
+                        try:
+                            #setattr(self.modules[module_name][layer_name], field, attr)
+                            pass
+                        except:
+                            pass
+                    #log.error(f'Layer \"{layer_name}\" has to be of type LayerQuantArgs, not {type(layer_cfg)}')
+                    #raise TypeError
+
 
 """
     Supported torch.nn modules for quantization by Brevitas:
@@ -119,6 +155,7 @@ import qtransform.quantization as package_self
 def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
     log.warning(_quant_cfg)
     log.debug(f'Quantizing with parameters: {_quant_cfg}')
+    #TODO: typecheck for brevitas and add type (weight, bias, act) to qparams
     quant_cfg = ModelQuantArgs(**_quant_cfg.model)
     log.debug(quant_cfg)
     sys.exit(100)

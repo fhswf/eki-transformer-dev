@@ -1,14 +1,10 @@
 from brevitas import nn as qnn
-from brevitas.quant import scaled_int as scaled_int
-import brevitas
 from torch.nn import Module
 import logging
-from qtransform.quantization import Quantizer
+from qtransform.quantization import Quantizer, ActQuantArgs, BiasQuantArgs, WeightQuantArgs
 from qtransform.classloader import get_data
-from typing import Tuple
-from dataclasses import dataclass
-from omegaconf import DictConfig
 import re
+import torch.nn.functional as F
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
@@ -40,24 +36,33 @@ class BrevitasQuantizer(Quantizer):
                     raise ValueError
                 #actually quantize the layer
                 submodule[layer_name] = self.get_quantized_layer(layer, cfg_act=layer_cfg.act, cfg_weight=layer_cfg.weight, cfg_bias=layer_cfg.bias)
+                log.debug(f'Quantized layer {layer_name} as: {submodule[layer_name]}')
         raise NotImplementedError()
 
-    def get_quantized_layer(self, layer: Module, cfg_act, cfg_bias, cfg_weight) -> Module:
+    def get_quantized_layer(self, layer: Module, cfg_act: ActQuantArgs, cfg_bias: BiasQuantArgs, cfg_weight : WeightQuantArgs) -> Module:
         """
             Gets the quantized equivalent of a layer tuned with optional quantization configuration.
         """
         layer_class = layer.__class__
         layer_class_name = re.split(r'\'', re.split(r'\.', str(layer_class))[-1])[0]
-        #class_name: QuantLinear, QuantReLU... 
-        quantized_layer = get_data(log=log, package_name=qnn, class_name='Quant' + layer_class_name, parent_class=layer_class)
+        quant_class = 'Quant' + layer_class_name
+        #class_name: QuantLinear, QuantConv1d,...
+        #TODO: implement using QuantIdentity
+        try:
+            #get quantized layers of generic torch modules
+            quantized_layer_class = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=Module)
+        except KeyError:
+            #quantize custom layers
+            log.debug(f'Module {quant_class} not found within {qnn.__package__}')
         cfg_dict = dict()
         cfgs = [cfg_act, cfg_bias, cfg_weight]
         for cfg in cfgs:
             if cfg == None:
                 continue
-            for attr in dir(cfg):
+            for attr in [x for x in dir(cfg) if not re.search(r'__.+__', x)]:
                 cfg_dict[attr] = cfg[attr]
-        return quantized_layer(**cfg_dict)
+        quantized_layer = quantized_layer_class(**cfg_dict)
+        return quantized_layer
 
     def train_qat(self, model: Module, function: any, args: list) -> Module:
         """
