@@ -8,3 +8,4 @@ tiktoken
 tensorboard
 brevitas
 torchvision
+typing_inspect

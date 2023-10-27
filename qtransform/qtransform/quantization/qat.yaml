@@ -1,4 +1,6 @@
 quantize: True
 kind: qat #currently, only qat is supported
 type: BrevitasQuantizer #The Framework that supports quantization, appended with Quantizer (corresponds to the classes in this package)
-model: ???
+
+defaults: 
+  - model: ???

@@ -8,17 +8,20 @@ modules:
     wte: #name of layer
       quantize: True
       kind: weight
-      from_template: False
-      template: ""
+      template: 
+        weight: "" #templates/weight_round_minmax.yaml
+        bias: ""
+        #act: ""
+      #config defined for e.g. weight overrides template config
       weight: 
         quant_type : INT #Integer, binary, ternary, fixed point integer
         bit_width_impl_type : CONST #is the bit width backpropagated and optimised
         float_to_int_impl_type : ROUND #how should the quantized values be clipped to fit into the quantized datatype
         narrow_range : TRUE #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
         signed : True #can quantized values take on negative values
-        zero_point_impl : ZeroZeroPoint #how is zero point infered
+        #zero_point_impl : ZeroZeroPoint #how is zero point infered
 
-        scaling_impl_type : STATS #how is the scale calculated, for now: statistics
+        scaling_impl_type : STATS #how the scale qparam should be calculated, for now: from statistics (weight tensors of layer)
 
         #attributes only applied when scaling_impl_type is statistics
         scaling_stats_op : MIN_MAX #max value, minmax etc.
@@ -27,18 +30,12 @@ modules:
         scaling_per_output_channel : True #per tensor or per channel quantization
         restrict_scaling_type : FP #restrict range of values that scale qparam can have
         bit_width : 6 #bit width of quantized values
-      bias: default #use default brevitas config for bias
-    linear:
-      quantize: True
-      kind: weight
-      from_template: True
-      template: templates/weight_round_minmax.yaml
-      weight: ""
     gelu:
       quantize: True
       kind: act
       act: 
         min_value: 0.0
         max_value: 100.0
+    #you can skip certain layers by setting quantize to False or implicitly skip them by not listing them in the yaml file
     another_layer:
       quantize: False
