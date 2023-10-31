@@ -13,7 +13,7 @@ defaults:
   - dataset: ???
   - optim: default
   - run: ???
-  - override hydra/job_logging: custom
+  - override hydra/job_logging: perlevel
   - override hydra/help: main
   #- override hydra/job_logging: colorlog
   #- override hydra/hydra_logging: colorlog

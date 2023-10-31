@@ -6,6 +6,9 @@
 **/out/**
 **/outputs/**
 **/output/**	
+**/in/**
+**/inputs/**
+**/input/**
 **.egg-info*
 qtransform/conf/conf.json
 build/
