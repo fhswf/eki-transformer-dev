@@ -20,7 +20,7 @@ defaults:
   #- override hydra/hydra_logging: colorlog
 
 data:
-  dtype: 'bfloat16' # 'float32', 'bfloat16', or 'float16'. if llms are used, the dtype has to be supported by torch.Tensor and numpy
+  dtype: 'float32' # 'float32', 'bfloat16', or 'float16'. if llms are used, the dtype has to be supported by torch.Tensor and numpy
 device : 'cuda'
 debug: False
 
