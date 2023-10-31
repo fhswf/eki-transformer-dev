@@ -57,11 +57,8 @@ def get_files(tokenizer_cfg: DictConfig) -> List:
         Returns all readable files from a given directory. Currently, only files at root level are returned.
     """
     root_path: list = tokenizer_cfg.dataset_dir #append directory seperator at the end of the path
-    raw_dir = list()
-    #pretty scuffed
-    raw_dir.extend(root_path)
-    raw_dir.extend(["untokenized", ""])
-    raw_dir = concat_paths(raw_dir)
+    raw_dir = os.path.join(root_path, "untokenized", "")
+    # raw_dir = concat_paths(raw_dir)
     if not exists(raw_dir):
         log.debug(f'Creating directory {raw_dir}')
         os.makedirs(raw_dir, exist_ok=True)
@@ -74,10 +71,7 @@ def save_tokens(ids: ndarray,tokenizer_cfg: DictConfig, meta: Dict = None) -> No
         the tokens is created.
     """
     root_path: list = tokenizer_cfg.dataset_dir
-    output_dir = list()
-    output_dir.extend(root_path)
-    output_dir.extend(["tokenized", ""])
-    output_dir = concat_paths(output_dir)
+    output_dir = os.path.join(root_path, "tokenized", "")
     filename = tokenizer_cfg.name + "-" + tokenizer_cfg.encoding + "-" + tokenizer_cfg.dtype
     #directory seperator included in output_dir
     if not exists(output_dir):

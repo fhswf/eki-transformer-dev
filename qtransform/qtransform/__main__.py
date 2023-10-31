@@ -1,5 +1,5 @@
 import hydra
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 import logging
 from qtransform.utils import addLoggingLevel
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
@@ -14,7 +14,8 @@ def main(cfg: DictConfig):
     elif "debug" in cfg and cfg.debug:
         root_log.setLevel(logging.DEBUG)
         log.debug("DEBUG ENABLED")
-    log.debug("launched with config: " + str(cfg))
+    import json
+    log.debug("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
     log.warning("App is not ready to run")
     
     if "command" not in cfg.run:

@@ -22,7 +22,7 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
         # TODO find good structure for all our data
         paths: list = data_cfg.dataset_dir
         paths.extend(["tokenized", data_cfg.name + "-" + data_cfg.tokenizer.encoding + "-" + data_cfg.dtype + ".bin"])
-        root_path = concat_paths(paths)
+        root_path = concat_paths(paths) ## TODO replace all "~" in conf
         #get dtype class to pass onto Dataset class
         dtype = get_dtype(data_cfg.dtype)
         log.info(f'Loading dataset: {data_cfg.name}, with encoding: {data_cfg.tokenizer.encoding} and dtype: {data_cfg.dtype}')

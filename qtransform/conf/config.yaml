@@ -32,12 +32,10 @@ dataset:
   #the filename of the dataset is not included as it could be split into multiple files (take MNIST for example)
   dataset_dir: 
     - ${dataset.root_path}
-    - data
     - ${dataset.name}
   tokenizer: 
       dataset_dir: 
         - ${dataset.root_path}
-        - data
         - ${dataset.name}
       #name of dataset
       name: ${dataset.name}
