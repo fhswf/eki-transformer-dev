@@ -64,8 +64,8 @@ def get_files(tokenizer_cfg: DictConfig) -> List:
     raw_dir = concat_paths(raw_dir)
     if not exists(raw_dir):
         log.debug(f'Creating directory {raw_dir}')
-        os.makedirs(raw_dir)
-    log.debug(f'Checking for files with name containing{tokenizer_cfg.name} under directory: {raw_dir}')
+        os.makedirs(raw_dir, exist_ok=True)
+    log.debug(f'Checking for files with name containing {tokenizer_cfg.name} under directory: {raw_dir}')
     return [x for x in glob(raw_dir + tokenizer_cfg.name + '*') if not isdir(x)]
 
 def save_tokens(ids: ndarray,tokenizer_cfg: DictConfig, meta: Dict = None) -> None:
@@ -82,7 +82,7 @@ def save_tokens(ids: ndarray,tokenizer_cfg: DictConfig, meta: Dict = None) -> No
     #directory seperator included in output_dir
     if not exists(output_dir):
         log.debug(f'Creating directory {output_dir}')
-        os.makedirs(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
     if meta != None:
         with open(output_dir + filename + '-meta.pkl', 'wb') as f:
             pickle.dump(meta, f)
