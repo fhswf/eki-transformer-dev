@@ -6,49 +6,20 @@ from torch.nn import Module
 from omegaconf import DictConfig
 from typing import List, Optional, Dict, Tuple, Union, get_args
 from dataclasses import dataclass, fields
-from qtransform.classloader import get_data
+#from qtransform.classloader import get_data
 from enum import Enum
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
 from brevitas.jit import ScriptModule
-from brevitas.core.zero_point import __all__
 import brevitas.quant.solver as brevitas_solver
-from brevitas.quant.scaled_int import Uint8ActPerTensorFloat
 from typing_inspect import get_origin
-
-"""
-    From brevitas.TMVCon: 
-
-    What happens whenever we are passing a keyword argument (with prefix weight_, input_, output_, bias_ for a layer like QuantLinear, no prefix for an 
-    activation layer like QuantReLU) is that we are overriding attributes of the underlying quantizer. To make things more compact and re-usable, 
-    we can also simply define a new quantizer by inheriting from the one we are customizing.
-    -> in order to pass qparams for layers whose quantizers are by default set to zero, a corresponding quantizer class needs to be passed to the layer
-    -> otherwise, the qparams are ignored entirely
-    -> it can be neglected for weight quantizers for layers and act quantizers for activations; however input, output and bias quantization will not be supported
-    -> if we pass a class into the quantized layer with missing qparams (quant type ...), the program will crash
-    -> using default quantizers is necessary
-"""
-class WeightQuantizer(Uint8ActPerTensorFloat):
-    pass
-
-class QuantConfig(Enum):
-    ACT: Tuple[str, QuantArgs] = ("act", ActQuantArgs)
-    WEIGHT: str = ("weight", WeightQuantArgs)
-    BIAS: str = ("bias", BiasQuantArgs)
-
 
 @dataclass 
 class QuantArgs:
     """
-        Class for configuration parameters that can be set for either weight, act and bias config.
-    """
-    pass
-
-#TODO: check if args are none and use default args then
-@dataclass
-class WeightQuantArgs(QuantArgs):
-    """
-        Captures the weight parameters for layers.
-        Everything is optional as not every single quantization parameter has to be set in brevitas and cannot be set in pytorch.
+        Class for configuration parameters that can be set for either weight, act, bias, input or output config.
+        The class contains all parameters that can be configured for all kinds of quantizers, however not all are going to have values
+        for them. Therefore, the datatype is by default set to None. when overriding the default quantizer, the attributes of value None
+        should be ignored in order to avoid injection errors with brevitas.
     """
     quant_type : Optional[QuantType] = None#Integer, binary, ternary, fixed point integer
     bit_width_impl_type : Optional[BitWidthImplType] = None# is the bit width backpropagated and optimised
@@ -63,33 +34,101 @@ class WeightQuantArgs(QuantArgs):
     scaling_stats_op : Optional[StatsOp] = None #max value, minmax etc.
     scaling_min_val : Optional[float] = None #minimum value that the scale is going to have during calibration
 
+    #if scaling_impl_type = ScalingImplType.PARAMETER_FROM_STATS and scaling_stats_op = StatsOp.PERCENTILE is used:
+    high_percentile_q: Optional[float] = None #
+    collect_stats_steps: Optional[int] = None #define the amount of steps needed to be taken to collect data for calculating scale qparam
+
     scaling_per_output_channel : Optional[bool] = None #per tensor or per channel quantization
     restrict_scaling_type : Optional[RestrictValueType] = None #restrict range of values that scale qparam can have
     bit_width : Optional[int] = None #bit width of quantized values
 
+"""
+    Below are Quantizer parameters which encapsulate qparams for the different kinds of quantizers.
+"""
+@dataclass
+class WeightQuantArgs(QuantArgs):
+    """
+        Quantization parameters only existing within weights. 
+    """
+    pass
+
+@dataclass
 class BiasQuantArgs(QuantArgs):
     """
-        WIP
+        Dataclass to encapsulate bias quantization parameters in order to override the default quantizer supplied in the config.
+        The scale of biases can either be infered from both the weight and input scales or from a seperate scale for the bias.
     """
-    #test: Optional[float] = None
-    pass
+    requires_input_scale: Optional[bool] = None #bias quantization needs additional input quantization
+    requires_input_bit_width: Optional[bool] = None
 
 @dataclass
 class ActQuantArgs(QuantArgs):
     """
-        WIP
+        Dataclass to encapsulate act quantization parameters in order to override the default quantizer supplied in the config.
+        Activation quantizers can clip output values into a certain range with max_val and min_val.
     """
-    max_value: Optional[float] = None
-    min_value: Optional[float] = None
+    max_val: Optional[float] = None
+    min_val: Optional[float] = None
+"""
+    From brevitas.TMVCon: 
+
+    What happens whenever we are passing a keyword argument (with prefix weight_, input_, output_, bias_ for a layer like QuantLinear, no prefix for an 
+    activation layer like QuantReLU) is that we are overriding attributes of the underlying quantizer. To make things more compact and re-usable, 
+    we can also simply define a new quantizer by inheriting from the one we are customizing.
+    -> in order to pass qparams for layers whose quantizers are by default set to zero, a corresponding quantizer class needs to be passed to the layer
+    -> otherwise, the qparams are ignored entirely
+    -> it can be neglected for weight quantizers for layers and act quantizers for activations; however input, output and bias quantization will not be supported
+    -> if we pass a class into the quantized layer with missing qparams (quant type ...), the program will crash
+    -> using default quantizers is necessary
+"""
+
+#TODO: name things better
+
+class QuantizationKind(Enum):
+    ACT: str = "act"
+    WEIGHT: str = "weight"
+    BIAS: str = "bias"
+    INPUT: str = "input"
+    OUTPUT: str = "output"
+
+
+
+
+#all quantized classes for easy type checking
+#for now, only int is supported
+from brevitas.quant.scaled_int import __all__ as all_int_quantizers
+from brevitas.quant.binary import __all__ as all_binary_quantizers
+from brevitas.quant.fixed_point import __all__ as all_fp_quantizers
+from brevitas.quant.ternary import __all__ as all_ternary_quantizers
+
+@dataclass
+class BaseQuant():
+    args: QuantArgs
+    default_quantizer: str
+    template: Optional[str] = None
+    def __post_init__(self):
+        #TODO: maybe add support for other quantizers (fp, binary, ternary)
+        if self.default_quantizer not in all_int_quantizers:
+            log.error(f'Quantization needs to derive from a quantizer class within {__all__}, not {self.default_quantizer}')
+            raise ValueError()
 
 @dataclass
 class LayerQuantArgs:
     quantize: bool
-    template: Optional[Dict[str, str]] = None
-    kind: Optional[str] = None
-    weight: Optional[WeightQuantArgs] = None
-    bias: Optional[BiasQuantArgs] = None
-    act: Optional[ActQuantArgs] = None #bias/ weight and act cancel each other out
+    template: Optional[Dict[QuantizationKind, str]] = None
+    #after using a default Quantizer, it is necessary to do the injection part ourselves
+    weight: Optional[Quant] = None
+    bias: Optional[Quant] = None
+    act: Optional[Quant] = None
+    input: Optional[Quant] = None
+    output: Optional[Quant] = None
+
+    def get_custom_quantizers():
+        """
+            Idea: Construct a custom class from the default quantizer e.g. Int8WeightPerTensorFloat and override its parameters
+            with the values from the config
+        """
+        pass
 
 @dataclass
 class ModelQuantArgs:
@@ -139,8 +178,9 @@ class ModelQuantArgs:
                         if not isinstance(attr, origin_type):
                             new_attr: dict = attr
                             if origin_type in QuantArgs.__subclasses__():
-                                log.debug(f'Cleaning up Quant arguments for type: {layer.kind}')
+                                log.debug(f'Cleaning up Quant arguments layer: {layer_name}')
                                 fields_key_type = {field.name:field.type for field in fields(origin_type)}
+                                #find all properties that were passed in config (given_keys) and all other properties (difference)
                                 difference = set(fields_key_type.keys()) - set(new_attr.keys())
                                 given_keys = set(fields_key_type.keys()) & set(new_attr.keys())
                                 #all properties that are set to None within config
