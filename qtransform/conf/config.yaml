@@ -1,8 +1,8 @@
 hydra:
   run:
-    dir: outputs/${now:%Y-%m-%d_%H:%M:%S}/${hydra.job.name}
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
   sweep:
-    dir: outputs/${now:%Y-%m-%d_%H:%M:%S}/${hydra.job.name}
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
     subdir: ${hydra.job.num}
   #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
   searchpath:
@@ -13,6 +13,7 @@ defaults:
   - dataset: ???
   - optim: default
   - run: ???
+  - quantization: None
   - override hydra/job_logging: perlevel
   - override hydra/help: main
   #- override hydra/job_logging: colorlog
@@ -45,3 +46,10 @@ seed: 1234567890
 
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.
+
+model: 
+  calc_loss_in_model: False #loss is not calculated in model
+
+quantization:
+  quantize: False
+  device: ${device}

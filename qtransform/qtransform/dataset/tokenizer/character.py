@@ -1,42 +1,44 @@
-from glob import glob
-from os import mkdir
-from os.path import isdir, exists
-import pickle
-import numpy as np
+from numpy import array
 from omegaconf import DictConfig
-from qtransform.dataset.tokenizer import Tokenizer
-from qtransform.utils.introspection import concat_paths
+from qtransform.dataset.tokenizer import Tokenizer, get_files, save_tokens
 import logging
 
 log = logging.getLogger(__name__)
 
 class CharacterTokenizer(Tokenizer):
 
+    """
+        Tokenizes one or multiple files inside of a directory into a singular binary file containing the numerical representation of
+        each character accross all files. The id of each character is assigned iteratively (starting from zero) and put into 
+        a numpy array. The data type is specified by the hydra config under data.dtype. It also creates a metadata file (.pkl) containing the
+        vocabulary size and the corresponding mapping of characters to ids.
+        The tokenization part is heavily inspired by nanoGPT (https://github.com/karpathy/nanoGPT/blob/master/data/shakespeare_char/prepare.py)
+    """
     def encode(stoi, s):
         return [stoi[c] for c in s] # encoder: take a string, output a list of integers
     def decode(itos, l):
         return ''.join([itos[i] for i in l]) # decoder: take a list of integers, output a string
 
     def tokenize(tokenizer_cfg: DictConfig):
+        """
+            The function the steps described in the class description (tokenization of files into one binary file). It is usually
+            called by the tokenizer module in order to abstract the tokenization process.
+        """
         log.debug(f'Tokenizing with parameters: {tokenizer_cfg}')
-        root_path: list = tokenizer_cfg.dataset_dir #append directory seperator at the end of the path
-        raw_dir = list()
-        #pretty scuffed
-        raw_dir.extend(root_path)
-        raw_dir.extend(["untokenized", ""])
-        raw_dir = concat_paths(raw_dir)
-        log.debug(f'Checking for files under directory: {raw_dir}')
         chars = list()
         #iterate through each file in the untokenized directory, only include files at top level for now
-        for file in [x for x in glob(raw_dir + tokenizer_cfg.name + '*') if not isdir(x)]:
+        for file in get_files(tokenizer_cfg):
             with open(file, 'r') as f:
-                data = f.read()
-            log.debug(f"length of dataset {file} in characters: {len(data)}")
-            # get all the unique characters that occur in this text
-            chars.extend(sorted(list(set(data))))
+                try:
+                    data = f.read()
+                    log.debug(f"length of dataset {file} in characters: {len(data)}")
+                    # get all the unique characters that occur in this text
+                    chars.extend(sorted(list(set(data))))
+                except PermissionError:
+                    pass
         # no files read?
         if len(chars) == 0:
-            log.error(f'No readable files for tokenization at root level in {raw_dir} found')
+            log.error(f'No readable files for tokenization found')
             raise KeyError()
         vocab_size = len(chars)
         #log.debug("all the unique characters:", ''.join(chars))
@@ -50,17 +52,6 @@ class CharacterTokenizer(Tokenizer):
             'itos': itos,
             'stoi': stoi,
         }
-        ids = np.array(CharacterTokenizer.encode(stoi, data), dtype=tokenizer_cfg.dtype)
-        output_dir = list()
-        output_dir.extend(root_path)
-        output_dir.extend(["tokenized", ""])
-        output_dir = concat_paths(output_dir)
-        filename = tokenizer_cfg.name + "-" + tokenizer_cfg.encoding + "-" + tokenizer_cfg.dtype
-        #directory seperator included in output_dir
-        if not exists(output_dir):
-            log.debug(f'Creating directory {output_dir}')
-            mkdir(output_dir)
-        with open(output_dir + filename + '-meta.pkl', 'wb') as f:
-            pickle.dump(meta, f)
-        #write numpy array to a binary file
-        ids.tofile(output_dir + filename + ".bin")
+        ids = array(CharacterTokenizer.encode(stoi, data), dtype=tokenizer_cfg.dtype)
+        #ids: ndarray,tokenizer_cfg: DictConfig, meta: Dict = None
+        save_tokens(ids, tokenizer_cfg, meta)

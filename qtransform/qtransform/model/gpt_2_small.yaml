@@ -1,4 +1,5 @@
 cls: GPT
+calc_loss_in_model: True
 args:
   n_layer : 12
   n_head : 12

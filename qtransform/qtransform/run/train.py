@@ -68,10 +68,34 @@ def run(cfg: DictConfig):
     optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1)
 
-    train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
+    """
+    model = Net()
+    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+
+    checkpoint = torch.load(PATH)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    epoch = checkpoint['epoch']
+    loss = checkpoint['loss']
+    """
+    # lets go
+    quant_cfg = cfg.get('quantization')
+    if quant_cfg and quant_cfg.quantize:    
+        quant_cfg.device = device.type
+        from qtransform.quantization import get_quantizer
+        quantizer = get_quantizer(quant_cfg)
+        #add qat qparams (scale and zero)
+        model = quantizer.get_quantized_model(model)
+        #calibrate the scales for each weight and activation
+        model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
+        log.debug(f'Quantized model: \n{model}')    
+        output_path = os.path.join('outputs/models',f'quantized_{cfg.model.cls}_{timestamp}')
+        model = quantizer.export_model(model, output_path)
+    else:
+        train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
 
-def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
+def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
     epochs_to_run = None
@@ -110,9 +134,30 @@ def train(cfg: DictConfig, device, model: nn.Module, train_data_loader: data.Dat
         #if epoch % cfg.run.eval_epoch_interval == 0:
         #    eval_result = eval_model(cfg, device, model, eval_data)
         #    # TODO log data
+        # save model checkpoint
+        # in case we want this stuff to be configurable via env, then this should maybe be handled by hydra
+        #if  __package__.split(".")[0].upper() + "_" + "model_dir".upper() in os.environ:
+        #    chkpt_folder = __package__.split(".")[0].upper() + "_" + "model_dir".upper()
+        #else:
+        if epoch % 100 == 0:
+            return
+        chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
+        if "model_dir" in cfg.run:
+            if os.path.isabs(cfg.run.model_dir):
+                chkpt_folder = cfg.run.model_dir
+            else:
+                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
+        os.makedirs(chkpt_folder, exist_ok=True)
         if epoch % cfg.run.save_epoch_interval == 0:
-            save_checkpoint(cfg, model, optimizer, timestamp, metrics, epoch)
-    
+            checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{timestamp}__epoch_{epoch}')
+            torch.save(obj={
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "epoch": epoch,
+                "metrics": metrics,
+                }, f=checkpoint_path)
+            log.info(f"Model checkpoint saved to {checkpoint_path}")
+        # advance learning rate
         scheduler.step()
 
 
@@ -129,9 +174,18 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
 
         # TODO 
         #data.to(device)
-        #log.debug(str(data))
-        log.debug(len(data))
-        outputs, loss = model(data)
+        inputs, labels = data
+        #if model.quant:
+            #fake quantize inputs
+        #    inputs = model.quant(inputs)
+        if cfg.model.calc_loss_in_model:
+            outputs, loss = model(inputs, labels)
+        else:
+            outputs = model(inputs)
+            loss = F.nll_loss(outputs, labels)
+        """TODO: pytorch support maybe"""
+        #if model.dequant:
+        #    outputs = model.dequant(outputs)
         loss.backward()
         optimizer.step()
 
