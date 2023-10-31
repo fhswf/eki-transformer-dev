@@ -10,6 +10,8 @@ import torch.nn.functional as F
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
 #the default for linear layers is for example Int8WeightPerTensorFloat (8 bits, int, per tensor, etc.)
 
+
+
 log = logging.getLogger(__package__)
 
 class BrevitasQuantizer(Quantizer):
@@ -35,8 +37,11 @@ class BrevitasQuantizer(Quantizer):
                     log.error(f'Submodule {submodule_name} does not have layer of name {layer_name}')
                     raise ValueError
                 #actually quantize the layer
-                submodule[layer_name] = self.get_quantized_layer(layer, cfg_act=layer_cfg.act, cfg_weight=layer_cfg.weight, cfg_bias=layer_cfg.bias)
-                log.debug(f'Quantized layer {layer_name} as: {submodule[layer_name]}')
+                #submodule[layer_name]
+                setattr()
+                #setatt
+                #todo: setattr = self.get_quantized_layer(layer, cfg_act=layer_cfg.act, cfg_weight=layer_cfg.weight, cfg_bias=layer_cfg.bias)
+                #log.debug(f'Quantized layer {layer_name} as: {submodule[layer_name]}')
         raise NotImplementedError()
 
     def get_quantized_layer(self, layer: Module, cfg_act: ActQuantArgs, cfg_bias: BiasQuantArgs, cfg_weight : WeightQuantArgs) -> Module:
@@ -61,6 +66,7 @@ class BrevitasQuantizer(Quantizer):
                 continue
             for attr in [x for x in dir(cfg) if not re.search(r'__.+__', x)]:
                 cfg_dict[attr] = cfg[attr]
+        #TODO: pass other parameters from model into quantized version 
         quantized_layer = quantized_layer_class(**cfg_dict)
         return quantized_layer
 

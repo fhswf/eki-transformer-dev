@@ -202,16 +202,17 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
         # TODO 
         #data.to(device)
         inputs, labels = data
-        if model.quant:
+        #if model.quant:
             #fake quantize inputs
-            inputs = model.quant(inputs)
+        #    inputs = model.quant(inputs)
         if cfg.model.calc_loss_in_model:
             outputs, loss = model(inputs, labels)
         else:
             outputs = model(inputs)
             loss = F.nll_loss(outputs, labels)
-        if model.dequant:
-            outputs = model.dequant(outputs)
+        """TODO: pytorch support maybe"""
+        #if model.dequant:
+        #    outputs = model.dequant(outputs)
         loss.backward()
         optimizer.step()
 

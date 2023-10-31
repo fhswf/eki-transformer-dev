@@ -2,6 +2,21 @@
 # template for quantization of models 
 # in this template, you can specify the layers and modules that should be quantized. for easy debugging, you can change the property "quantize" to toggle quantization
 # for that layer/ module.
+# the config is composed as follows: as the first property, the name of the module along with a dict of name modules is defined. in modules, you define
+# all submodules (of type nn.Module) that you want to quantize. it is important that the name of the submodule corresponds to the name of the model within the python class.
+# within each submodule, you define layers whose names correspond to the according layers. within each layer, you define whether the layer should be quantized or not.
+# if a layer is not mentioned within this config, it is not quantized. the configs within each layer can theoretically contain quantization options for 
+# weights, biases, activations, inputs or outputs depending on which layer is defined. for example, a linear layer supports all options, while activation functions only
+# support quantization for activation. note that in order to quantize the bias, the input needs to be quantized as well. 
+# brevitas disables all types of quantization by default except for the corresponding layer, e.g. weights for linear and act for activations. if you want to use the default
+# config, define a property containing nothing.
+
+
+
+
+#TODO: explain difference between act quantization and input/output quantization
+#activation functions are defined within this config as layers.
+
 name: gpt
 modules:
   transformer: #name of submodule

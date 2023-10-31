@@ -11,14 +11,29 @@ from enum import Enum
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
 from brevitas.jit import ScriptModule
 from brevitas.core.zero_point import __all__
+import brevitas.quant.solver as brevitas_solver
+from brevitas.quant.scaled_int import Uint8ActPerTensorFloat
 from typing_inspect import get_origin
 
-#TODO: add bias quantization config
+"""
+    From brevitas.TMVCon: 
+
+    What happens whenever we are passing a keyword argument (with prefix weight_, input_, output_, bias_ for a layer like QuantLinear, no prefix for an 
+    activation layer like QuantReLU) is that we are overriding attributes of the underlying quantizer. To make things more compact and re-usable, 
+    we can also simply define a new quantizer by inheriting from the one we are customizing.
+    -> in order to pass qparams for layers whose quantizers are by default set to zero, a corresponding quantizer class needs to be passed to the layer
+    -> otherwise, the qparams are ignored entirely
+    -> it can be neglected for weight quantizers for layers and act quantizers for activations; however input, output and bias quantization will not be supported
+    -> if we pass a class into the quantized layer with missing qparams (quant type ...), the program will crash
+    -> using default quantizers is necessary
+"""
+class WeightQuantizer(Uint8ActPerTensorFloat):
+    pass
 
 class QuantConfig(Enum):
-    ACT: str = "act"
-    WEIGHT: str = "weight"
-    BIAS: str = "bias"
+    ACT: Tuple[str, QuantArgs] = ("act", ActQuantArgs)
+    WEIGHT: str = ("weight", WeightQuantArgs)
+    BIAS: str = ("bias", BiasQuantArgs)
 
 
 @dataclass 
@@ -128,7 +143,7 @@ class ModelQuantArgs:
                                 fields_key_type = {field.name:field.type for field in fields(origin_type)}
                                 difference = set(fields_key_type.keys()) - set(new_attr.keys())
                                 given_keys = set(fields_key_type.keys()) & set(new_attr.keys())
-                                #all properties that are not within config set to None
+                                #all properties that are set to None within config
                                 for quant_name in difference:
                                     new_attr[quant_name] = None
                                 #cleanup for all properties set within config
