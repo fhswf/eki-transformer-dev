@@ -147,22 +147,11 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
         #if  __package__.split(".")[0].upper() + "_" + "model_dir".upper() in os.environ:
         #    chkpt_folder = __package__.split(".")[0].upper() + "_" + "model_dir".upper()
         #else:
-        chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
-        if "model_dir" in cfg.run:
-            if os.path.isabs(cfg.run.model_dir):
-                chkpt_folder = cfg.run.model_dir
-            else:
-                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
-        os.makedirs(chkpt_folder, exist_ok=True)
-        if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: ## interval or end of training, epochs is also 1 for mini_run
-            checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{timestamp}__epoch_{epoch}')
-            torch.save(obj={
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "epoch": epoch,
-                "metrics": metrics,
-                }, f=checkpoint_path)
-            log.info(f"Model checkpoint saved to {checkpoint_path}")
+
+        if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
+            ## interval or end of training, epochs is also 1 for mini_run
+            save_checkpoint(cfg=cfg, model=model, optimizer=optimizer, timestamp=timestamp, epoch=epoch, metrics=metrics)
+
         # advance learning rate
         scheduler.step()
 
