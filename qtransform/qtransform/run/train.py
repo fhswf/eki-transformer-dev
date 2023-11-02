@@ -98,7 +98,13 @@ def run(cfg: DictConfig):
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
+    mini_run = False
     epochs_to_run = None
+    if cfg.run.epochs == 0:
+        cfg.run["epochs"] = 1
+        log.warn("cfg.run.epochs is 0, performing mini training dry run")
+        mini_run = True
+
     if "from_checkpoint" in cfg.run and cfg.run.from_checkpoint:
         log.info(f"Resuming training from {cfg.run.from_checkpoint}")
         from_epoch, checkpoint = load_checkpoint(cfg)
@@ -119,15 +125,17 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
             log.warn("no metrics found in checkpoint")
         else:
             metrics = checkpoint['metrics']
+
         epochs_to_run = range(from_epoch + 1, cfg.run.epochs + 1)
     else:
         log.info(f"Starting new training")
         epochs_to_run = range(1, cfg.run.epochs + 1)
 
+        
     # training loop
     for epoch in epochs_to_run:
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
-        metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer)
+        metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
         log.info(str(metrics))
 
         ## eval
@@ -139,8 +147,6 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
         #if  __package__.split(".")[0].upper() + "_" + "model_dir".upper() in os.environ:
         #    chkpt_folder = __package__.split(".")[0].upper() + "_" + "model_dir".upper()
         #else:
-        if epoch % 100 == 0:
-            return
         chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
         if "model_dir" in cfg.run:
             if os.path.isabs(cfg.run.model_dir):
@@ -148,7 +154,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
             else:
                 chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
         os.makedirs(chkpt_folder, exist_ok=True)
-        if epoch % cfg.run.save_epoch_interval == 0:
+        if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: ## interval or end of training, epochs is also 1 for mini_run
             checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{timestamp}__epoch_{epoch}')
             torch.save(obj={
                 "model_state_dict": model.state_dict(),
@@ -162,7 +168,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
 
 
 def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.DataLoader,
-           optimizer: optim.Optimizer) -> Any:
+           optimizer: optim.Optimizer, mini_run: bool=False) -> Any:
     """ training loop over steps/batches """
     # TODO comute more metrics
     last_loss = 0
@@ -190,12 +196,13 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
         optimizer.step()
 
         running_loss += loss.item()
-        if i % cfg.run.log_steps_interval == 0:
+        if i % cfg.run.log_steps_interval == 0 or mini_run:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
             log.info(f'  batch {i+1} loss: {last_loss}')
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
-
+        if mini_run:
+            break
     return last_loss    
 
 
