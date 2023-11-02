@@ -3,19 +3,18 @@ import torch
 import torch.nn as nn
 import torch.ao.quantization as qnn #eager mode quantization api (https://pytorch.org/docs/stable/quantization-support.html#quantization-api-reference)
 import logging
-from qtransform.quantization import QuantConfig, Quantizer
+from qtransform.quantization import Quantizer
 
 log = logging.getLogger(__package__)
-
 #DeprecationWarning prevents this class from being found by qtransform.classloader.get_data()
-#@DeprecationWarning
+@DeprecationWarning
 class TorchQuantizer(Quantizer):
     """
         Deprecated implementation of pytorch QAT based on a hydra qconfig file. It quantizes a model in CPU.
         It is not used within this project as GPU support is not natively provided by Torch and instead done with TensorRT. 
         This results in license complications.
     """
-    def __init__(self, quant_cfg: QuantConfig):
+    def __init__(self, quant_cfg: any):
         super().__init__(quant_cfg)
     #TODO: Support BackendConfig (https://pytorch.org/docs/stable/generated/torch.ao.quantization.backend_config.BackendConfig.html#torch.ao.quantization.backend_config.BackendConfig)
     def get_quantized_model(self, model: nn.Module) -> nn.Module:

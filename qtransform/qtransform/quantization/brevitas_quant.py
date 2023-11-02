@@ -10,8 +10,6 @@ import torch.nn.functional as F
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
 #the default for linear layers is for example Int8WeightPerTensorFloat (8 bits, int, per tensor, etc.)
 
-
-
 log = logging.getLogger(__package__)
 
 class BrevitasQuantizer(Quantizer):
@@ -27,16 +25,18 @@ class BrevitasQuantizer(Quantizer):
                 submodule: Module = getattr(model, submodule_name)
             except AttributeError:
                 log.error(f'Passed model for quantization does not have submodule of name {submodule_name}')
-                raise ValueError
-            for layer_name, layer_cfg in submodule_cfg.layers.items():
+                #raise ValueError
+            for layer_name, layer_cfg in submodule_cfg.items():
                 if not layer_cfg.quantize:
                     continue
                 try:
+                    submodule = None
                     layer: Module = getattr(submodule, layer_name)
                 except AttributeError:
                     log.error(f'Submodule {submodule_name} does not have layer of name {layer_name}')
-                    raise ValueError
+                    #raise ValueError
                 #actually quantize the layer
+                layer_cfg.get_custom_quantizers()
                 #submodule[layer_name]
                 setattr()
                 #setatt

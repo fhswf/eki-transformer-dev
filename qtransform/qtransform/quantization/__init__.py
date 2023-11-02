@@ -6,7 +6,7 @@ from torch.nn import Module
 from omegaconf import DictConfig
 from typing import List, Optional, Dict, Tuple, Union, get_args, get_origin #get_args: get raw type of wrapper -> Optional[str] is (), Dict[str, str] = (str, str)...
 from dataclasses import dataclass, fields
-#from qtransform.classloader import get_data
+from qtransform.classloader import get_data
 from enum import Enum
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
 from brevitas.jit import ScriptModule
@@ -130,6 +130,9 @@ class ActQuant(BaseQuant):
 #map different quantization kinds to corresponding Quantizer Base Classes
 MAPPINGS = {"weight": "weight", "act": "act", "bias": "bias", "input": "act", "output": "act"}
 
+from brevitas.inject import _ExtendedInjectorType
+import brevitas.quant
+#TODO: add overriding feature for templates and args within yaml
 @dataclass
 class LayerQuantArgs:
     quantize: bool
@@ -146,7 +149,24 @@ class LayerQuantArgs:
             Idea: Construct a custom class from the default quantizer e.g. Int8WeightPerTensorFloat and override its parameters
             with the values from the config
         """
-        pass
+        #mapping of 
+        quantizers: Dict[str, any] = dict()
+        
+        for layer_quant_name in ["weight", "bias", "act", "input", "output"]:
+            quant_args = getattr(self, layer_quant_name)
+            if quant_args == None:
+                continue
+            #get default quantizer
+            default_quantizer: _ExtendedInjectorType = get_data(log, brevitas.quant, quant_args.default_quantizer, _ExtendedInjectorType)
+            print(default_quantizer)
+            #create subclass from that quantizer and override values
+            #from: https://stackoverflow.com/questions/9269902/is-there-a-way-to-create-subclasses-on-the-fly
+            quantizer_args = dict()
+            #type constructor needs dict for args, not (data)class
+            for field in fields(quant_args.args):
+                quantizer_args[field.name] = quant_args.args[field_name]
+            quantizers[layer_quant_name] = type('Custom' + layer_quant_name + 'Quantizer', (default_quantizer,), quantizer_args)
+        return quantizers
 
 @dataclass
 class ModelQuantArgs:
@@ -163,8 +183,13 @@ class ModelQuantArgs:
         if not isinstance(self.modules, Union[Dict, DictConfig]):
             log.error(f'Model config has to contain a dictionary of quantized submodules, not type: {type(self.modules)}.')
             raise TypeError
-        #TODO: clean up
-        for module_name, module_cfg in self.modules.items():
+        #need to copy values as the current type of self.modules is DictConfig
+        #we need a regular dict, otherwise the type of submodules is going to statically stay DictConfig
+        #this is a problem when we need to access methods of e.g. LayerQuantArgs 
+        modules = self.modules
+        self.modules: Dict[str, Dict[str, LayerQuantArgs]] = dict()
+        for module_name, module_cfg in modules.items():
+            self.modules[module_name]: Dict[str, LayerQuantArgs] = dict()
             log.debug(f'Going through submodule: {module_name}')
             if not isinstance(module_cfg, Union[Dict, DictConfig]):
                 log.error(f'Submodule \"{module_name}\" has to be a dictionary, not {type(module_cfg)}')
@@ -177,7 +202,7 @@ class ModelQuantArgs:
                         log.error(f'Layer {layer_name} has to contain property \"quantize\" of type boolean')
                         raise TypeError
                     try:
-                        self.modules[module_name][layer_name] = layer = LayerQuantArgs(**layer_cfg)
+                        layer = LayerQuantArgs(**layer_cfg)
                     except:
                         log.error(f'Layer configs only support these properties: {[x.name for x in fields(LayerQuantArgs)]}. Caused by layer: {layer_name}.')
                         raise TypeError
@@ -221,21 +246,19 @@ class ModelQuantArgs:
                                     quant_type = fields_key_type[quant_name]
                                     #get unwrapped type which can be called with its constructor
                                     origin_type_quant_cfg = self.get_optional_type(quant_type)
-                                    log.warning(f'{origin_type_quant_cfg}')
                                     #generic typing wrappers (Union, Optional) cannot be instantiated
-                                    log.warning(new_attr[quant_name])
                                     #problem: dataclasses allow dict unpacking (**dict). currently, entire config is passed to first param 
                                     #as it is not unpacked -> check if origin type allows **, otherwise pass value normally
                                     if hasattr(origin_type_quant_cfg, "__dataclass_fields__"):
                                         new_attr[quant_name] = origin_type_quant_cfg(**new_attr[quant_name])
                                     else:
                                         new_attr[quant_name] = origin_type_quant_cfg(new_attr[quant_name])
-                                log.warning(new_attr)
+                                log.debug(f'Config for field {field.name} has been cleaned up. {new_attr}')
                             #get_args(field.type)[0](attr): call constructor of type with arguments from attr
                             #example: call list with parameters within the config 
-                            setattr(self.modules[module_name][layer_name], field.name, origin_type(**new_attr))
-                    #log.error(f'Layer \"{layer_name}\" has to be of type LayerQuantArgs, not {type(layer_cfg)}')
-                    #raise TypeError
+                            setattr(layer, field.name, origin_type(**new_attr))
+                            #setattr(self.modules[module_name], layer_name, layer)
+                            self.modules[module_name][layer_name] = layer
     
 
     def get_optional_type(self, _type):
@@ -272,8 +295,8 @@ class Quantizer(ABC):
     """
 
     def __init__(self, quant_cfg: ModelQuantArgs):
-        self.quant_cfg = quant_cfg
-    
+        self.quant_cfg: ModelQuantArgs = quant_cfg
+
     @abstractclassmethod
     def get_quantized_model(self, model: Module) -> Module:
         """
@@ -300,10 +323,8 @@ import qtransform.quantization as package_self
 
 def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
     log.debug(f'Quantizing with parameters: {_quant_cfg}')
-    #TODO: typecheck for brevitas and add type (weight, bias, act) to qparams
     quant_cfg = ModelQuantArgs(**_quant_cfg.model)
-    log.debug(quant_cfg)
-    sys.exit(100)
+    log.debug(type(quant_cfg))
     #get_classes necessary, otherwise a circular import error will occur
-    quantizer: Quantizer = get_data(log, package_self, quant_cfg.type, Quantizer, quant_cfg)
+    quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer, quant_cfg)
     return quantizer
