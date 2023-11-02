@@ -18,7 +18,7 @@ setup_args = dict(
     include_package_data=True,
     entry_points={
      'console_scripts': [
-        'qtransform = qtransform:main',
+        'qtransform = qtransform.__main__:cli_wrapper',
         ]
     },
 )

@@ -1,0 +1,5 @@
+command: export
+# model_chkpt_dir: ${oc.env:HOME}
+model_dir: models
+from_checkpoint: ???
+

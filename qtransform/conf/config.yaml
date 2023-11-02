@@ -10,7 +10,7 @@ hydra:
 defaults:
   - _self_
   - model: gpt_2_small
-  - dataset: ???
+  - dataset: 
   - optim: default
   - run: ???
   - quantization: None

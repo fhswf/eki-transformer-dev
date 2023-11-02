@@ -1,10 +1,23 @@
+import os
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import logging
 from qtransform.utils import addLoggingLevel
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 
+_p = os.path.join('/'.join(__file__.split('/')[:-2]), 'conf')
+@hydra.main(version_base=None, config_path=_p, config_name="config.yaml")
+def cli_wrapper(cfg: DictConfig):
+    """ 
+    this function exsists so that one can call qtransform from cli with prepending "python -m ".
+    not that additional configs can be loaded via --config-dir https://github.com/facebookresearch/hydra/issues/874
+    """
+    main(cfg)
+
 @hydra.main(version_base=None, config_path="../conf", config_name="config.yaml")
+def module_wrapper(cfg: DictConfig):
+    main(cfg)
+
 def main(cfg: DictConfig):
     root_log = logging.getLogger("root")
     log = logging.getLogger(f"{__package__}.{__name__}")   
@@ -31,8 +44,11 @@ def main(cfg: DictConfig):
         case "infer":
             from qtransform.run import infer
             return  infer.run(cfg)
+        case "export":
+            from qtransform.run import export
+            return  export.run(cfg)
         case _:
             log.error(f'Command "{cfg.run.command}" not recognized')
 
 if __name__ == "__main__":
-    main()
+    module_wrapper()
