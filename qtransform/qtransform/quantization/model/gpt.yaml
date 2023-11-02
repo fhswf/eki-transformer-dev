@@ -26,8 +26,8 @@ modules:
       #not all layers support quantization of all kinds, e.g. activation functions do not have weight quantization
       weight: 
         #order of overriding: default_quantizer, then template, then args
-        default_quantizer: Uint8ActPerTensorFloat
-        template: ""
+        default_quantizer: Int8WeightPerTensorFloat
+        template: "" #config in yaml files under ./templates
         args:
           quant_type : INT #Integer, binary, ternary, fixed point integer
           bit_width_impl_type : CONST #is the bit width backpropagated and optimised
@@ -51,8 +51,8 @@ modules:
         default_quantizer: Int8ActPerTensorFloat
         template: "" 
         args:
-          min_value: 0.0
-          max_value: 100.0
+          min_val: 0.0
+          max_val: 100.0
     #you can skip certain layers by setting quantize to False or implicitly skip them by not listing them in the yaml file
     another_layer:
       quantize: False

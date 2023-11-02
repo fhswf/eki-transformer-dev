@@ -66,7 +66,6 @@ class BrevitasQuantizer(Quantizer):
                 continue
             for attr in [x for x in dir(cfg) if not re.search(r'__.+__', x)]:
                 #bit_width for weights turns to: weight_bit_width
-                #only 
                 cfg_dict[attr] = cfg[attr]
         #TODO: pass other parameters from model into quantized version e.g. layer size etc.
         quantized_layer = quantized_layer_class(**cfg_dict)
