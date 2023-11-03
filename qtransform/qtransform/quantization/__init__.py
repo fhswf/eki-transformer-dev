@@ -7,6 +7,7 @@ from omegaconf import DictConfig
 from typing import List, Optional, Dict, Tuple, Union, get_args, get_origin #get_args: get raw type of wrapper -> Optional[str] is (), Dict[str, str] = (str, str)...
 from dataclasses import dataclass, fields
 from qtransform.classloader import get_data
+from qtransform.utils.introspection import get_optional_type
 from enum import Enum
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
 from brevitas.jit import ScriptModule
@@ -41,6 +42,19 @@ class QuantArgs:
     restrict_scaling_type : Optional[RestrictValueType] = None #restrict range of values that scale qparam can have
     bit_width : Optional[int] = None #bit width of quantized values
 
+    def __post_init__(self):
+        """
+            Clean up the data types its attributes and turn the string values into its enum representations found in brevitas.
+            For example, instead of quant_type being 'INT', it should be: <QuantType.INT: 'INT'>.
+            This is necessary as brevitas uses injectors and relies on its enum driven API to dynamically configure quantization options.
+        """
+        for field in fields(self):
+            #ignore None values
+            current_value_for_field = getattr(self, field.name)
+            if current_value_for_field is None:
+                continue
+            origin_type = get_optional_type(field.type)
+            setattr(self, field.name, origin_type(current_value_for_field))
 """
     Below are Quantizer parameters which encapsulate qparams for the different kinds of quantizers.
 """
@@ -96,23 +110,43 @@ class QuantizationKind(Enum):
 #all quantized classes for easy type checking
 #for now, only int is supported
 from brevitas.quant.scaled_int import __all__ as all_int_quantizers
+from brevitas.quant.scaled_int import __name__ as brevitas_scaled_int_module
 from brevitas.quant.binary import __all__ as all_binary_quantizers
+from brevitas.quant.binary import __name__ as brevitas_binary_module
 from brevitas.quant.fixed_point import __all__ as all_fp_quantizers
+from brevitas.quant.fixed_point import __name__ as brevitas_fixed_point_module
 from brevitas.quant.ternary import __all__ as all_ternary_quantizers
+from brevitas.quant.ternary import __name__ as brevitas_ternary_module
 
-SUPPORTED_QUANTIZERS: List[str] = all_int_quantizers
+SUPPORTED_QUANTIZERS: Dict[str, List[str]] = {
+    brevitas_binary_module: all_int_quantizers, 
+    brevitas_scaled_int_module: all_int_quantizers,
+    brevitas_ternary_module: all_ternary_quantizers, 
+    brevitas_fixed_point_module: all_fp_quantizers
+}
 SCREEN_CHARS = 80* "-"
 
 @dataclass
 class BaseQuant():
     default_quantizer: str
     template: Optional[str] = None
+    #module name, e.g. brevitas.quant.scaled_int for all int quantizers
+    #does not have to be set within config
+    default_quantizer_module: Optional[str] = None
 
     def __post_init__(self):
-        #TODO: maybe add support for other quantizers (fp, binary, ternary)
-        if self.default_quantizer not in SUPPORTED_QUANTIZERS:
-            log.error(f'Quantization needs to derive from a quantizer class within\n{SCREEN_CHARS}\n{SUPPORTED_QUANTIZERS}\n{SCREEN_CHARS}\n, not:\n{self.default_quantizer}')
+        #remember how often the supplied default quantizer is not within supported modules
+        count: int = 0
+        for quantizer_module, quantizer_classes in SUPPORTED_QUANTIZERS.items():
+            if self.default_quantizer not in quantizer_classes:
+                count += 1
+            #remember what module in brevitas.quant the default quantizer is in (binary, fixed_point, ternary, scaled_int) 
+            else: 
+                self.default_quantizer_module = quantizer_module
+        if count == len(list(SUPPORTED_QUANTIZERS.keys())):
+            log.error(f'Quantization needs to derive from a quantizer class within modules:\n{SCREEN_CHARS}\nbrevitas.quant\n{SCREEN_CHARS}\n, not:\n{self.default_quantizer}')
             raise ValueError()
+        log.debug(f'Default quantizer for {self.default_quantizer} appeared in {self.default_quantizer_module}')
 
 #creating explicit classes in order to avoid future type collisions wiht Union[WeightQuantArgs, BiasQuantArgs, ActQuantArgs]
 @dataclass
@@ -132,10 +166,15 @@ MAPPINGS = {"weight": "weight", "act": "act", "bias": "bias", "input": "act", "o
 
 from brevitas.inject import _ExtendedInjectorType
 import brevitas.quant
+from importlib import import_module
+from types import ModuleType
+
 #TODO: add overriding feature for templates and args within yaml
 @dataclass
 class LayerQuantArgs:
     quantize: bool
+    name: Optional[str] = None
+    layer_type: Optional[str] = None #Linear, Embedding, MHA, ReLU ...
     #after using a default Quantizer, it is necessary to do the injection part ourselves
     #which means creating a custom Class deriving of the base brevitas quantizer class and overriding qparams
     weight: Optional[WeightQuant] = None
@@ -149,23 +188,27 @@ class LayerQuantArgs:
             Idea: Construct a custom class from the default quantizer e.g. Int8WeightPerTensorFloat and override its parameters
             with the values from the config
         """
-        #mapping of 
+        #mapping of custom quantizer classes for the entire layer
         quantizers: Dict[str, any] = dict()
         
         for layer_quant_name in ["weight", "bias", "act", "input", "output"]:
             quant_args = getattr(self, layer_quant_name)
             if quant_args == None:
                 continue
+            log.debug(f'Setting custom quantizer for type: {layer_quant_name} and args: {quant_args}')
             #get default quantizer
-            default_quantizer: _ExtendedInjectorType = get_data(log, brevitas.quant, quant_args.default_quantizer, _ExtendedInjectorType)
-            print(default_quantizer)
+            quantizer_module: ModuleType = import_module(quant_args.default_quantizer_module)
             #create subclass from that quantizer and override values
             #from: https://stackoverflow.com/questions/9269902/is-there-a-way-to-create-subclasses-on-the-fly
             quantizer_args = dict()
             #type constructor needs dict for args, not (data)class
             for field in fields(quant_args.args):
-                quantizer_args[field.name] = quant_args.args[field_name]
-            quantizers[layer_quant_name] = type('Custom' + layer_quant_name + 'Quantizer', (default_quantizer,), quantizer_args)
+                quantizer_args[field.name] = getattr(quant_args.args, field.name)
+            quantizer_class = getattr(quantizer_module, quant_args.default_quantizer)
+            #make subclass of default quantizer
+            #it is not an instance, but of type class
+            #it also overrides qparams from default quantizer with supplied quantizers
+            quantizers[layer_quant_name + '_quant'] = type('Custom' + layer_quant_name + 'Quantizer', (quantizer_class,), quantizer_args)
         return quantizers
 
 @dataclass
@@ -209,6 +252,9 @@ class ModelQuantArgs:
                         #self.modules[module_name][layer_name] = layer = LayerQuantArgs(**layer_cfg)
                     if not layer.quantize:
                         continue
+                    elif layer.quantize and layer.layer_type == None:
+                        log.error(f'Layer {layer_name} has to contain a property \"layer_type\" which describes its type, e.g. \"Linear\" for linear layers.')
+                        raise ValueError
                     #type cleanup for all defined properties
                     #goes through the supposed type of the dataclass, not of the supplied config
                     for field in (x for x in fields(layer) if x.name != 'quantize'):
@@ -216,11 +262,12 @@ class ModelQuantArgs:
                         attr = getattr(layer, field.name)
                         if attr == None:
                             continue
-                        origin_type = self.get_optional_type(field.type)
+                        origin_type = get_optional_type(field.type)
                         log.debug(f'Field {field.name} within layer {layer_name} should be of type: {origin_type}, however it is of type: {type(attr)}')
                         #cleanup for nested config
                         if not isinstance(attr, origin_type) and isinstance(attr, Union[Dict, DictConfig]):
-                            new_attr: dict = attr
+                            #attr is of type DictConfig, does not allow adding properties
+                            new_attr: dict = dict(attr)
                             #cleanup for quantizer config
                             #if origin_type == BaseQuant or origin_type in QuantArgs.__subclasses__():
                             if True:
@@ -234,7 +281,8 @@ class ModelQuantArgs:
                                 for quant_name in difference:
                                     log.debug(f'Field {quant_name} has not been set. Defaulting to zero.')
                                     #user did not supply required parameter
-                                    if not isinstance(get_origin(fields_key_type[quant_name]), Tuple):
+                                    #if not isinstance(get_origin(fields_key_type[quant_name]), Union):
+                                    if not get_origin(fields_key_type[quant_name]) is Union:
                                         log.error(f'Parameter \"{quant_name}\" for config \"{field.name}\" within layer \"{layer_cfg}\" is required.')
                                         raise KeyError
                                     new_attr[quant_name] = None
@@ -242,10 +290,10 @@ class ModelQuantArgs:
                                 log.debug(given_keys)
                                 #cleanup for all properties set within config
                                 for quant_name in given_keys:
-                                    log.debug(f'Field {quant_name} has been set. Cleaning up current instance.')
+                                    log.debug(f'Field {quant_name} has been supplied in yaml config. Cleaning up current instance.')
                                     quant_type = fields_key_type[quant_name]
                                     #get unwrapped type which can be called with its constructor
-                                    origin_type_quant_cfg = self.get_optional_type(quant_type)
+                                    origin_type_quant_cfg = get_optional_type(quant_type)
                                     #generic typing wrappers (Union, Optional) cannot be instantiated
                                     #problem: dataclasses allow dict unpacking (**dict). currently, entire config is passed to first param 
                                     #as it is not unpacked -> check if origin type allows **, otherwise pass value normally
@@ -253,32 +301,14 @@ class ModelQuantArgs:
                                         new_attr[quant_name] = origin_type_quant_cfg(**new_attr[quant_name])
                                     else:
                                         new_attr[quant_name] = origin_type_quant_cfg(new_attr[quant_name])
-                                log.debug(f'Config for field {field.name} has been cleaned up. {new_attr}')
                             #get_args(field.type)[0](attr): call constructor of type with arguments from attr
                             #example: call list with parameters within the config 
                             setattr(layer, field.name, origin_type(**new_attr))
                             #setattr(self.modules[module_name], layer_name, layer)
+                            layer.name = layer_name
                             self.modules[module_name][layer_name] = layer
-    
+                            log.debug(f'Config for field {field.name} has been cleaned up. {new_attr}')
 
-    def get_optional_type(self, _type):
-        """
-            Unwraps a type which might be encapsulated in type "Optional" from the typing package.
-        """
-        field_origin = get_origin(_type)
-        if field_origin is Union:
-            field_type = get_args(_type)
-            #get first datatype of union, assuming that is is Optional, the second type is None anyway
-            origin_type = field_type[0] if len(field_type) == 2 else field_type#and isinstance(field.type, Union) else field_type
-        elif field_origin is None:
-            #type was never wrapped
-            origin_type = _type
-        else: 
-            origin_type =  field_origin
-        return origin_type
-
-def get_origin_type(type: any) -> any:
-    pass
 
 """
     Supported torch.nn modules for quantization by Brevitas:
@@ -324,7 +354,7 @@ import qtransform.quantization as package_self
 def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
     log.debug(f'Quantizing with parameters: {_quant_cfg}')
     quant_cfg = ModelQuantArgs(**_quant_cfg.model)
-    log.debug(type(quant_cfg))
+    log.debug(f'Configured quantization config: {quant_cfg}')
     #get_classes necessary, otherwise a circular import error will occur
     quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer, quant_cfg)
     return quantizer

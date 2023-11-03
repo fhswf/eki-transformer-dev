@@ -21,6 +21,7 @@ name: gpt
 modules:
   transformer: #name of submodule
     wte: #name of layer
+      layer_type: Embedding
       quantize: True
       #quantization for different kinds, e.g. weight
       #not all layers support quantization of all kinds, e.g. activation functions do not have weight quantization
@@ -47,12 +48,18 @@ modules:
           bit_width : 6 #bit width of quantized values
     gelu:
       quantize: True
+      layer_type: ReLU
       act:
         default_quantizer: Int8ActPerTensorFloat
         template: "" 
         args:
           min_val: 0.0
           max_val: 100.0
+    barebone_layer:
+      quantize: True
+      layer_type: Linear
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
     #you can skip certain layers by setting quantize to False or implicitly skip them by not listing them in the yaml file
     another_layer:
       quantize: False

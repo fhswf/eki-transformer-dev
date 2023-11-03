@@ -5,6 +5,7 @@ from qtransform.quantization import Quantizer, ActQuantArgs, BiasQuantArgs, Weig
 from qtransform.classloader import get_data
 import re
 import torch.nn.functional as F
+from typing import Dict
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
@@ -36,15 +37,40 @@ class BrevitasQuantizer(Quantizer):
                     log.error(f'Submodule {submodule_name} does not have layer of name {layer_name}')
                     #raise ValueError
                 #actually quantize the layer
-                layer_cfg.get_custom_quantizers()
+                quantizers = layer_cfg.get_custom_quantizers()
                 #submodule[layer_name]
-                setattr()
+                #setattr()
                 #setatt
+                self.get_quantized_layer(layer_type=layer_cfg.layer_type, quantizers=quantizers)
                 #todo: setattr = self.get_quantized_layer(layer, cfg_act=layer_cfg.act, cfg_weight=layer_cfg.weight, cfg_bias=layer_cfg.bias)
                 #log.debug(f'Quantized layer {layer_name} as: {submodule[layer_name]}')
         raise NotImplementedError()
 
-    def get_quantized_layer(self, layer: Module, cfg_act: ActQuantArgs, cfg_bias: BiasQuantArgs, cfg_weight : WeightQuantArgs) -> Module:
+    def get_quantized_layer(self, layer_type: str, quantizers: Dict[str, type]):
+        """
+            Quantizes a layer as specified in the yaml config file for the corresponding model. 
+        """
+        log.debug(f'{quantizers}')
+        #from linear to Linear as Classes in Brevitas are camel cased (QuantLinear, QuantReLU, QuantEmbedding etc.)
+        #layer_type = layer_type.capitalize()
+        quant_class = 'Quant' + layer_type
+        try:
+            #get quantized layers of generic modules
+            quantized_layer_class = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=object)
+        except KeyError:
+            #quantize custom layers
+            log.error(f'Module {quant_class} not found within {qnn.__package__}. Maybe check spelling? (ReLU has to be ReLU and not relu)')
+            raise ValueError
+        log.debug(f'Quantized layer found: {quantized_layer_class}')
+        #TODO: retrieve current attributes from layer
+        #**quantizers has properties <type>_quant, e.g. weight_quant, each having a custom implementation of a brevitas quantizer if needed
+        PLACEHOLDER_FOR_LAYER_ARGS = None
+        quantized_layer = quantized_layer_class(PLACEHOLDER_FOR_LAYER_ARGS, **quantizers)
+        return quantized_layer
+
+
+    @DeprecationWarning
+    def deprecated_get_quantized_layer(self, layer: Module, cfg_act: ActQuantArgs, cfg_bias: BiasQuantArgs, cfg_weight : WeightQuantArgs) -> Module:
         """
             Gets the quantized equivalent of a layer tuned with optional quantization configuration.
         """
