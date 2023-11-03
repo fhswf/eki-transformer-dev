@@ -1,11 +1,13 @@
 from brevitas import nn as qnn
-from torch.nn import Module
+from torch.nn import Module, ModuleDict
 import logging
 from qtransform.quantization import Quantizer, ActQuantArgs, BiasQuantArgs, WeightQuantArgs
 from qtransform.classloader import get_data
 import re
 import torch.nn.functional as F
 from typing import Dict
+import inspect
+
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
@@ -13,40 +15,40 @@ from typing import Dict
 
 log = logging.getLogger(__package__)
 
+
+
 class BrevitasQuantizer(Quantizer):
     """
         Quantizes a model based on a specified hydra configuration based on the brevitas framework (https://github.com/Xilinx/brevitas).
         As it stands, the dev branch of brevitas is used for quantization. As opposed to pytorch, brevitas offers native GPU
         quantization as well as allowing quantization on a specified number of bits among other hyperparameters specified in the .yaml files of this module.
     """
-    def get_quantized_model(self, model: Module) -> Module:
+    def get_quantized_model(self, model: Module, inplace=False) -> Module:
+        quantized_model: Module = Module() if inplace else model
         #go through all submodules, then all layers within quant config
         for submodule_name, submodule_cfg in self.quant_cfg.modules.items():
             try:
-                submodule: Module = getattr(model, submodule_name)
+                submodule: ModuleDict = model.get_submodule(submodule_name)
             except AttributeError:
                 log.error(f'Passed model for quantization does not have submodule of name {submodule_name}')
-                #raise ValueError
+                raise ValueError
+            #if a model with the name already exists, do nothing
+            quantized_submodule = Module()
+            quantized_model.add_module(submodule_name, quantized_submodule)
             for layer_name, layer_cfg in submodule_cfg.items():
                 if not layer_cfg.quantize:
                     continue
                 try:
-                    submodule = None
-                    layer: Module = getattr(submodule, layer_name)
+                    layer: Module = submodule.get_submodule(layer_name)
                 except AttributeError:
-                    log.error(f'Submodule {submodule_name} does not have layer of name {layer_name}')
-                    #raise ValueError
+                    log.error(f'Submodule \"{submodule_name}\" does not have layer of name \"{layer_name}\"')
+                    raise ValueError
                 #actually quantize the layer
                 quantizers = layer_cfg.get_custom_quantizers()
-                #submodule[layer_name]
-                #setattr()
-                #setatt
-                self.get_quantized_layer(layer_type=layer_cfg.layer_type, quantizers=quantizers)
-                #todo: setattr = self.get_quantized_layer(layer, cfg_act=layer_cfg.act, cfg_weight=layer_cfg.weight, cfg_bias=layer_cfg.bias)
-                #log.debug(f'Quantized layer {layer_name} as: {submodule[layer_name]}')
-        raise NotImplementedError()
+                quantized_layer: Module = self.get_quantized_layer(layer=layer, layer_type=layer_cfg.layer_type, quantizers=quantizers)
+                quantized_submodule.add_module(layer_name, quantized_layer)
 
-    def get_quantized_layer(self, layer_type: str, quantizers: Dict[str, type]):
+    def get_quantized_layer(self, layer: Module, layer_type: str, quantizers: Dict[str, type]):
         """
             Quantizes a layer as specified in the yaml config file for the corresponding model. 
         """
@@ -56,16 +58,28 @@ class BrevitasQuantizer(Quantizer):
         quant_class = 'Quant' + layer_type
         try:
             #get quantized layers of generic modules
-            quantized_layer_class = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=object)
+            quantized_layer_class: type = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=object)
         except KeyError:
             #quantize custom layers
-            log.error(f'Module {quant_class} not found within {qnn.__package__}. Maybe check spelling? (ReLU has to be ReLU and not relu)')
+            log.error(f'Module {quant_class} not found within {qnn.__package__}. Maybe check spelling? (E.g. ReLU has to be ReLU and not relu, Relu...)')
             raise ValueError
         log.debug(f'Quantized layer found: {quantized_layer_class}')
-        #TODO: retrieve current attributes from layer
-        #**quantizers has properties <type>_quant, e.g. weight_quant, each having a custom implementation of a brevitas quantizer if needed
-        PLACEHOLDER_FOR_LAYER_ARGS = None
-        quantized_layer = quantized_layer_class(PLACEHOLDER_FOR_LAYER_ARGS, **quantizers)
+        #retrieve all set hyperparameters of unquantized layer
+        #usually supplied in constructor
+        #exceptions: dtype, device have to be retrieved from general config
+        signature = inspect.signature(layer.__init__)
+        hyperparameters = dict()
+        for attribute_name in set(signature.parameters.keys()) - set(['self', 'dtype', 'device']): #- set(dtype):
+            #attribute = signature.parameters[attribute_name]
+            hyperparameters[attribute_name] = getattr(layer, attribute_name)
+        #bias is not included in all layers, but is a required argument for some
+        try:
+            hyperparameters["bias"] = True if hyperparameters["bias"] is not None else False
+        except:
+            pass
+        args = {**hyperparameters, **quantizers}
+        log.debug(f'Quantizing layer with args: {args}')
+        quantized_layer = quantized_layer_class(**args)
         return quantized_layer
 
 
@@ -93,7 +107,6 @@ class BrevitasQuantizer(Quantizer):
             for attr in [x for x in dir(cfg) if not re.search(r'__.+__', x)]:
                 #bit_width for weights turns to: weight_bit_width
                 cfg_dict[attr] = cfg[attr]
-        #TODO: pass other parameters from model into quantized version e.g. layer size etc.
         quantized_layer = quantized_layer_class(**cfg_dict)
         return quantized_layer
 

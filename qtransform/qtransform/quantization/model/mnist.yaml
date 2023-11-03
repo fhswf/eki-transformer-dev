@@ -1,23 +1,9 @@
-#model does not have activation functions as names
-        self.model = nn.ModuleDict(dict(
-            conv1 = nn.Conv2d(1, 32, 3, 1),
-            relu1 = nn.ReLU(),
-            conv2 = nn.Conv2d(32, 64, 3, 1),
-            relu2 = nn.ReLU(),
-            maxpool2d = nn.MaxPool2d(kernel_size=2),
-            dropout1 = nn.Dropout(0.25),
-            flatten = nn.Flatten(),
-            fc1 = nn.Linear(9216, 128),
-            relu3 = nn.ReLU(),
-            dropout2 = nn.Dropout(0.5),
-            fc2 = nn.Linear(128, 10)
-        ))
-
 name: mnist
 modules:
   model: #name of submodule
-    wte: #name of layer
+    conv1: #name of layer
       quantize: True
+      layer_type: Conv2d
       #quantization for different kinds, e.g. weight
       #not all layers support quantization of all kinds, e.g. activation functions do not have weight quantization
       weight: 
@@ -41,11 +27,62 @@ modules:
           scaling_per_output_channel : True #per tensor or per channel quantization
           restrict_scaling_type : FP #restrict range of values that scale qparam can have
           bit_width : 6 #bit width of quantized values
-    gelu:
+    relu1:
       quantize: True
+      layer_type: ReLU
+      act: 
+        default_quantizer: Uint8ActPerTensorFloat
+    conv2:
+      quantize: True
+      layer_type: Conv2d
+      weight: 
+        default_quantizer: Int8WeightPerTensorFloat
+    relu2:
+      quantize: True
+      layer_type: ReLU
+      act: 
+        default_quantizer: Uint8ActPerTensorFloat
+    #for some reason, some layers like maxpool2d do not have quantizer for parameters
+    maxpool2d:
+      quantize: False
+      #layer_type: MaxPool2d
+    dropout1: 
+      quantize: True
+      layer_type: Dropout
+    flatten: 
+      quantize: False
+    fc1:
+      quantize: True
+      layer_type: Linear
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
       act:
-        default_quantizer: Int8ActPerTensorFloat
-        template: "" 
-        args:
-          min_val: 0.0
-          max_val: 100.0
+        default_quantizer: Uint8ActPerTensorFloat
+      bias:
+        default_quantizer: Int8Bias
+      input:
+        default_quantizer: Uint8ActPerTensorFloat
+      output:
+        default_quantizer: Uint8ActPerTensorFloat
+    relu3:
+      quantize: True
+      layer_type: ReLU
+      act: 
+        default_quantizer: Uint8ActPerTensorFloat   
+    dropout2: 
+      quantize: True
+      layer_type: Dropout
+    fc2:
+      quantize: True
+      layer_type: Linear
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
+      act:
+        default_quantizer: Uint8ActPerTensorFloat
+      bias:
+        default_quantizer: Int8Bias
+      input:
+        default_quantizer: Uint8ActPerTensorFloat
+      output:
+        default_quantizer: Uint8ActPerTensorFloat
+    

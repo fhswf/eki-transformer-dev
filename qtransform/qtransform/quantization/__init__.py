@@ -202,13 +202,17 @@ class LayerQuantArgs:
             #from: https://stackoverflow.com/questions/9269902/is-there-a-way-to-create-subclasses-on-the-fly
             quantizer_args = dict()
             #type constructor needs dict for args, not (data)class
-            for field in fields(quant_args.args):
+            for field in fields(quant_args.args) if quant_args.args is not None else []:
                 quantizer_args[field.name] = getattr(quant_args.args, field.name)
             quantizer_class = getattr(quantizer_module, quant_args.default_quantizer)
             #make subclass of default quantizer
             #it is not an instance, but of type class
             #it also overrides qparams from default quantizer with supplied quantizers
-            quantizers[layer_quant_name + '_quant'] = type('Custom' + layer_quant_name + 'Quantizer', (quantizer_class,), quantizer_args)
+            quantizers[layer_quant_name + '_quant'] = type(
+                    'Custom' + self.name.capitalize() + self.layer_type.capitalize() + str(layer_quant_name).capitalize() + 'Quantizer', 
+                    (quantizer_class,), 
+                    quantizer_args
+                )
         return quantizers
 
 @dataclass

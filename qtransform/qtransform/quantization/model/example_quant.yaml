@@ -1,6 +1,6 @@
 
-# template for quantization of models 
-# in this template, you can specify the layers and modules that should be quantized. for easy debugging, you can change the property "quantize" to toggle quantization
+# example for quantization of models 
+# in this example, you can specify the layers and modules that should be quantized. for easy debugging, you can change the property "quantize" to toggle quantization
 # for that layer/ module.
 # the config is composed as follows: as the first property, the name of the module along with a dict of name modules is defined. in modules, you define
 # all submodules (of type nn.Module) that you want to quantize. it is important that the name of the submodule corresponds to the name of the model within the python class.
@@ -55,6 +55,8 @@ modules:
         args:
           min_val: 0.0
           max_val: 100.0
+    #this is the utmost barebone way to quantize a layer
+    #it applies the config from the default quantizer 
     barebone_layer:
       quantize: True
       layer_type: Linear
