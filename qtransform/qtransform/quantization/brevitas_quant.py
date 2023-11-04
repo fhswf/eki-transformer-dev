@@ -1,3 +1,4 @@
+from copy import deepcopy
 from brevitas import nn as qnn
 from torch.nn import Module, ModuleDict
 import logging
@@ -16,7 +17,6 @@ import inspect
 log = logging.getLogger(__package__)
 
 
-
 class BrevitasQuantizer(Quantizer):
     """
         Quantizes a model based on a specified hydra configuration based on the brevitas framework (https://github.com/Xilinx/brevitas).
@@ -24,17 +24,16 @@ class BrevitasQuantizer(Quantizer):
         quantization as well as allowing quantization on a specified number of bits among other hyperparameters specified in the .yaml files of this module.
     """
     def get_quantized_model(self, model: Module, inplace=False) -> Module:
-        quantized_model: Module = Module() if inplace else model
+        #perform all property access operations with quantized model
+        quantized_model: Module = model if inplace else deepcopy(model)
         #go through all submodules, then all layers within quant config
         for submodule_name, submodule_cfg in self.quant_cfg.modules.items():
             try:
-                submodule: ModuleDict = model.get_submodule(submodule_name)
+                submodule: ModuleDict = quantized_model.get_submodule(submodule_name)
             except AttributeError:
                 log.error(f'Passed model for quantization does not have submodule of name {submodule_name}')
                 raise ValueError
-            #if a model with the name already exists, do nothing
-            quantized_submodule = Module()
-            quantized_model.add_module(submodule_name, quantized_submodule)
+            #go through each layer and perform quantization
             for layer_name, layer_cfg in submodule_cfg.items():
                 if not layer_cfg.quantize:
                     continue
@@ -46,7 +45,9 @@ class BrevitasQuantizer(Quantizer):
                 #actually quantize the layer
                 quantizers = layer_cfg.get_custom_quantizers()
                 quantized_layer: Module = self.get_quantized_layer(layer=layer, layer_type=layer_cfg.layer_type, quantizers=quantizers)
-                quantized_submodule.add_module(layer_name, quantized_layer)
+                #replace current non-quantized layer with quantized layer
+                submodule.add_module(layer_name, quantized_layer)
+        return quantized_model
 
     def get_quantized_layer(self, layer: Module, layer_type: str, quantizers: Dict[str, type]):
         """
@@ -69,7 +70,7 @@ class BrevitasQuantizer(Quantizer):
         #exceptions: dtype, device have to be retrieved from general config
         signature = inspect.signature(layer.__init__)
         hyperparameters = dict()
-        for attribute_name in set(signature.parameters.keys()) - set(['self', 'dtype', 'device']): #- set(dtype):
+        for attribute_name in set(signature.parameters.keys()) - set(['self', 'dtype', 'device']):
             #attribute = signature.parameters[attribute_name]
             hyperparameters[attribute_name] = getattr(layer, attribute_name)
         #bias is not included in all layers, but is a required argument for some

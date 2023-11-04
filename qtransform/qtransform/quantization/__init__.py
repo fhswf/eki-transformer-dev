@@ -332,7 +332,7 @@ class Quantizer(ABC):
         self.quant_cfg: ModelQuantArgs = quant_cfg
 
     @abstractclassmethod
-    def get_quantized_model(self, model: Module) -> Module:
+    def get_quantized_model(self, model: Module, inplace: bool = False) -> Module:
         """
             Prepares a model for QAT by applying qparams to the corresponding layers of the model specified in the
             quant_cfg. 
