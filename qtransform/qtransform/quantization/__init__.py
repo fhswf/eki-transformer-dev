@@ -20,7 +20,7 @@ class QuantArgs:
         The class contains all parameters that can be configured for all kinds of quantizers, however not all are going to have values
         for them. Therefore, the datatype is by default set to None. when overriding the default quantizer, the attributes of value None
         should be ignored in order to avoid injection errors with brevitas.
-    """
+    """ 
     quant_type : Optional[QuantType] = None#Integer, binary, ternary, fixed point integer
     bit_width_impl_type : Optional[BitWidthImplType] = None# is the bit width backpropagated and optimised
     float_to_int_impl_type : Optional[FloatToIntImplType] = None#how should the quantized values be clipped to fit into the quantized datatype
@@ -95,18 +95,6 @@ class ActQuantArgs(QuantArgs):
     -> using default quantizers is necessary
 """
 
-#TODO: name things better
-
-class QuantizationKind(Enum):
-    ACT: str = "act"
-    WEIGHT: str = "weight"
-    BIAS: str = "bias"
-    INPUT: str = "input"
-    OUTPUT: str = "output"
-
-
-
-
 #all quantized classes for easy type checking
 #for now, only int is supported
 from brevitas.quant.scaled_int import __all__ as all_int_quantizers
@@ -161,11 +149,6 @@ class BiasQuant(BaseQuant):
 class ActQuant(BaseQuant):
     args: Optional[ActQuantArgs] = None
 
-#map different quantization kinds to corresponding Quantizer Base Classes
-MAPPINGS = {"weight": "weight", "act": "act", "bias": "bias", "input": "act", "output": "act"}
-
-from brevitas.inject import _ExtendedInjectorType
-import brevitas.quant
 from importlib import import_module
 from types import ModuleType
 
@@ -274,45 +257,43 @@ class ModelQuantArgs:
                             new_attr: dict = dict(attr)
                             #cleanup for quantizer config
                             #if origin_type == BaseQuant or origin_type in QuantArgs.__subclasses__():
-                            if True:
-                                log.debug(f'Cleaning up {field.name} Quant arguments for layer: {layer_name}')
-                                fields_key_type = {field.name:field.type for field in fields(origin_type)}
-                                log.debug(f'Types to clean up: {fields_key_type}')
-                                #find all properties that were passed in config (given_keys) and all other properties (difference)
-                                difference = set(fields_key_type.keys()) - set(new_attr.keys())
-                                given_keys = set(fields_key_type.keys()) & set(new_attr.keys())
-                                #all properties that are set to None within config
-                                for quant_name in difference:
-                                    log.debug(f'Field {quant_name} has not been set. Defaulting to zero.')
-                                    #user did not supply required parameter
-                                    #if not isinstance(get_origin(fields_key_type[quant_name]), Union):
-                                    if not get_origin(fields_key_type[quant_name]) is Union:
-                                        log.error(f'Parameter \"{quant_name}\" for config \"{field.name}\" within layer \"{layer_cfg}\" is required.')
-                                        raise KeyError
-                                    new_attr[quant_name] = None
-                                log.debug(new_attr)
-                                log.debug(given_keys)
-                                #cleanup for all properties set within config
-                                for quant_name in given_keys:
-                                    log.debug(f'Field {quant_name} has been supplied in yaml config. Cleaning up current instance.')
-                                    quant_type = fields_key_type[quant_name]
-                                    #get unwrapped type which can be called with its constructor
-                                    origin_type_quant_cfg = get_optional_type(quant_type)
-                                    #generic typing wrappers (Union, Optional) cannot be instantiated
-                                    #problem: dataclasses allow dict unpacking (**dict). currently, entire config is passed to first param 
-                                    #as it is not unpacked -> check if origin type allows **, otherwise pass value normally
-                                    if hasattr(origin_type_quant_cfg, "__dataclass_fields__"):
-                                        new_attr[quant_name] = origin_type_quant_cfg(**new_attr[quant_name])
-                                    else:
-                                        new_attr[quant_name] = origin_type_quant_cfg(new_attr[quant_name])
+                            log.debug(f'Cleaning up {field.name} Quant arguments for layer: {layer_name}')
+                            fields_key_type = {field.name:field.type for field in fields(origin_type)}
+                            log.debug(f'Types to clean up: {fields_key_type}')
+                            #find all properties that were passed in config (given_keys) and all other properties (difference)
+                            difference = set(fields_key_type.keys()) - set(new_attr.keys())
+                            given_keys = set(fields_key_type.keys()) & set(new_attr.keys())
+                            #all properties that are set to None within config
+                            for quant_name in difference:
+                                log.debug(f'Field {quant_name} has not been set. Defaulting to zero.')
+                                #user did not supply required parameter
+                                #if not isinstance(get_origin(fields_key_type[quant_name]), Union):
+                                if not get_origin(fields_key_type[quant_name]) is Union:
+                                    log.error(f'Parameter \"{quant_name}\" for config \"{field.name}\" within layer \"{layer_cfg}\" is required.')
+                                    raise KeyError
+                                new_attr[quant_name] = None
+                            log.debug(new_attr)
+                            log.debug(given_keys)
+                            #cleanup for all properties set within config
+                            for quant_name in given_keys:
+                                log.debug(f'Field {quant_name} has been supplied in yaml config. Cleaning up current instance.')
+                                quant_type = fields_key_type[quant_name]
+                                #get unwrapped type which can be called with its constructor
+                                origin_type_quant_cfg = get_optional_type(quant_type)
+                             #generic typing wrappers (Union, Optional) cannot be instantiated
+                                #problem: dataclasses allow dict unpacking (**dict). currently, entire config is passed to first param 
+                                #as it is not unpacked -> check if origin type allows **, otherwise pass value normally
+                                if hasattr(origin_type_quant_cfg, "__dataclass_fields__"):
+                                    new_attr[quant_name] = origin_type_quant_cfg(**new_attr[quant_name])
+                                else:
+                                    new_attr[quant_name] = origin_type_quant_cfg(new_attr[quant_name])
                             #get_args(field.type)[0](attr): call constructor of type with arguments from attr
                             #example: call list with parameters within the config 
                             setattr(layer, field.name, origin_type(**new_attr))
                             #setattr(self.modules[module_name], layer_name, layer)
-                            layer.name = layer_name
-                            self.modules[module_name][layer_name] = layer
                             log.debug(f'Config for field {field.name} has been cleaned up. {new_attr}')
-
+                    layer.name = layer_name
+                    self.modules[module_name][layer_name] = layer
 
 """
     Supported torch.nn modules for quantization by Brevitas:
@@ -359,6 +340,7 @@ def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
     log.debug(f'Quantizing with parameters: {_quant_cfg}')
     quant_cfg = ModelQuantArgs(**_quant_cfg.model)
     log.debug(f'Configured quantization config: {quant_cfg}')
+    log.critical(quant_cfg.modules["model"].keys())
     #get_classes necessary, otherwise a circular import error will occur
     quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer, quant_cfg)
     return quantizer
