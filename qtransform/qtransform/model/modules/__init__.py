@@ -80,6 +80,8 @@ class CausalSelfAttention(nn.Module):
         self.n_embd = config.n_embd
         self.dropout = config.dropout
         self.quantize = config.quantize
+        self.flash = config.flash
+        self.block_size = config.block_size
 
     def forward(self, x):
         if self.quantize:
@@ -97,14 +99,26 @@ class CausalSelfAttention(nn.Module):
             # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
             if self.flash:
                 # efficient attention using Flash Attention CUDA kernels
+                # "scaled_dot_product_attention" does not export to onnx in all versions of pytorch , presuambly fixed in current nightly builds:
+                #   https://github.com/pytorch/pytorch/issues/97262
                 y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
             else:
-                # manual implementation of attention
-                att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-                att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
-                att = F.softmax(att, dim=-1)
-                att = self.attn_dropout(att)
-                y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+                # # manual implementation of attention
+                # att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+                # att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+                # att = F.softmax(att, dim=-1)
+                # att = self.attn_dropout(att)
+                # y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+
+                def scaled_dot_product_attention(Q,K,V, is_causal:bool, dropout_p:float, source_length, target_length, attn_mask=None):
+                    # Efficient implementation equivalent to the following:
+                    attn_mask = torch.ones(target_length, source_length, dtype=torch.bool).tril(diagonal=0) if is_causal else attn_mask
+                    attn_mask = attn_mask.masked_fill(not attn_mask, -float('inf')) if attn_mask.dtype==torch.bool else attn_mask
+                    attn_weight = torch.softmax((Q @ K.transpose(-2, -1) / math.sqrt(Q.size(-1))) + attn_mask, dim=-1)
+                    attn_weight = torch.dropout(attn_weight, dropout_p)
+                    return attn_weight @ V
+                y  = scaled_dot_product_attention(q,k,v,is_causal=True, dropout_p=self.dropout, source_length=self.block_size, target_length=self.block_size)
+
             y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
 
             # output projection

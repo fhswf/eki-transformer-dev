@@ -57,10 +57,16 @@ def run(cfg: DictConfig):
     model.to(device)
 
     from qtransform.dataset import get_data, get_loader
-    train_datalaoder, eval_dataoader = get_data(cfg.dataset)
+    data_lodaer_maybe_tuple = get_data(cfg.dataset)
+    if isinstance(data_lodaer_maybe_tuple, tuple):
+        train_datalaoder, eval_dataoader = data_lodaer_maybe_tuple
+    else:
+        train_datalaoder = data_lodaer_maybe_tuple
+        eval_dataoader = None
+    
     if not isinstance(train_datalaoder, data.DataLoader):
         train_datalaoder = get_loader(data=train_datalaoder, dataloader_cfg=cfg.dataset.dataloader)
-    if not isinstance(eval_dataoader, data.DataLoader):
+    if eval_dataoader is not None and not isinstance(eval_dataoader, data.DataLoader):
         eval_dataoader   = get_loader(data=eval_dataoader, dataloader_cfg=cfg.dataset.dataloader)
 
     # from qtransform.optim import get_optim, get_scheduler
@@ -138,8 +144,9 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
         metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
         log.info(str(metrics))
 
+
         ## eval
-        #if epoch % cfg.run.eval_epoch_interval == 0:
+        #if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
         #    eval_result = eval_model(cfg, device, model, eval_data)
         #    # TODO log data
         # save model checkpoint
@@ -150,7 +157,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
-            save_checkpoint(cfg=cfg, model=model, optimizer=optimizer, timestamp=timestamp, epoch=epoch, metrics=metrics)
+            save_checkpoint(cfg=cfg, model=model, optimizer=optimizer, timestamp=timestamp, epoch=epoch, metrics=metrics, model_cfg=cfg.model)
 
         # advance learning rate
         scheduler.step()

@@ -39,8 +39,7 @@ class GPTConfig:
     dropout: float = 0.0
     quantize: bool = False # quantize weights
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-
-
+    flash: bool = False # cuda flas hattention
 
 class GPT(nn.Module):
     def __init__(self, config: GPTConfig):
@@ -49,6 +48,7 @@ class GPT(nn.Module):
         assert config.block_size is not None
         self.config = config
         print("Building GPT with quantize=%s" % (config.quantize))
+        print(config)
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
             wpe = nn.Embedding(config.block_size, config.n_embd),

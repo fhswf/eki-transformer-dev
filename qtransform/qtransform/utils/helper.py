@@ -1,6 +1,6 @@
 import datetime
 import os
-from typing import Dict
+from typing import Any, Dict, Tuple, Union
 import hydra
 from omegaconf import DictConfig
 import torch
@@ -8,7 +8,7 @@ import logging
 from torch import nn
 log = logging.getLogger(__name__)
 
-def load_checkpoint(cfg: DictConfig):
+def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
     """ load torch model checkpoint"""
     chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
     if "model_dir" in cfg.run:
@@ -41,7 +41,7 @@ def load_checkpoint(cfg: DictConfig):
             log.warn("Modelcheckpint does not contain epoch information")
     return from_epoch,checkpoint
 
-def save_checkpoint(cfg: DictConfig, model: nn.Module, optimizer, timestamp:datetime, metrics:Dict, epoch:int):
+def save_checkpoint(cfg: DictConfig, model: nn.Module, optimizer, timestamp:datetime, metrics:Dict, epoch:int, model_cfg: Any):
     """save torch model checkpoint from training"""
     chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
     if "model_dir" in cfg.run:
@@ -56,6 +56,7 @@ def save_checkpoint(cfg: DictConfig, model: nn.Module, optimizer, timestamp:date
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "epoch": epoch,
+                "model_cfg": model_cfg,
                 "metrics": metrics,
                 }, f=checkpoint_path)
         log.info(f"Model checkpoint saved to {checkpoint_path}")

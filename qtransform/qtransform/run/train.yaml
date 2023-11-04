@@ -6,7 +6,7 @@ init_from : 'scratch' # 'scratch' or 'resume' or 'gpt2*'
 model_dir: models
 epochs: 10
 gradient_accumulation_steps : 5 * 8 # used to simulate larger batch sizes, leave empty for no accumulation
-
+flash: False
 export:
 
 

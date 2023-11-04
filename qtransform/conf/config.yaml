@@ -9,7 +9,7 @@ hydra:
     - pkg://qtransform
 defaults:
   - _self_
-  - model: gpt_2_small
+  - model: 
   - dataset: 
   - optim: default
   - run: ???
