@@ -56,7 +56,7 @@ def run(cfg: DictConfig):
     # Weight-only model
 
     # if quant:
-    #   export_onnx_qcdq(model, torch.tensor([[1337, 420, 360]]), export_path='q_gpt2_small.onnx', opset_version=16)
+    export_onnx_qcdq(model, torch.tensor([[1337, 420, 360]]), export_path='q_gpt2_small.onnx', opset_version=16)
     #else:
     export(model, torch.tensor([[1337, 420, 360]]), 'gpt2_small.onnx', opset_version=16)
 

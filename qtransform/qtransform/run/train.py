@@ -69,24 +69,16 @@ def run(cfg: DictConfig):
     if eval_dataoader is not None and not isinstance(eval_dataoader, data.DataLoader):
         eval_dataoader   = get_loader(data=eval_dataoader, dataloader_cfg=cfg.dataset.dataloader)
 
+    # TODO dynamic optim
     # from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
     optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1)
 
-    """
-    model = Net()
-    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
-
-    checkpoint = torch.load(PATH)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    epoch = checkpoint['epoch']
-    loss = checkpoint['loss']
-    """
     # lets go
     quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:    
+        log.debug(f'Running quantized model')    
         quant_cfg.device = device.type
         from qtransform.quantization import get_quantizer
         quantizer = get_quantizer(quant_cfg)
@@ -94,9 +86,6 @@ def run(cfg: DictConfig):
         model = quantizer.get_quantized_model(model)
         #calibrate the scales for each weight and activation
         model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
-        log.debug(f'Quantized model: \n{model}')    
-        output_path = os.path.join('outputs/models',f'quantized_{cfg.model.cls}_{timestamp}')
-        model = quantizer.export_model(model, output_path)
     else:
         train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
@@ -141,19 +130,14 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
     # training loop
     for epoch in epochs_to_run:
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
+
         metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
         log.info(str(metrics))
-
 
         ## eval
         #if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
         #    eval_result = eval_model(cfg, device, model, eval_data)
         #    # TODO log data
-        # save model checkpoint
-        # in case we want this stuff to be configurable via env, then this should maybe be handled by hydra
-        #if  __package__.split(".")[0].upper() + "_" + "model_dir".upper() in os.environ:
-        #    chkpt_folder = __package__.split(".")[0].upper() + "_" + "model_dir".upper()
-        #else:
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
@@ -166,7 +150,6 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
 def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.DataLoader,
            optimizer: optim.Optimizer, mini_run: bool=False) -> Any:
     """ training loop over steps/batches """
-    # TODO comute more metrics
     last_loss = 0
     running_loss = 0
     
@@ -197,7 +180,7 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
             log.info(f'  batch {i+1} loss: {last_loss}')
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
-        if mini_run:
+        if mini_run and i%3==2: # run for more than one data point
             break
     return last_loss    
 

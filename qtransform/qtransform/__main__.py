@@ -19,6 +19,7 @@ def module_wrapper(cfg: DictConfig):
     main(cfg)
 
 def main(cfg: DictConfig):
+    logging.captureWarnings(True)
     root_log = logging.getLogger("root")
     log = logging.getLogger(f"{__package__}.{__name__}")   
     if "trace" in cfg and cfg.trace:
