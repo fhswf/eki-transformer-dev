@@ -10,6 +10,7 @@ formatters:
       WARNING: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
       ERROR: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s %(pathname)s:%(lineno)d] - %(message_log_color)s%(message)s%(reset)s'
       CRITICAL: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s %(pathname)s:%(lineno)d] - %(message_log_color)s%(message)s%(reset)s'
+      TRACE: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
     reset: True
     log_colors:
       TRACE:    'purple'
