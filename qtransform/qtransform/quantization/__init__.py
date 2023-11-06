@@ -2,8 +2,10 @@
 from abc import ABC, abstractclassmethod
 import logging
 import sys
+import json
 from torch.nn import Module
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
+import pprint 
 from typing import List, Optional, Dict, Tuple, Union, get_args, get_origin #get_args: get raw type of wrapper -> Optional[str] is (), Dict[str, str] = (str, str)...
 from dataclasses import dataclass, fields
 from qtransform.classloader import get_data
@@ -132,7 +134,7 @@ class BaseQuant():
             else: 
                 self.default_quantizer_module = quantizer_module
         if count == len(list(SUPPORTED_QUANTIZERS.keys())):
-            log.error(f'Quantization needs to derive from a quantizer class within modules:\n{SCREEN_CHARS}\nbrevitas.quant\n{SCREEN_CHARS}\n, not:\n{self.default_quantizer}')
+            log.error(f'Quantization needs to derive from a quantizer class within modules:\tbrevitas.quant\t, not:\t{self.default_quantizer}')
             raise ValueError()
         log.debug(f'Default quantizer for {self.default_quantizer} appeared in {self.default_quantizer_module}')
 
@@ -217,6 +219,7 @@ class ModelQuantArgs:
         #we need a regular dict, otherwise the type of submodules is going to statically stay DictConfig
         #this is a problem when we need to access methods of e.g. LayerQuantArgs 
         modules = self.modules
+        if hasattr(log, "trace"): log.trace(f"ModelQuantArgs modules: {self.modules}")
         self.modules: Dict[str, Dict[str, LayerQuantArgs]] = dict()
         for module_name, module_cfg in modules.items():
             self.modules[module_name]: Dict[str, LayerQuantArgs] = dict()
@@ -226,6 +229,7 @@ class ModelQuantArgs:
                 raise TypeError
             for layer_name, layer_cfg in module_cfg.items():
                 if not isinstance(layer_cfg, LayerQuantArgs):
+                    if hasattr(log, "trace"): log.trace(f"Processing layer {layer_cfg}")
                     try:
                         layer_cfg.quantize = bool(layer_cfg.quantize)
                     except:
@@ -245,7 +249,8 @@ class ModelQuantArgs:
                     #type cleanup for all defined properties
                     #goes through the supposed type of the dataclass, not of the supplied config
                     for field in (x for x in fields(layer) if x.name != 'quantize'):
-                        log.debug(f'{SCREEN_CHARS}\nCleaning up field ---{field.name}--- within layer: {layer_name}')
+                        #log.debug(f'{SCREEN_CHARS}\nCleaning up field ---{field.name}--- within layer: {layer_name}')
+                        if hasattr(log,"trace"): log.trace(f"Cleaning up field:  {field.name:10s}\t within layer: {layer_name}")
                         attr = getattr(layer, field.name)
                         if attr == None:
                             continue
@@ -337,10 +342,11 @@ log = logging.getLogger(__name__)
 import qtransform.quantization as package_self
 
 def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
-    log.debug(f'Quantizing with parameters: {_quant_cfg}')
     quant_cfg = ModelQuantArgs(**_quant_cfg.model)
-    log.debug(f'Configured quantization config: {quant_cfg}')
+    if hasattr(log,"trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(_quant_cfg), indent=2))
+    if hasattr(log,"trace"): log.trace(f'Configured quantization config: {pprint.PrettyPrinter(indent=1).pformat(quant_cfg)}')
     log.critical(quant_cfg.modules["model"].keys())
+    
     #get_classes necessary, otherwise a circular import error will occur
     quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer, quant_cfg)
     return quantizer
