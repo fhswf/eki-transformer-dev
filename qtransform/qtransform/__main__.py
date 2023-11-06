@@ -24,12 +24,12 @@ def main(cfg: DictConfig):
     log = logging.getLogger(f"{__package__}.{__name__}")   
     if "trace" in cfg and cfg.trace:
         root_log.setLevel(logging.TRACE)
-        log.debug("TRACE ENABLED")
+        log.warn("TRACE ENABLED")
     elif "debug" in cfg and cfg.debug:
         root_log.setLevel(logging.DEBUG)
         log.debug("DEBUG ENABLED")
     import json
-    log.debug("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
+    if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
     log.warning("App is not ready to run")
     
     if "command" not in cfg.run:

@@ -25,17 +25,15 @@ def get_classes(module: ModuleType, parent_class: type):
     classes = {}
     for p in pkgutil.iter_modules(paths):
         m = importlib.import_module(package + "." + p[1])
-        if hasattr(log,"trace"): log.trace(f"module found:  {m}")
         for name, obj in inspect.getmembers(m):
-            if hasattr(log,"trace"): log.trace(f"class found:  {name}={obj}")
             if parent_class is not None: 
                 if inspect.isclass(obj) and issubclass(obj, parent_class):
                     if name not in classes:
-                        log.debug(f"{parent_class.__name__} class found: {name}={obj}")
+                        if hasattr(log, "trace"): log.trace(f"{parent_class.__name__} class found: {name}={obj}")
                         classes[name] = obj
             elif inspect.isclass(obj):
                 if name not in classes:
-                    log.debug(f"{parent_class.__name__} class found: {name}={obj}")
+                    if hasattr(log, "trace"): log.trace(f"{parent_class.__name__} class found: {name}={obj}")
                     classes[name] = obj
     return classes
     
