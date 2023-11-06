@@ -1,18 +1,20 @@
+from copy import deepcopy
 from brevitas import nn as qnn
-from torch.nn import Module
+from torch.nn import Module, ModuleDict
 import logging
 from qtransform.quantization import Quantizer, ActQuantArgs, BiasQuantArgs, WeightQuantArgs
 from qtransform.classloader import get_data
 import re
-import torch.nn.functional as F
+from typing import Dict
+import inspect
+from brevitas.export import export_qonnx
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
 #the default for linear layers is for example Int8WeightPerTensorFloat (8 bits, int, per tensor, etc.)
 
-
-
 log = logging.getLogger(__package__)
+
 
 class BrevitasQuantizer(Quantizer):
     """
@@ -20,54 +22,62 @@ class BrevitasQuantizer(Quantizer):
         As it stands, the dev branch of brevitas is used for quantization. As opposed to pytorch, brevitas offers native GPU
         quantization as well as allowing quantization on a specified number of bits among other hyperparameters specified in the .yaml files of this module.
     """
-    def get_quantized_model(self, model: Module) -> Module:
+    def get_quantized_model(self, model: Module, inplace=False) -> Module:
+        #perform all property access operations with quantized model
+        quantized_model: Module = model if inplace else deepcopy(model)
         #go through all submodules, then all layers within quant config
         for submodule_name, submodule_cfg in self.quant_cfg.modules.items():
             try:
-                submodule: Module = getattr(model, submodule_name)
+                submodule: ModuleDict = quantized_model.get_submodule(submodule_name)
             except AttributeError:
                 log.error(f'Passed model for quantization does not have submodule of name {submodule_name}')
                 raise ValueError
-            for layer_name, layer_cfg in submodule_cfg.layers.items():
+            #go through each layer and perform quantization
+            for layer_name, layer_cfg in submodule_cfg.items():
                 if not layer_cfg.quantize:
                     continue
                 try:
-                    layer: Module = getattr(submodule, layer_name)
+                    layer: Module = submodule.get_submodule(layer_name)
                 except AttributeError:
-                    log.error(f'Submodule {submodule_name} does not have layer of name {layer_name}')
+                    log.error(f'Submodule \"{submodule_name}\" does not have layer of name \"{layer_name}\"')
                     raise ValueError
                 #actually quantize the layer
-                #submodule[layer_name]
-                setattr()
-                #setatt
-                #todo: setattr = self.get_quantized_layer(layer, cfg_act=layer_cfg.act, cfg_weight=layer_cfg.weight, cfg_bias=layer_cfg.bias)
-                #log.debug(f'Quantized layer {layer_name} as: {submodule[layer_name]}')
-        raise NotImplementedError()
+                quantizers = layer_cfg.get_custom_quantizers()
+                quantized_layer: Module = self.get_quantized_layer(layer=layer, layer_type=layer_cfg.layer_type, quantizers=quantizers)
+                #replace current non-quantized layer with quantized layer
+                submodule.add_module(layer_name, quantized_layer)
+        return quantized_model
 
-    def get_quantized_layer(self, layer: Module, cfg_act: ActQuantArgs, cfg_bias: BiasQuantArgs, cfg_weight : WeightQuantArgs) -> Module:
+    def get_quantized_layer(self, layer: Module, layer_type: str, quantizers: Dict[str, type]):
         """
-            Gets the quantized equivalent of a layer tuned with optional quantization configuration.
+            Quantizes a layer as specified in the yaml config file for the corresponding model. 
         """
-        layer_class = layer.__class__
-        layer_class_name = re.split(r'\'', re.split(r'\.', str(layer_class))[-1])[0]
-        quant_class = 'Quant' + layer_class_name
-        #class_name: QuantLinear, QuantConv1d,...
-        #TODO: implement using QuantIdentity
+        #for now, layers in layer_type have to case match the pytorch layers e.g. ReLU instead of relu, Relu etc.
+        quant_class = 'Quant' + layer_type
         try:
-            #get quantized layers of generic torch modules
-            quantized_layer_class = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=Module)
+            #get quantized layers of generic modules
+            quantized_layer_class: type = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=object)
         except KeyError:
             #quantize custom layers
-            log.debug(f'Module {quant_class} not found within {qnn.__package__}')
-        cfg_dict = dict()
-        cfgs = [cfg_act, cfg_bias, cfg_weight]
-        for cfg in cfgs:
-            if cfg == None:
-                continue
-            for attr in [x for x in dir(cfg) if not re.search(r'__.+__', x)]:
-                cfg_dict[attr] = cfg[attr]
-        #TODO: pass other parameters from model into quantized version 
-        quantized_layer = quantized_layer_class(**cfg_dict)
+            log.error(f'Module {quant_class} not found within {qnn.__package__}. Maybe check spelling? (E.g. ReLU has to be ReLU and not relu, Relu...)')
+            raise ValueError
+        log.debug(f'Quantized layer found: {quantized_layer_class}')
+        #retrieve all set hyperparameters of unquantized layer
+        #usually supplied in constructor
+        #exceptions: dtype, device have to be retrieved from general config
+        signature = inspect.signature(layer.__init__)
+        hyperparameters = dict()
+        for attribute_name in set(signature.parameters.keys()) - set(['self', 'dtype', 'device', 'inplace']):
+            #attribute = signature.parameters[attribute_name]
+            hyperparameters[attribute_name] = getattr(layer, attribute_name)
+        #bias is not included in all layers, but is a required argument for some
+        try:
+            hyperparameters["bias"] = True if hyperparameters["bias"] is not None else False
+        except:
+            pass
+        args = {**hyperparameters, **quantizers}
+        log.debug(f'Quantizing layer with args: {args}')
+        quantized_layer = quantized_layer_class(**args)
         return quantized_layer
 
     def train_qat(self, model: Module, function: any, args: list) -> Module:
@@ -78,4 +88,5 @@ class BrevitasQuantizer(Quantizer):
         raise NotImplementedError()
 
     def export_model(self, model: Module, filepath: str) -> None:
-        raise NotImplementedError()
+        #Idea: something along the lines of export_qonnx(model, export_path=filepath)
+        raise NotImplementedError

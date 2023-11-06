@@ -89,3 +89,20 @@ def get_dtype(dtype_alias: str) -> np_dtype:
         log.critical(f'Datatype {dtype_alias} not found within numpy datatype scope')
         raise KeyError()
     return dtype
+
+from typing import Union, get_origin, get_args
+def get_optional_type(_type):
+    """
+        Unwraps a type which might be encapsulated in type "Optional" from the typing package.
+    """
+    field_origin = get_origin(_type)
+    if field_origin is Union:
+        field_type = get_args(_type)
+        #get first datatype of union, assuming that is is Optional, the second type is None anyway
+        origin_type = field_type[0] if len(field_type) == 2 else field_type#and isinstance(field.type, Union) else field_type
+    elif field_origin is None:
+        #type was never wrapped
+        origin_type = _type
+    else: 
+        origin_type =  field_origin
+    return origin_type
