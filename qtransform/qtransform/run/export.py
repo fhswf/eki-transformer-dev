@@ -7,6 +7,7 @@ import os
 from qtransform.utils.helper import load_checkpoint
 import torch
 from brevitas.export import export_onnx_qcdq
+from torch.onnx import export
 from datetime import datetime
 import torch
 
@@ -53,11 +54,10 @@ def run(cfg: DictConfig):
 
     print(model)
     # Weight-only model
-    export_onnx_qcdq(model, torch.tensor([[1337, 420, 360]]), export_path='4b_weight_lenet.onnx')
-    #
-    ## Weight-activation model
-    #export_onnx_qcdq(model, torch.randn(1, 3, 32, 32), export_path='4b_weight_act_lenet.onnx')
-    #
-    ## Weight-activation-bias model
-    #export_onnx_qcdq(model, torch.randn(1, 3, 32, 32), export_path='4b_weight_act_bias_lenet.onnx')
+
+    # if quant:
+    #   export_onnx_qcdq(model, torch.tensor([[1337, 420, 360]]), export_path='q_gpt2_small.onnx', opset_version=16)
+    #else:
+    export(model, torch.tensor([[1337, 420, 360]]), 'gpt2_small.onnx', opset_version=16)
+
     pass
