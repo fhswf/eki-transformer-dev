@@ -41,8 +41,8 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
             log.warn("Modelcheckpint does not contain epoch information")
     return from_epoch,checkpoint
 
-def save_checkpoint(cfg: DictConfig, model: nn.Module, optimizer, timestamp:datetime, metrics:Dict, epoch:int, model_cfg: Any):
-    """save torch model checkpoint from training"""
+def save_checkpoint(cfg: DictConfig, model: nn.Module, optimizer, timestamp:datetime, metrics:Dict, epoch:int, model_cfg: Any) -> str:
+    """save torch model checkpoint from training, returns path to saved file."""
     chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
     if "model_dir" in cfg.run:
         if os.path.isabs(cfg.run.model_dir):
@@ -60,3 +60,4 @@ def save_checkpoint(cfg: DictConfig, model: nn.Module, optimizer, timestamp:date
                 "metrics": metrics,
                 }, f=checkpoint_path)
         log.info(f"Model checkpoint saved to {checkpoint_path}")
+    return checkpoint_path

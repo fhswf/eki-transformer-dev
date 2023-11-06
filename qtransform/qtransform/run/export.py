@@ -52,12 +52,22 @@ def run(cfg: DictConfig):
     
     """
 
-    print(model)
+    log.info(f"Model structure: {model}")
+    if cfg.run.get("output"):
+        # if not quant:
+        export(model, torch.tensor([[1337, 420, 360]]), cfg.run.get("output"), opset_version=16)
+        #else:
+        export_onnx_qcdq(model, torch.tensor([[1337, 420, 360]]), export_path=cfg.run.get("output"), opset_version=16)
+    else:
+        filename = cfg.run.from_checkpoint.split("/")[-1]
+        # if not quant:
+        export(model, torch.tensor([[1337, 420, 360]]), filename, opset_version=16)
+        #else:
+        export_onnx_qcdq(model, torch.tensor([[1337, 420, 360]]), "q" + filename, opset_version=16)
+
+       
     # Weight-only model
 
-    # if quant:
-    export_onnx_qcdq(model, torch.tensor([[1337, 420, 360]]), export_path='q_gpt2_small.onnx', opset_version=16)
-    #else:
-    export(model, torch.tensor([[1337, 420, 360]]), 'gpt2_small.onnx', opset_version=16)
+ 
 
     pass

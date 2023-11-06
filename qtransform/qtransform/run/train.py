@@ -1,7 +1,6 @@
 import logging
 from typing import Any
-from omegaconf import DictConfig
-import hydra
+from omegaconf import DictConfig, OmegaConf
 import os
 import torch
 from torch import nn
@@ -75,6 +74,7 @@ def run(cfg: DictConfig):
     optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1)
 
+    last_checkpoint = None
     # lets go
     quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:    
@@ -85,16 +85,24 @@ def run(cfg: DictConfig):
         #add qat qparams (scale and zero)
         model = quantizer.get_quantized_model(model, inplace=True)
         #calibrate the scales for each weight and activation
+        # TODO make this a decorater so it can return stuff
         model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
     else:
-        train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
+        last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
+    # maybe subsequent jobs can be managed by hydra in the future?
+    # when this paradigm comes up more frequently we have to make this a thing ....
+    if cfg.get("export") and last_checkpoint:
+        from qtransform.run import export
+        OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint)
+        export.run(cfg)
 
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
     mini_run = False
     epochs_to_run = None
+    last_checkpoint = None
     if cfg.run.epochs == 0:
         cfg.run["epochs"] = 1
         log.warn("cfg.run.epochs is 0, performing mini training dry run")
@@ -141,11 +149,11 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
-            save_checkpoint(cfg=cfg, model=model, optimizer=optimizer, timestamp=timestamp, epoch=epoch, metrics=metrics, model_cfg=cfg.model)
+            last_checkpoint = save_checkpoint(cfg=cfg, model=model, optimizer=optimizer, timestamp=timestamp, epoch=epoch, metrics=metrics, model_cfg=cfg.model)
 
         # advance learning rate
         scheduler.step()
-
+    return last_checkpoint
 
 def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.DataLoader,
            optimizer: optim.Optimizer, mini_run: bool=False) -> Any:

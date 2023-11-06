@@ -7,9 +7,7 @@ model_dir: models
 epochs: 10
 gradient_accumulation_steps : 5 * 8 # used to simulate larger batch sizes, leave empty for no accumulation
 flash: False
-export:
-
-
+export: True ## perform an export after #epochs are done
 
 
 
