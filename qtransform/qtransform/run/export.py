@@ -36,12 +36,21 @@ def run(cfg: DictConfig):
         log.error("No model defintion provided in either checkpoint or cfg.model")
         return 1
     model.load_state_dict(checkpoint['model_state_dict'])
+
+    log.info(f"Model structure: {model}")
+    log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
+    sample_tensor = torch.randint(0, checkpoint['model_cfg']['args']['vocab_size'], (1, checkpoint['model_cfg']['args']['block_size']), dtype=int)
+
+    filename = cfg.run.from_checkpoint.split("/")[-1] + ".onnx"
+    if cfg.run.get("output"):
+        filename = cfg.run.get("output")
+
     """
     export function maps to torch onnx export:
     # Export the model
         torch.onnx.export(torch_model,  # model being run
         x,                              # model input (or a tuple for multiple inputs)
-        "super_resolution.onnx",        # where to save the model (can be a file or file-like object)
+        "model.onnx",        # where to save the model (can be a file or file-like object)
         export_params=True,             # store the trained parameter weights inside the model file
         opset_version=10,               # the ONNX version to export the model to
         do_constant_folding=True,       # whether to execute constant folding for optimization
@@ -51,23 +60,10 @@ def run(cfg: DictConfig):
                     'output' : {0 : 'batch_size'}})
     
     """
-
-    log.info(f"Model structure: {model}")
-    if cfg.run.get("output"):
-        # if not quant:
-        export(model, torch.tensor([[1337, 420, 360]]), cfg.run.get("output"), opset_version=16)
-        #else:
-        export_onnx_qcdq(model, torch.tensor([[1337, 420, 360]]), export_path=cfg.run.get("output"), opset_version=16)
+    if 'quantize' in checkpoint['model_cfg']['args'] and checkpoint['model_cfg']['args']:
+        export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=cfg.run.get("output"), opset_version=16)
     else:
-        filename = cfg.run.from_checkpoint.split("/")[-1]
-        # if not quant:
-        export(model, torch.tensor([[1337, 420, 360]]), filename, opset_version=16)
-        #else:
-        export_onnx_qcdq(model, torch.tensor([[1337, 420, 360]]), "q" + filename, opset_version=16)
+        export(model, torch.tensor(sample_tensor), cfg.run.get("output"), opset_version=16)
 
-       
-    # Weight-only model
-
- 
-
+    # TODO more export options
     pass
