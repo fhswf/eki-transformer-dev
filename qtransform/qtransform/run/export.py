@@ -6,11 +6,10 @@ import hydra
 import os
 from qtransform.utils.helper import load_checkpoint
 import torch
-from brevitas.export import export_onnx_qcdq
+from brevitas.export import export_onnx_qcdq, export_qonnx, export_brevitas_onnx
 from torch.onnx import export
 from datetime import datetime
 import torch
-
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +60,8 @@ def run(cfg: DictConfig):
     
     """
     if 'quantize' in checkpoint['model_cfg']['args'] and checkpoint['model_cfg']['args']:
-        export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=filename, opset_version=16)
+        export_qonnx(model, torch.tensor(sample_tensor), export_path="export_qonnx_" + filename, opset_version=16)
+        #export_brevitas_onnx(model, torch.tensor(sample_tensor), export_path="export_brevitas_onnx_" + filename, opset_version=16)
     else:
         export(model, torch.tensor(sample_tensor), filename, opset_version=16)
 

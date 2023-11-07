@@ -3,3 +3,4 @@ command: export
 model_dir: models
 from_checkpoint: ???
 
+export_fn: export  # brevitas export ot troch onnx.export #  can be export, export_brevitas_onnx, export_qonnx, export_onnx_qcdq

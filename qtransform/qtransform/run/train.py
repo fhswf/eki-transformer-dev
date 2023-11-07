@@ -188,7 +188,7 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
             log.info(f'  batch {i+1} loss: {last_loss}')
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
-        if mini_run and i%3==2: # run for more than one data point
+        if mini_run and i>=200: # run for more than one data point
             break
     return last_loss    
 
