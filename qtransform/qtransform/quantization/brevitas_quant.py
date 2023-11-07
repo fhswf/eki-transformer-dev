@@ -25,8 +25,24 @@ class BrevitasQuantizer(Quantizer):
     def get_quantized_model(self, model: Module, inplace=False) -> Module:
         #perform all property access operations with quantized model
         quantized_model: Module = model if inplace else deepcopy(model)
-        #go through all submodules, then all layers within quant config
-        for submodule_name, submodule_cfg in self.quant_cfg.modules.items():
+        #go through all submodules, then all layers within quant config 
+        #for submodule_name, submodule_cfg in self.quant_cfg.modules.items():
+        #name -> sublayerquantargs -> name -> sublayerquantargs...
+        layers = self.quant_cfg.model_layers.layers
+        #TODO: find out when that could happen
+        if not layers:
+            log.error(f'Quantization config for model {model} is not applicable')
+            raise AttributeError
+        
+        #SublayerQuantArgs: name -> layers, name -> layers
+        
+        #transformer.wte
+        #transformer.gelu
+        #transformer.layer.attn.mha
+        #transformer.layer.1.attn.mha
+        #lin_1
+        
+        for submodule_name in layers:
             try:
                 submodule: ModuleDict = quantized_model.get_submodule(submodule_name)
             except AttributeError:
@@ -47,7 +63,6 @@ class BrevitasQuantizer(Quantizer):
                 #replace current non-quantized layer with quantized layer
                 submodule.add_module(layer_name, quantized_layer)
         return quantized_model
-
     def get_quantized_layer(self, layer: Module, layer_type: str, quantizers: Dict[str, type]):
         """
             Quantizes a layer as specified in the yaml config file for the corresponding model. 
