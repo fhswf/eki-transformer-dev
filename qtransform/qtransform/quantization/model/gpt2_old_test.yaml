@@ -1,0 +1,33 @@
+cls: gpt ## has to match cls in config for qtransform.model ?
+layer:
+  transformer:
+    wte: #name of layer
+      layer_type: Embedding
+      weight: 
+        #order of overriding: default_quantizer, then template, then args
+        default_quantizer: Int8WeightPerTensorFloat
+        template: ""  #config in yaml files under ./templates
+        args:
+          # None is default?
+
+    gelu:
+      layer_type: ReLU
+      act:
+        default_quantizer: Int8ActPerTensorFloat
+        template: "" 
+        args:
+          min_val: 0.0
+          max_val: 100.0
+    
+    layer:
+      attn: ## all 
+        mha: # does .layer (it is an array) cover all Moduels in this torch.nn.ModuleList? 
+          layer_type: MultiheadAttention
+          weight:
+            default_quantizer: Int8WeightPerTensorFloat
+    
+      1: ## just 1
+        attn:
+          mha: # only layver with id 1?
+            layer_type: MultiheadAttention
+            # no args at all = brevitas default, so only weight and nothing else ?
