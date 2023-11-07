@@ -25,8 +25,9 @@ class BrevitasQuantizer(Quantizer):
     def get_quantized_model(self, model: Module, inplace=False) -> Module:
         #perform all property access operations with quantized model
         quantized_model: Module = model if inplace else deepcopy(model)
-        #go through all submodules, then all layers within quant config
-        for submodule_name, submodule_cfg in self.quant_cfg.modules.items():
+        #go through all submodules, then all layers within quant config 
+        #for submodule_name, submodule_cfg in self.quant_cfg.modules.items():
+        for submodule_name in self.quant_cfg.model_layers.layers.items():
             try:
                 submodule: ModuleDict = quantized_model.get_submodule(submodule_name)
             except AttributeError:

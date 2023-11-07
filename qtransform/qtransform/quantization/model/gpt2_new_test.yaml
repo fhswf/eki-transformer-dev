@@ -1,5 +1,13 @@
 cls: gpt ## has to match cls in config for qtransform.model ?
-layer:
+#name is layer instead of modules now
+layers:
+  #<module>.<submodule>.<submodule>.<quantized_layer>
+  #-> quantized layer at the bottom, always
+  #start config init from bottom up?
+  #basically means that you need to dynamically create multiple dicts of submodules
+  #config of layers stay the same
+  #-> items of layers is: <sublayers>.<sublayers>.etc.<quantized_layer> : quantized_args
+  # -> nothing changes from quantization behavior
   transformer.wte: #name of layer
     layer_type: Embedding
     weight: 
@@ -18,11 +26,41 @@ layer:
         min_val: 0.0
         max_val: 100.0
   
+  #covering all modules inside of a sublayer is going to be difficult
+  #maybe typecheck and see if attn is in entries of "layer" layer
   transformer.layer.attn.mha: # does .layer (it is an array) cover all Moduels in this torch.nn.ModuleList? 
     layer_type: MultiheadAttention
     weight:
       default_quantizer: Int8WeightPerTensorFloat
+    
 
+  #in torch: modulelist instead of module dict -> different property access
+  #getattr still works though
   transformer.layer.1.attn.mha: # only layver with id 1?
     layer_type: MultiheadAttention
     # no args at all = brevitas default, so only weight and nothing else ?
+    # basically yes, usually the quantized layers only have a default quantizer for weights
+
+  #name of layer is 1, contains sublayers due to mha
+
+#        self.transformer = nn.ModuleDict(dict(
+#            wte = nn.Embedding(config.vocab_size, config.n_embd),
+#            wpe = nn.Embedding(config.block_size, config.n_embd),
+#            dropout = nn.Dropout(config.dropout),
+#            layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
+#            ln_out = LayerNorm(config.n_embd, bias=config.bias),
+#        ))
+
+#class TransformerBlock(nn.Module):
+#
+#    def __init__(self, config):
+#        super().__init__()
+#        self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
+#        self.attn = CausalSelfAttention(config)
+#        self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
+#        self.mlp = MLP(config)
+#
+#    def forward(self, x):
+#        x = x + self.attn(self.ln_1(x))
+#        x = x + self.mlp(self.ln_2(x))
+#        return x
