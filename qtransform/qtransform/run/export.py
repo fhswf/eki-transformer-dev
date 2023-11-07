@@ -61,9 +61,9 @@ def run(cfg: DictConfig):
     
     """
     if 'quantize' in checkpoint['model_cfg']['args'] and checkpoint['model_cfg']['args']:
-        export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=cfg.run.get("output"), opset_version=16)
+        export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=filename, opset_version=16)
     else:
-        export(model, torch.tensor(sample_tensor), cfg.run.get("output"), opset_version=16)
+        export(model, torch.tensor(sample_tensor), filename, opset_version=16)
 
     # TODO more export options
     pass
