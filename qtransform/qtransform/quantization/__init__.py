@@ -156,7 +156,7 @@ from types import ModuleType
 
 #TODO: add overriding feature for templates and args within yaml
 @dataclass
-class LayerQuantArgs:
+class LayerQuantConfig:
     quantize: bool
     name: Optional[str] = None
     layer_type: Optional[str] = None #Linear, Embedding, MHA, ReLU ...
@@ -263,30 +263,36 @@ class LayerQuantArgs:
 
 
 @dataclass
-class SublayerQuantArgs:
+class SublayerQuantConfig:
     """
         Wrapper for generic sublayers. Can either contain sublayers which are wrappers themselves
         or the actual layer that is going to be quantized.
     """
     name: str
-    layers: Optional[Dict[str, 'SublayerQuantArgs']] = None
-    quantized_layer: Optional[LayerQuantArgs] = None
+    layers: Optional[Dict[str, 'SublayerQuantConfig']] = None
+    quantized_layer: Optional[LayerQuantConfig] = None
+    
+    def yield_layers():
+        """
+            Continuously yield entries of self.layers
+        """
+        pass
 
 @dataclass
-class ModelQuantArgs:
+class ModelQuantConfig:
     name: str
-    model_layers: SublayerQuantArgs
+    model_layers: SublayerQuantConfig
 
-    def deep_layer_init(self, key: str, sublayer: SublayerQuantArgs):
+    def deep_layer_init(self, key: str, sublayer: SublayerQuantConfig):
         """
-            Recursively creates sublayers of type SublayerQuantArgs according to the format of the quantized yaml files.
+            Recursively creates sublayers of type SublayerQuantConfig according to the format of the quantized yaml files.
             E.g.: transformer.layer.1.attn.mha, the last layer "mha" being the layer for which quantization is going to be performed.
         """
         sublayer.layers = dict() if sublayer.layers == None else sublayer.layers
         #make sure not to override current layer config 
         current_sublayer = sublayer.layers.get(key)
         if not current_sublayer:
-            current_sublayer = SublayerQuantArgs(name=key)
+            current_sublayer = SublayerQuantConfig(name=key)
             sublayer.layers[key] = current_sublayer
         return current_sublayer
 
@@ -294,18 +300,18 @@ class ModelQuantArgs:
         """
             Check if the types are correct in order to prevent future issues with Brevitas. To do so,
             it iterates through the entire dict representation of the yaml config file and creates instances the corresponding
-            dataclasses if necessary. For example, if a module is not of type LayerQuantArgs, the method creates an instance of
-            LayerQuantArgs with the parameters supplied in the current version of the object.
+            dataclasses if necessary. For example, if a module is not of type LayerQuantConfig, the method creates an instance of
+            LayerQuantConfig with the parameters supplied in the current version of the object.
         """
         if not isinstance(self.model_layers, Union[Dict, DictConfig]):
             log.error(f'Model config has to contain a dictionary of quantized submodules, not type: {type(self.model_layers)}.')
             raise TypeError
         #need to copy values as the current type of self.modules is DictConfig
         #we need a regular dict, otherwise the type of submodules is going to statically stay DictConfig
-        #this is a problem when we need to access methods of e.g. LayerQuantArgs
+        #this is a problem when we need to access methods of e.g. LayerQuantConfig
         layers = self.model_layers
-        if hasattr(log, "trace"): log.trace(f"ModelQuantArgs modules: {self.model_layers}")
-        self.model_layers: SublayerQuantArgs = SublayerQuantArgs(name="layers")
+        if hasattr(log, "trace"): log.trace(f"ModelQuantConfig modules: {self.model_layers}")
+        self.model_layers: SublayerQuantConfig = SublayerQuantConfig(name="layers")
         #submodules_list_string contains the order of layers preceding the layer that has to be quantized
         #seperated with dots e.g. transformer.layer.1.attn.mha
         #layer_cfg is the quantization config for the last layer within submodules_list_string, so for the example
@@ -326,11 +332,11 @@ class ModelQuantArgs:
                 log.debug(f'Going through layer: {submodule_name} of config: {submodules_list_string}')
                 new_submodule = self.deep_layer_init(submodule_name, new_submodule)
             if hasattr(log, "trace"): log.trace(f"Processing layer {layer_cfg}")
-            #quick check if properties in config (do not) appear in LayerQuantArgs dataclass
+            #quick check if properties in config (do not) appear in LayerQuantConfig dataclass
             try:
-                layer = LayerQuantArgs(**{"name": layer_name, **layer_cfg})
+                layer = LayerQuantConfig(**{"name": layer_name, **layer_cfg})
             except:
-                log.error(f'Layer configs only support these properties: {[x.name for x in fields(LayerQuantArgs)]}. Caused by layer: {layer_name}.')
+                log.error(f'Layer configs only support these properties: {[x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {layer_name}.')
                 raise TypeError
             if not layer.quantize:
                 continue
@@ -351,8 +357,8 @@ class Quantizer(ABC):
         As it stands right now, brevitas should be chosen for QAT related purposes.
     """
 
-    def __init__(self, quant_cfg: ModelQuantArgs):
-        self.quant_cfg: ModelQuantArgs = quant_cfg
+    def __init__(self, quant_cfg: ModelQuantConfig):
+        self.quant_cfg: ModelQuantConfig = quant_cfg
 
     @abstractclassmethod
     def get_quantized_model(self, model: Module, inplace: bool = False) -> Module:
@@ -379,7 +385,7 @@ log = logging.getLogger(__name__)
 import qtransform.quantization as package_self
 
 def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
-    quant_cfg = ModelQuantArgs(**_quant_cfg.model)
+    quant_cfg = ModelQuantConfig(**_quant_cfg.model)
     if hasattr(log,"trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(_quant_cfg), indent=2))
     if hasattr(log,"trace"): log.trace(f'Configured quantization config: {pprint.PrettyPrinter(indent=1).pformat(quant_cfg)}')
     log.critical(quant_cfg)
