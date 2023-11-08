@@ -5,10 +5,10 @@ layers:
     layer_type: Conv2d
     #quantization for different kinds, e.g. weight
     #not all layers support quantization of all kinds, e.g. activation functions do not have weight quantization
-    weight: 
+    weight:
       #order of overriding: default_quantizer, then template, then args
       default_quantizer: Int8WeightPerTensorFloat
-      template: "" #config in yaml files under ./templates
+      template: weight_round_minmax #config in yaml files under ./templates. Default: ""
       args:
         quant_type : INT #Integer, binary, ternary, fixed point integer
         bit_width_impl_type : CONST #is the bit width backpropagated and optimised
@@ -25,7 +25,7 @@ layers:
 
         scaling_per_output_channel : True #per tensor or per channel quantization
         restrict_scaling_type : FP #restrict range of values that scale qparam can have
-        bit_width : 6 #bit width of quantized values
+        #bit_width : 6 #bit width of quantized values
   model.relu1:
     quantize: True
     layer_type: ReLU

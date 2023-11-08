@@ -13,6 +13,7 @@ from enum import Enum
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
 from brevitas.jit import ScriptModule
 import brevitas.quant.solver as brevitas_solver
+import yaml
 
 @dataclass 
 class QuantArgs:
@@ -43,7 +44,11 @@ class QuantArgs:
     restrict_scaling_type : Optional[RestrictValueType] = None #restrict range of values that scale qparam can have
     bit_width : Optional[int] = None #bit width of quantized values
 
+
     def __post_init__(self):
+        self.clean_types()
+    
+    def clean_types(self):
         """
             Clean up the data types its attributes and turn the string values into its enum representations found in brevitas.
             For example, instead of quant_type being 'INT', it should be: <QuantType.INT: 'INT'>.
@@ -56,6 +61,7 @@ class QuantArgs:
                 continue
             origin_type = get_optional_type(field.type)
             setattr(self, field.name, origin_type(current_value_for_field))
+            
 """
     Below are Quantizer parameters which encapsulate qparams for the different kinds of quantizers.
 """
@@ -83,6 +89,7 @@ class ActQuantArgs(QuantArgs):
     """
     max_val: Optional[float] = None
     min_val: Optional[float] = None
+    
 """
     From brevitas.TMVCon: 
 
@@ -91,7 +98,8 @@ class ActQuantArgs(QuantArgs):
     we can also simply define a new quantizer by inheriting from the one we are customizing.
     -> in order to pass qparams for layers whose quantizers are by default set to zero, a corresponding quantizer class needs to be passed to the layer
     -> otherwise, the qparams are ignored entirely
-    -> it can be neglected for weight quantizers for layers and act quantizers for activations; however input, output and bias quantization will not be supported
+    -> usually, quantized layers have some form of default quantizer e.g. weight for linear layers, act for activation functions, but not for all.
+       usually input, output and bias quantization will not be applied as they are by default set to None
     -> if we pass a class into the quantized layer with missing qparams (quant type ...), the program will crash
     -> using default quantizers is necessary
 """
@@ -115,6 +123,7 @@ SUPPORTED_QUANTIZERS: Dict[str, List[str]] = {
     brevitas_fixed_point_module: all_fp_quantizers
 }
 
+from os.path import join
 @dataclass
 class BaseQuant():
     default_quantizer: str
@@ -141,6 +150,26 @@ class BaseQuant():
         if failed_lookup == len(list(SUPPORTED_QUANTIZERS.keys())):
             log.error(f'Quantizer class \"{self.default_quantizer}\"did not appear in modules: {list(SUPPORTED_QUANTIZERS.keys())}')
             raise ValueError()
+        
+        #load template config
+        if self.template:
+            path_of_init = '/'.join(__file__.split('/')[:-1])
+            #TODO: should path of template directory be configurable?
+            with open(join(path_of_init,'model', 'templates', self.template + '.yaml'), 'r') as yaml_file:
+                template_yaml: Dict[str, str] = yaml.safe_load(yaml_file)
+            #currently, arguments from model yaml file are loaded in self.args
+            #the existing values should override values from template
+            #therefore, only values not set in self.args attribute are looked at
+            template_args = template_yaml.get('args')
+            if not template_args:
+                log.warning(f'Template {self.template} is missing property \"args\" which contains the quant parameters. Skipping template configuration.')
+                return
+            empty_qparams = set([x.name for x in fields(self.args) if getattr(self.args, x.name, None) is None])
+            #only apply values from template which are not currently set and which are also supported
+            for field in set(template_args.keys()) & empty_qparams :
+                setattr(self.args, field, template_args[field])
+        
+        
         
 #creating explicit classes in order to avoid future type collisions with Union[WeightQuantArgs, BiasQuantArgs, ActQuantArgs]
 @dataclass
@@ -190,7 +219,8 @@ class LayerQuantConfig:
                 continue
             origin_type = get_optional_type(field.type)
             log.debug(f'Field {field.name} within layer {self.name} should be of type: {origin_type}, however it is of type: {type(attr)}')
-            #cleanup for nested config
+            #only perform deep cleaning if types are not currently correct
+            #usually not the case for primitive datatypes
             if not isinstance(attr, origin_type) and isinstance(attr, Union[Dict, DictConfig]):
                 #attr is of type DictConfig, does not allow adding properties
                 new_attr: dict = dict(attr)
@@ -260,7 +290,9 @@ class LayerQuantConfig:
             quantizer_args = dict()
             #type constructor needs dict for args, not (data)class
             for field in fields(quant_args.args) if quant_args.args is not None else []:
-                quantizer_args[field.name] = getattr(quant_args.args, field.name)
+                quant_value = getattr(quant_args.args, field.name)
+                if quant_value:
+                    quantizer_args[field.name] = getattr(quant_args.args, field.name)
             #property access of class from module
             quantizer_class = getattr(quantizer_module, quant_args.default_quantizer)
             #make subclass of default quantizer
@@ -313,9 +345,10 @@ class ModelQuantConfig:
             submodule_names: List[str] = submodules_list_string.split('.')
             layer_name = submodule_names[-1]
             #quick check if properties in config (do not) appear in LayerQuantConfig dataclass
+            layer = LayerQuantConfig(**{"name": submodules_list_string, **layer_cfg})
             try:
                 layer = LayerQuantConfig(**{"name": submodules_list_string, **layer_cfg})
-            except:
+            except TypeError:
                 log.error(f'Layer configs only support these properties: {[x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
                 raise TypeError
             if not layer.quantize:
