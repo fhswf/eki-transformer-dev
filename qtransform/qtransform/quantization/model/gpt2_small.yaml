@@ -11,22 +11,22 @@ layers:
       args:
         # None is default? default values of default_quantizer
 
-  transformer.gelu:
-    layer_type: ReLU
-    act:
-      default_quantizer: Int8ActPerTensorFloat
-      template: "" 
-      args:
-        min_val: 0.0
-        max_val: 100.0
+  #transformer.gelu:
+  #  layer_type: ReLU
+  #  act:
+  #    default_quantizer: Int8ActPerTensorFloat
+  #    template: "" 
+  #    args:
+  #      min_val: 0.0
+  #      max_val: 100.0
   
   #covering all modules inside of a sublayer is going to be difficult
   #currently, each entry inside of the config applied to exactly one layer that should be quantized
   #if wider coverage is needed, another property beside layers could be implemented
-  transformer.layer.attn.mha: # does .layer (it is an array) cover all Moduels in this torch.nn.ModuleList? 
-    layer_type: MultiheadAttention
-    weight:
-      default_quantizer: Int8WeightPerTensorFloat
+  #transformer.layer.attn.mha: # does .layer (it is an array) cover all Moduels in this torch.nn.ModuleList? 
+  #  layer_type: MultiheadAttention
+  #  weight:
+  #    default_quantizer: Int8WeightPerTensorFloat
     
 
   transformer.layer.1.attn.mha: # only layver with id 1? yes

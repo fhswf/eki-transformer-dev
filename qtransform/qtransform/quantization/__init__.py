@@ -107,13 +107,13 @@ from brevitas.quant.fixed_point import __name__ as brevitas_fixed_point_module
 from brevitas.quant.ternary import __all__ as all_ternary_quantizers
 from brevitas.quant.ternary import __name__ as brevitas_ternary_module
 
+#structure: 'brevitas.quant.scaled_int' : [all_quantizers e.g. Int8WeightPerTensorFloat]
 SUPPORTED_QUANTIZERS: Dict[str, List[str]] = {
-    brevitas_binary_module: all_int_quantizers, 
+    brevitas_binary_module: all_binary_quantizers, 
     brevitas_scaled_int_module: all_int_quantizers,
     brevitas_ternary_module: all_ternary_quantizers, 
     brevitas_fixed_point_module: all_fp_quantizers
 }
-SCREEN_CHARS = 80* "-"
 
 @dataclass
 class BaseQuant():
@@ -121,23 +121,28 @@ class BaseQuant():
     template: Optional[str] = None
     #module name, e.g. brevitas.quant.scaled_int for all int quantizers
     #does not have to be set within config
-    default_quantizer_module: Optional[str] = None
-
+    quantizer_module: Optional[str] = None
+    args: Optional[QuantArgs] = None
+    
     def __post_init__(self):
         #remember how often the supplied default quantizer is not within supported modules
-        count: int = 0
+        failed_lookup: int = 0
+        #user supplied module in which quantizer appears in, not necessary though
+        if self.quantizer_module and self.quantizer_module not in SUPPORTED_QUANTIZERS.keys():
+            log.warning(f'User specified that Quantizer \"{self.default_quantizer}\" appears in module \"{self.quantizer_module}\". This module is not supported.')
         for quantizer_module, quantizer_classes in SUPPORTED_QUANTIZERS.items():
             if self.default_quantizer not in quantizer_classes:
-                count += 1
+                failed_lookup += 1
             #remember what module in brevitas.quant the default quantizer is in (binary, fixed_point, ternary, scaled_int) 
             else: 
-                self.default_quantizer_module = quantizer_module
-        if count == len(list(SUPPORTED_QUANTIZERS.keys())):
-            log.error(f'Quantization needs to derive from a quantizer class within modules:\tbrevitas.quant\t, not:\t{self.default_quantizer}')
+                self.quantizer_module = quantizer_module
+                log.debug(f'Default quantizer for {self.default_quantizer} appeared in {self.quantizer_module}')
+                break
+        if failed_lookup == len(list(SUPPORTED_QUANTIZERS.keys())):
+            log.error(f'Quantizer class \"{self.default_quantizer}\"did not appear in modules: {list(SUPPORTED_QUANTIZERS.keys())}')
             raise ValueError()
-        log.debug(f'Default quantizer for {self.default_quantizer} appeared in {self.default_quantizer_module}')
-
-#creating explicit classes in order to avoid future type collisions wiht Union[WeightQuantArgs, BiasQuantArgs, ActQuantArgs]
+        
+#creating explicit classes in order to avoid future type collisions with Union[WeightQuantArgs, BiasQuantArgs, ActQuantArgs]
 @dataclass
 class WeightQuant(BaseQuant):
     args: Optional[WeightQuantArgs] = None
@@ -179,7 +184,6 @@ class LayerQuantConfig:
             raise ValueError
         #cleanup rest (specifically quant options of type BaseQuant)
         for field in (x for x in fields(self) if x.name != 'quantize'):
-            #log.debug(f'{SCREEN_CHARS}\nCleaning up field ---{field.name}--- within layer: {layer_name}')
             if hasattr(log,"trace"): log.trace(f"Cleaning up field:  {field.name:10s}\t within layer: {self.name}")
             attr = getattr(self, field.name)
             if attr == None:
@@ -249,14 +253,15 @@ class LayerQuantConfig:
             if quant_args == None:
                 continue
             log.debug(f'Setting custom quantizer for type: {layer_quant_name} and args: {quant_args}')
-            #get default quantizer
-            quantizer_module: ModuleType = import_module(quant_args.default_quantizer_module)
+            #import module that has default quantizer
+            quantizer_module: ModuleType = import_module(quant_args.quantizer_module)
             #create subclass from that quantizer and override values
             #from: https://stackoverflow.com/questions/9269902/is-there-a-way-to-create-subclasses-on-the-fly
             quantizer_args = dict()
             #type constructor needs dict for args, not (data)class
             for field in fields(quant_args.args) if quant_args.args is not None else []:
                 quantizer_args[field.name] = getattr(quant_args.args, field.name)
+            #property access of class from module
             quantizer_class = getattr(quantizer_module, quant_args.default_quantizer)
             #make subclass of default quantizer
             #it is not an instance, but of type class
@@ -268,41 +273,12 @@ class LayerQuantConfig:
                 )
         return quantizers
 
-@DeprecationWarning
-@dataclass
-class SublayerQuantConfig:
-    """
-        Wrapper for generic sublayers. Can either contain sublayers which are wrappers themselves
-        or the actual layer that is going to be quantized.
-    """
-    name: str
-    layers: Optional[Dict[str, 'SublayerQuantConfig']] = None
-    quantized_layer: Optional[LayerQuantConfig] = None
-    
-    def yield_layers():
-        """
-            Continuously yield entries of self.layers
-        """
-        pass
-
 @dataclass
 class ModelQuantConfig:
     name: str
     layers: Dict[str, LayerQuantConfig]
-
-    @DeprecationWarning
-    def deep_layer_init(self, key: str, sublayer: SublayerQuantConfig):
-        """
-            Recursively creates sublayers of type SublayerQuantConfig according to the format of the quantized yaml files.
-            E.g.: transformer.layer.1.attn.mha, the last layer "mha" being the layer for which quantization is going to be performed.
-        """
-        sublayer.layers = dict() if sublayer.layers == None else sublayer.layers
-        #make sure not to override current layer config 
-        current_sublayer = sublayer.layers.get(key)
-        if not current_sublayer:
-            current_sublayer = SublayerQuantConfig(name=key)
-            sublayer.layers[key] = current_sublayer
-        return current_sublayer
+    dtype: str
+    device: str
 
     def __post_init__(self):
         """

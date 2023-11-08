@@ -1,5 +1,6 @@
 from copy import deepcopy
 from brevitas import nn as qnn
+from torch import device
 from torch.nn import Module, ModuleDict
 import logging
 from qtransform.quantization import Quantizer, ActQuantArgs, BiasQuantArgs, WeightQuantArgs
@@ -36,6 +37,7 @@ class BrevitasQuantizer(Quantizer):
         #naively iterate through each layer name specified in config
         #which means that same layers could be retrieved multiple times
         for layer_cfg in [x for x in layers.values() if x.quantize]:
+            log.debug(f'Quantizing layer {layer_cfg.name}')
             submodule: Module = quantized_model
             sublayer_names = layer_cfg.get_layers()
             for sublayer_name in sublayer_names:
@@ -47,6 +49,8 @@ class BrevitasQuantizer(Quantizer):
              #sublayer should now contain the layer to be quantized
             quantizers = layer_cfg.get_custom_quantizers()
             quantized_layer: Module = self.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers)
+            #see if models are moved to corresponding device 
+            #quantized_layer.to(device=self.quant_cfg.device, dtype=self.quant_cfg.dtype)
             #replace current non-quantized layer with quantized layer
             submodule.add_module(sublayer_names[-1], quantized_layer)
         return quantized_model
