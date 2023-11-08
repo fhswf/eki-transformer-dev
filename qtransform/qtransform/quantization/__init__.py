@@ -1,4 +1,3 @@
-#dtypes = [torch.qint8, torch.quint8, torch.quint32]
 from abc import ABC, abstractclassmethod
 import logging
 import sys
@@ -158,7 +157,7 @@ from types import ModuleType
 @dataclass
 class LayerQuantConfig:
     quantize: bool
-    name: Optional[str] = None
+    name: str = None #necessary to iterate through layers in model
     layer_type: Optional[str] = None #Linear, Embedding, MHA, ReLU ...
     #after using a default Quantizer, it is necessary to do the injection part ourselves
     #which means creating a custom Class deriving of the base brevitas quantizer class and overriding qparams
@@ -229,6 +228,14 @@ class LayerQuantConfig:
                 #setattr(self.modules[module_name], layer_name, layer)
                 log.debug(f'Config for field {field.name} has been cleaned up. {new_attr}')
 
+    def get_layers(self) -> Tuple[str]:
+        """
+            Splits the name of the quantization config for this layer into a list in order to iterate through a model.
+            Usually, the property name of LayerQuantConfig is presented in dotted form, each entry being a sublayer of the model.
+            E.g. transformer.layer.1.attn.mha: The last property mha is the layer for which the config is going to be applied.
+        """
+        return tuple(self.name.split('.')) if self.name else ()
+
     def get_custom_quantizers(self):
         """
             Idea: Construct a custom class from the default quantizer e.g. Int8WeightPerTensorFloat and override its parameters
@@ -261,7 +268,7 @@ class LayerQuantConfig:
                 )
         return quantizers
 
-
+@DeprecationWarning
 @dataclass
 class SublayerQuantConfig:
     """
@@ -281,8 +288,9 @@ class SublayerQuantConfig:
 @dataclass
 class ModelQuantConfig:
     name: str
-    model_layers: SublayerQuantConfig
+    layers: Dict[str, LayerQuantConfig]
 
+    @DeprecationWarning
     def deep_layer_init(self, key: str, sublayer: SublayerQuantConfig):
         """
             Recursively creates sublayers of type SublayerQuantConfig according to the format of the quantized yaml files.
@@ -303,15 +311,15 @@ class ModelQuantConfig:
             dataclasses if necessary. For example, if a module is not of type LayerQuantConfig, the method creates an instance of
             LayerQuantConfig with the parameters supplied in the current version of the object.
         """
-        if not isinstance(self.model_layers, Union[Dict, DictConfig]):
-            log.error(f'Model config has to contain a dictionary of quantized submodules, not type: {type(self.model_layers)}.')
+        if not isinstance(self.layers, Union[Dict, DictConfig]):
+            log.error(f'Model config has to contain a dictionary of quantized submodules, not type: {type(self.layers)}.')
             raise TypeError
         #need to copy values as the current type of self.modules is DictConfig
         #we need a regular dict, otherwise the type of submodules is going to statically stay DictConfig
         #this is a problem when we need to access methods of e.g. LayerQuantConfig
-        layers = self.model_layers
-        if hasattr(log, "trace"): log.trace(f"ModelQuantConfig modules: {self.model_layers}")
-        self.model_layers: SublayerQuantConfig = SublayerQuantConfig(name="layers")
+        layers = self.layers
+        if hasattr(log, "trace"): log.trace(f"ModelQuantConfig modules: {self.layers}")
+        self.layers: Dict[str, LayerQuantConfig] = dict()
         #submodules_list_string contains the order of layers preceding the layer that has to be quantized
         #seperated with dots e.g. transformer.layer.1.attn.mha
         #layer_cfg is the quantization config for the last layer within submodules_list_string, so for the example
@@ -321,27 +329,22 @@ class ModelQuantConfig:
             if not isinstance(layer_cfg, Union[Dict, DictConfig]):
                 log.error(f'Config for layer \"{submodules_list_string}\" has to be a dictionary, not {type(layer_cfg)}')
                 raise TypeError
+            elif submodules_list_string in self.layers.keys():
+                log.warning(f"""Config for layer {submodules_list_string} already exists with properties \n{self.layers[submodules_list_string]}\n.
+                                Replacing them with {layer_cfg}
+                            """)
+            if hasattr(log, "trace"): log.trace(f"Processing layer {layer_cfg}")
             submodule_names: List[str] = submodules_list_string.split('.')
             layer_name = submodule_names[-1]
-            #all layers until the last one are wrappers for the final layer
-            #the final layer actually should be quantized
-            new_submodule = self.model_layers
-            for submodule_name in submodule_names:
-                #create a nested hierarchy of type SublayerQuantArgs in order to iterate through the model during
-                #actual quantization better by accessing its properties iteratively
-                log.debug(f'Going through layer: {submodule_name} of config: {submodules_list_string}')
-                new_submodule = self.deep_layer_init(submodule_name, new_submodule)
-            if hasattr(log, "trace"): log.trace(f"Processing layer {layer_cfg}")
             #quick check if properties in config (do not) appear in LayerQuantConfig dataclass
             try:
-                layer = LayerQuantConfig(**{"name": layer_name, **layer_cfg})
+                layer = LayerQuantConfig(**{"name": submodules_list_string, **layer_cfg})
             except:
-                log.error(f'Layer configs only support these properties: {[x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {layer_name}.')
+                log.error(f'Layer configs only support these properties: {[x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
                 raise TypeError
             if not layer.quantize:
                 continue
-            #the last layer of an entry is the one that should be quantized
-            new_submodule.quantized_layer = layer
+            self.layers[submodules_list_string] = layer
 
 """
     Supported torch.nn modules for quantization by Brevitas:
@@ -388,7 +391,6 @@ def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
     quant_cfg = ModelQuantConfig(**_quant_cfg.model)
     if hasattr(log,"trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(_quant_cfg), indent=2))
     if hasattr(log,"trace"): log.trace(f'Configured quantization config: {pprint.PrettyPrinter(indent=1).pformat(quant_cfg)}')
-    log.critical(quant_cfg)
     #get_classes necessary, otherwise a circular import error will occur
     quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer, quant_cfg)
     return quantizer

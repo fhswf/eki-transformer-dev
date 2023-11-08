@@ -28,41 +28,29 @@ class BrevitasQuantizer(Quantizer):
         #go through all submodules, then all layers within quant config 
         #for submodule_name, submodule_cfg in self.quant_cfg.modules.items():
         #name -> sublayerquantargs -> name -> sublayerquantargs...
-        layers = self.quant_cfg.model_layers.layers
+        layers = self.quant_cfg.layers
         #TODO: find out when that could happen
         if not layers:
             log.error(f'Quantization config for model {model} is not applicable')
             raise AttributeError
-        
-        #SublayerQuantArgs: name -> layers, name -> layers
-        
-        #transformer.wte
-        #transformer.gelu
-        #transformer.layer.attn.mha
-        #transformer.layer.1.attn.mha
-        #lin_1
-        
-        for submodule_name in layers:
-            try:
-                submodule: ModuleDict = quantized_model.get_submodule(submodule_name)
-            except AttributeError:
-                log.error(f'Passed model for quantization does not have submodule of name {submodule_name}')
-                raise ValueError
-            #go through each layer and perform quantization
-            for layer_name, layer_cfg in submodule_cfg.items():
-                if not layer_cfg.quantize:
-                    continue
+        #naively iterate through each layer name specified in config
+        #which means that same layers could be retrieved multiple times
+        for layer_cfg in [x for x in layers.values() if x.quantize]:
+            submodule: Module = quantized_model
+            sublayer_names = layer_cfg.get_layers()
+            for sublayer_name in sublayer_names:
                 try:
-                    layer: Module = submodule.get_submodule(layer_name)
+                    submodule = submodule.get_submodule(sublayer_name)
                 except AttributeError:
-                    log.error(f'Submodule \"{submodule_name}\" does not have layer of name \"{layer_name}\"')
+                    log.error(f'Passed model for quantization does not have submodule of name {layer_cfg.name}')
                     raise ValueError
-                #actually quantize the layer
-                quantizers = layer_cfg.get_custom_quantizers()
-                quantized_layer: Module = self.get_quantized_layer(layer=layer, layer_type=layer_cfg.layer_type, quantizers=quantizers)
-                #replace current non-quantized layer with quantized layer
-                submodule.add_module(layer_name, quantized_layer)
+             #sublayer should now contain the layer to be quantized
+            quantizers = layer_cfg.get_custom_quantizers()
+            quantized_layer: Module = self.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers)
+            #replace current non-quantized layer with quantized layer
+            submodule.add_module(sublayer_names[-1], quantized_layer)
         return quantized_model
+    
     def get_quantized_layer(self, layer: Module, layer_type: str, quantizers: Dict[str, type]):
         """
             Quantizes a layer as specified in the yaml config file for the corresponding model. 
