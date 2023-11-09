@@ -92,9 +92,9 @@ def run(cfg: DictConfig):
 
     # maybe subsequent jobs can be managed by hydra in the future?
     # when this paradigm comes up more frequently we have to make this a thing ....
-    if cfg.get("export") and last_checkpoint:
+    if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
-        OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint)
+        OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
         export.run(cfg)
 
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
@@ -161,7 +161,6 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     last_loss = 0
     running_loss = 0
     
-    print(str(train_data.dataset))
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
 
@@ -183,9 +182,9 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
         optimizer.step()
 
         running_loss += loss.item()
-        if i % cfg.run.log_steps_interval == 0 or mini_run:
+        if i % cfg.run.log_steps_interval == 0:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
-            log.info(f'  batch {i+1} loss: {last_loss}')
+            log.info(f'  batch {i} loss: {last_loss}')
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
         if mini_run and i>=200: # run for more than one data point
