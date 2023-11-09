@@ -52,17 +52,23 @@ class BrevitasQuantizer(Quantizer):
                     raise ValueError
              #sublayer should now contain the layer to be quantized
             quantizers = layer_cfg.get_custom_quantizers()
-            quantized_layer: Module = self.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers)
+            quantized_layer: Module = self.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
             #see if models are moved to corresponding device 
             #quantized_layer.to(device=self.quant_cfg.device, dtype=self.quant_cfg.dtype)
             #replace current non-quantized layer with quantized layer
             submodule.add_module(sublayer_names[-1], quantized_layer)
         return quantized_model
     
-    def get_quantized_layer(self, layer: Module, layer_type: str, quantizers: Dict[str, type]):
+    def get_quantized_layer(self, layer: Module, layer_type: str, quantizers: Dict[str, type], layer_name: str = None):
         """
             Quantizes a layer as specified in the yaml config file for the corresponding model. 
         """
+        #first of all, check if layer is quantized already
+        if hasattr(qnn, layer.__class__.__name__):
+            log.warning(f'Layer \"{layer_name}\" is already quantized, yet it is enabled for quantization in the config. Skipping for now.')
+            #if quantized already, simply return it
+            #possible feature: overwrite qparams of layer
+            return layer
         #for now, layers in layer_type have to case match the pytorch layers e.g. ReLU instead of relu, Relu etc.
         quant_class = 'Quant' + layer_type
         try:
@@ -70,9 +76,9 @@ class BrevitasQuantizer(Quantizer):
             quantized_layer_class: type = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=object)
         except KeyError:
             #quantize custom layers
-            log.error(f'Module {quant_class} not found within {qnn.__package__}. Maybe check spelling? (E.g. ReLU has to be ReLU and not relu, Relu...)')
+            log.error(f'Module \"{quant_class}\" not found within \"{qnn.__package__}\". Maybe check spelling? (E.g. ReLU has to be ReLU and not relu, Relu...)')
             raise ValueError
-        log.debug(f'Quantized layer found: {quantized_layer_class}')
+        log.debug(f'Quantized layer found for \"{layer_name}\": \"{quantized_layer_class}\"')
         #retrieve all set hyperparameters of unquantized layer
         #usually supplied in constructor
         #exceptions: dtype, device have to be retrieved from general config
@@ -91,9 +97,13 @@ class BrevitasQuantizer(Quantizer):
         except:
             pass
         args = {**hyperparameters, **quantizers}
-        log.debug(f'Quantizing layer with args: {args}')
+        log.debug(f'Quantizing layer \"{layer_name}\" with args: \"{args}\"')
         #create object of quantized layer, passing hyperparameters from current layer and (custom) quantizer classes
-        quantized_layer = quantized_layer_class(**args)
+        try:
+            quantized_layer = quantized_layer_class(**args)
+        except Exception as e:
+            log.critical(f'Quantization for layer \"{layer_name}\" unsuccessful. Skipping layer.')
+            #TODO: find good path for error messages
         return quantized_layer
 
     def train_qat(self, model: Module, function: any, args: list) -> Module:

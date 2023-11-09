@@ -273,9 +273,14 @@ class LayerQuantConfig:
 
     def get_custom_quantizers(self) ->Dict[str, type]:
         """
-            Idea: Construct a custom class from the default quantizer e.g. Int8WeightPerTensorFloat and override its parameters
-            with the values from the config. If no custom configuration for certain quantizers are set, the default quantizers of the layer are
-            used and the field for the corresponding quantizer in the return dict is not present.
+            Retrieves default quantizers of a layer and overrides their qparams with specified qparams in the config, if present. It does this by retrieving the
+            quantizer that should be used for the corresponding layer from the property 'default_quantizer' of the quantizer config. This property is mandatory in order to 
+            support custom quantization. If no custom qparams for certain layers are set, the qparams of the quantizer specified in 'default_quantizer' is used. 
+            Otherwise, a custom quantizer is created and qparams specified in the quantization config are used. If no default quantizer is specified, the quantizer of
+            the layer is used. Usually, if that is the case, only quantization for weights are applied due to the implementation of brevitas.
+
+            Returns: Dict[quantization_kind: custom_quantizer_class] e.g. {"weight": <class Int8WeightTensorFloat>, "bias": <class CustomBiasLinearQuantizer>} 
+                     if default quantizers for the corresponding quantization_kind is set. Otherwise {}
         """
         #mapping of custom quantizer classes for the entire layer
         quantizers: Dict[str, type] = dict()

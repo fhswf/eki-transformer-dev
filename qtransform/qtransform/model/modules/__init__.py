@@ -60,7 +60,6 @@ class CausalSelfAttention(nn.Module):
         self.dropout = config.dropout
         self.quantize = config.quantize
         self.block_size = config.block_size
-
         if config.quantize:
             self.mha = qnn.QuantMultiheadAttention(config.n_embd, config.n_head, batch_first=True)
             self.attn_mask = torch.tril(torch.ones((config.block_size,config.block_size))) # limit to left in the input sequence

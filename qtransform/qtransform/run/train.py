@@ -85,8 +85,6 @@ def run(cfg: DictConfig):
         quantizer = get_quantizer(quant_cfg)
         #add qat qparams (scale and zero)
         model = quantizer.get_quantized_model(model, inplace=True)
-        log.critical(model)
-        if hasattr(log,"trace"): log.trace(f'Quantized model: {PrettyPrinter(indent=1).pformat(model)}')
         #calibrate the scales for each weight and activation
         # TODO make this a decorater so it can return stuff
         model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
