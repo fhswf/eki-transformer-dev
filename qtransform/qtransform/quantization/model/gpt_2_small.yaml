@@ -1,8 +1,14 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
+#scope:
+#  transformer.layer:
+#    type: container
+#    quantized_layre: attn.mha
+#    scope: 0,1,2,4,5 #0-5 also possible
 layers:
   #<module>.<submodule>.<submodule>.<quantized_layer>
   #-> quantized layer at the bottom, always
   transformer.wte: #name of layer
+    #quantize: True
     layer_type: Embedding
     weight: 
       #order of overriding: default_quantizer, then template, then args
@@ -30,6 +36,7 @@ layers:
     
 
   transformer.layer.1.attn.mha: # only layver with id 1? yes
+    quantize: True
     layer_type: MultiheadAttention
     # no args at all = brevitas default, so only weight and nothing else ?
     # basically yes, usually the quantized layers only have a default quantizer for weights

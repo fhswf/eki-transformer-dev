@@ -9,6 +9,7 @@ import re
 from typing import Dict
 import inspect
 from brevitas.export import export_qonnx
+from pprint import PrettyPrinter
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
@@ -35,9 +36,12 @@ class BrevitasQuantizer(Quantizer):
             log.error(f'Quantization config for model {model} is not applicable')
             raise AttributeError
         #naively iterate through each layer name specified in config
-        #which means that same layers could be retrieved multiple times
+        #which means that containers holding layers could be retrieved multiple times without caching
         for layer_cfg in [x for x in layers.values() if x.quantize]:
-            log.debug(f'Quantizing layer {layer_cfg.name}')
+            if hasattr(log,"trace"): 
+                log.trace(f'Quantizing layer : {PrettyPrinter(indent=1).pformat(layer_cfg.name)}') 
+            else: 
+                log.debug(f'Quantizing layer {layer_cfg.name}')
             submodule: Module = quantized_model
             sublayer_names = layer_cfg.get_layers()
             for sublayer_name in sublayer_names:
@@ -75,8 +79,12 @@ class BrevitasQuantizer(Quantizer):
         signature = inspect.signature(layer.__init__)
         hyperparameters = dict()
         for attribute_name in set(signature.parameters.keys()) - set(['self', 'dtype', 'device', 'inplace']):
-            #attribute = signature.parameters[attribute_name]
-            hyperparameters[attribute_name] = getattr(layer, attribute_name)
+            #some init parameters are not necessarily stored as attributes in layer
+            #e.g. dtype, device, _weight, ...
+            try:
+                hyperparameters[attribute_name] = getattr(layer, attribute_name)
+            except AttributeError:
+                pass
         #bias is not included in all layers, but is a required argument for some
         try:
             hyperparameters["bias"] = True if hyperparameters["bias"] is not None else False
@@ -84,6 +92,7 @@ class BrevitasQuantizer(Quantizer):
             pass
         args = {**hyperparameters, **quantizers}
         log.debug(f'Quantizing layer with args: {args}')
+        #create object of quantized layer, passing hyperparameters from current layer and (custom) quantizer classes
         quantized_layer = quantized_layer_class(**args)
         return quantized_layer
 

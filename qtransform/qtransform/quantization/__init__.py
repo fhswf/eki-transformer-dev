@@ -190,7 +190,7 @@ from types import ModuleType
 #TODO: add overriding feature for templates and args within yaml
 @dataclass
 class LayerQuantConfig:
-    quantize: bool
+    quantize: bool = True
     name: str = None #necessary to iterate through layers in model
     layer_type: Optional[str] = None #Linear, Embedding, MHA, ReLU ...
     #after using a default Quantizer, it is necessary to do the injection part ourselves
@@ -231,7 +231,8 @@ class LayerQuantConfig:
                 log.debug(f'Types to clean up: {fields_key_type}')
                 #find all properties that were passed in config (given_keys) and all other properties (difference)
                 difference = set(fields_key_type.keys()) - set(new_attr.keys())
-                given_keys = set(fields_key_type.keys()) & set(new_attr.keys())
+                #some keys could be specified in config without any value
+                given_keys = set(fields_key_type.keys()) & set([x for x in new_attr.keys() if new_attr.get(x, None) is not None])
                 #all properties that are set to None within config
                 for quant_name in difference:
                     log.debug(f'Field {quant_name} has not been set. Defaulting to zero.')
@@ -270,13 +271,14 @@ class LayerQuantConfig:
         """
         return tuple(self.name.split('.')) if self.name else ()
 
-    def get_custom_quantizers(self):
+    def get_custom_quantizers(self) ->Dict[str, type]:
         """
             Idea: Construct a custom class from the default quantizer e.g. Int8WeightPerTensorFloat and override its parameters
-            with the values from the config
+            with the values from the config. If no custom configuration for certain quantizers are set, the default quantizers of the layer are
+            used and the field for the corresponding quantizer in the return dict is not present.
         """
         #mapping of custom quantizer classes for the entire layer
-        quantizers: Dict[str, any] = dict()
+        quantizers: Dict[str, type] = dict()
         
         for layer_quant_name in ["weight", "bias", "act", "input", "output"]:
             quant_args = getattr(self, layer_quant_name)
@@ -307,7 +309,7 @@ class LayerQuantConfig:
 
 @dataclass
 class ModelQuantConfig:
-    name: str
+    cls: str
     layers: Dict[str, LayerQuantConfig]
     dtype: str
     device: str
@@ -332,7 +334,6 @@ class ModelQuantConfig:
         #seperated with dots e.g. transformer.layer.1.attn.mha
         #layer_cfg is the quantization config for the last layer within submodules_list_string, so for the example
         #it would be mha
-        #TODO: possible change could be to iterate through all layers, find common sublayers and instantiate them once
         for submodules_list_string, layer_cfg in layers.items():
             if not isinstance(layer_cfg, Union[Dict, DictConfig]):
                 log.error(f'Config for layer \"{submodules_list_string}\" has to be a dictionary, not {type(layer_cfg)}')
@@ -345,11 +346,10 @@ class ModelQuantConfig:
             submodule_names: List[str] = submodules_list_string.split('.')
             layer_name = submodule_names[-1]
             #quick check if properties in config (do not) appear in LayerQuantConfig dataclass
-            layer = LayerQuantConfig(**{"name": submodules_list_string, **layer_cfg})
             try:
                 layer = LayerQuantConfig(**{"name": submodules_list_string, **layer_cfg})
             except TypeError:
-                log.error(f'Layer configs only support these properties: {[x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
+                log.error(f'Layer configs only support these properties: {[x.name + " (required)" if get_origin(x.type) is not Union else x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
                 raise TypeError
             if not layer.quantize:
                 continue

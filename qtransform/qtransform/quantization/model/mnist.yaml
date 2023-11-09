@@ -1,4 +1,4 @@
-name: mnist
+cls: mnist
 layers:
   model.conv1: #name of layer
     quantize: True

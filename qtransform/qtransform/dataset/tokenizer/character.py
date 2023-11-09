@@ -27,7 +27,9 @@ class CharacterTokenizer(Tokenizer):
         log.debug(f'Tokenizing with parameters: {tokenizer_cfg}')
         chars = list()
         #iterate through each file in the untokenized directory, only include files at top level for now
-        for file in get_files(tokenizer_cfg):
+        untokenized_files = get_files(tokenizer_cfg)
+        log.debug(f'Found files: {untokenized_files}')
+        for file in untokenized_files:
             with open(file, 'r') as f:
                 try:
                     data = f.read()

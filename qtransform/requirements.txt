@@ -12,4 +12,4 @@ typing_inspect
 qonnx
 python-dateutil
 aiohttp
-yaml
+pyyaml

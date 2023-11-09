@@ -11,6 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import torch.nn.functional as F
 from qtransform.utils import load_checkpoint, save_checkpoint
+from pprint import PrettyPrinter
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +85,8 @@ def run(cfg: DictConfig):
         quantizer = get_quantizer(quant_cfg)
         #add qat qparams (scale and zero)
         model = quantizer.get_quantized_model(model, inplace=True)
+        log.critical(model)
+        if hasattr(log,"trace"): log.trace(f'Quantized model: {PrettyPrinter(indent=1).pformat(model)}')
         #calibrate the scales for each weight and activation
         # TODO make this a decorater so it can return stuff
         model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
@@ -160,8 +163,6 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     """ training loop over steps/batches """
     last_loss = 0
     running_loss = 0
-    
-    print(str(train_data.dataset))
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
 
