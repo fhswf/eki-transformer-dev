@@ -32,9 +32,39 @@ layers:
 
           scaling_per_output_channel : True #per tensor or per channel quantization
           restrict_scaling_type : FP #restrict range of values that scale qparam can have
-
-          #test if args from template are really applied
           #bit_width : 6 #bit width of quantized values
+
+  #transformer.gelu:
+  #  layer_type: ReLU
+  #  act:
+  #    default_quantizer: Int8ActPerTensorFloat
+  #    template: "" 
+  #    args:
+  #      min_val: 0.0
+  #      max_val: 100.0
+  
+  #covering all modules inside of a sublayer is going to be difficult
+  #currently, each entry inside of the config applied to exactly one layer that should be quantized
+  #if wider coverage is needed, another property beside layers could be implemented
+  #transformer.layer.attn.mha: # does .layer (it is an array) cover all Moduels in this torch.nn.ModuleList? 
+  #  layer_type: MultiheadAttention
+  #  weight:
+  #    default_quantizer: Int8WeightPerTensorFloat
+    
+
+  #all other layers: weight, act, bias, input, output
+  #mha: in_proc_weight, out_proc_weight, <prefix>_act, ...
+  #problem: structure of config reflects structure of dataclass
+  #if fields are not present as attributes in dataclass, error occurs
+
+
+#type, subtype, quant_cfg
+#type, quant_cfg
+#goal: make config as flat as possible
+#problem: dataclass structure
+#best to not create attributes corresponding to layers, but dict entries
+#however: dict entries create hierarchy
+#problem: currently, type checking and cleanup is done through dataclasses.fields -> dependent on attributes
 
   transformer.layer.1.attn.mha: # only layver with id 1? yes
     quantize: True
@@ -53,3 +83,18 @@ layers:
         default_quantizer: Int8WeightPerTensorFloat
         template: ""
         args:
+    #-----------option 2
+    #dict of quantbase
+    #weight: #quantizer options is a dict since some layers e.g. multi head attention have more than one quantizer for a certain type
+    #  weight:
+    #    default_quantizer: Int8WeightPerTensorFloat
+    #    template: ""
+    #    args:
+    #  in_proc: 
+    #    default_quantizer: Int8WeightPerTensorFloat
+    #    template: ""
+    #    args:
+    # no args at all = brevitas default, so only weight and nothing else ?
+    # basically yes, usually the quantized layers only have a default quantizer for weights
+    # it sometimes depends on the implementation of the layer in brevitas, for example
+    # activation functions have a default activation quantizer and no weight quantizer
