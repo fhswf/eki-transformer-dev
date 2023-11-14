@@ -13,6 +13,7 @@ from enum import Enum
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
 from brevitas.jit import ScriptModule
 import yaml
+from brevitas.core import zero_point
 
 @dataclass 
 class QuantArgs:
@@ -27,7 +28,7 @@ class QuantArgs:
     float_to_int_impl_type : Optional[FloatToIntImplType] = None#how should the quantized values be clipped to fit into the quantized datatype
     narrow_range : Optional[bool] = None #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
     signed : Optional[bool] = None #can quantized values take on negative values
-    #zero_point_impl : Optional[ScriptModule] = None #how is zero point infered
+    zero_point_impl : Optional[ScriptModule] = None #how is zero point infered (static zero, from stats (weights) etc.)
 
     scaling_impl_type : Optional[ScalingImplType] = None #how is the scale calculated, for now: statistics
 
@@ -53,14 +54,24 @@ class QuantArgs:
             For example, instead of quant_type being 'INT', it should be: <QuantType.INT: 'INT'>.
             This is necessary as brevitas uses injectors and relies on its enum driven API to dynamically configure quantization options.
         """
-        for field in fields(self):
+        for field in (x for x in fields(self) if x.name != 'zero_point_impl'):
             #ignore None values
             current_value_for_field = getattr(self, field.name)
             if current_value_for_field is None:
                 continue
             origin_type = get_optional_type(field.type)
-            setattr(self, field.name, origin_type(current_value_for_field))
-            
+            try:
+                setattr(self, field.name, origin_type(current_value_for_field))
+            except:
+                log.warning(f'Quantization argument {field.name} can only take these values: {list(origin_type.__members__.keys())}, not \'{current_value_for_field}\' Skipping argument.')
+                setattr(self, field.name, None)
+        #cleanup zero_point_impl field
+        if self.zero_point_impl is not None:
+            if self.zero_point_impl not in zero_point.__all__:
+                log.warning(f'Quantization argument zero_point_impl can only take these values: {zero_point.__all__}, not \'{self.zero_point_impl}\' Skipping argument.')
+                self.zero_point_impl = None
+            else: 
+                self.zero_point_impl = getattr(zero_point, self.zero_point_impl, None)
 """
     Below are Quantizer parameters which encapsulate qparams for the different kinds of quantizers.
 """
@@ -88,6 +99,7 @@ class ActQuantArgs(QuantArgs):
     """
     max_val: Optional[float] = None
     min_val: Optional[float] = None
+
     
 """
     From brevitas.TMVCon: 
@@ -124,8 +136,6 @@ SUPPORTED_QUANTIZERS: Dict[str, List[str]] = {
 
 from os.path import join
 
-from typing import _alias
-
 @dataclass
 class BaseQuant():
     default_quantizer: str
@@ -151,7 +161,7 @@ class BaseQuant():
                 log.debug(f'Default quantizer for {self.default_quantizer} appeared in {self.quantizer_module}')
                 break
         if failed_lookup == len(list(SUPPORTED_QUANTIZERS.keys())):
-            log.error(f'Quantizer class \"{self.default_quantizer}\"did not appear in modules: {list(SUPPORTED_QUANTIZERS.keys())}')
+            log.error(f'Quantizer class \"{self.default_quantizer}\" did not appear in modules: {list(SUPPORTED_QUANTIZERS.keys())}')
             raise ValueError()
         #cleanup quantargs, if present
         if not isinstance(self.args, QuantArgs) and self.args is not None:
@@ -194,7 +204,7 @@ class ActQuant(BaseQuant):
 from importlib import import_module
 from types import ModuleType
 
-from re import search
+from re import search, subn
 import qtransform.quantization as package_self
 
 @dataclass
@@ -255,21 +265,25 @@ class LayerQuantConfig:
         #currently, self.quantizers is read-only DictConfig from Hydra 
         quantizers = self.quantizers
         self.quantizers = dict()
-        for quantizer_name, quantizer_cfg in quantizers.items() if self.quantizers is not None else []:
+        for quantizer_name, quantizer_cfg in quantizers.items() if quantizers is not None else []:
             if hasattr(log,"trace"): log.trace(f"Cleaning up quantizer:  {quantizer_name:10s}\t within layer: {self.name}")
-            assert isinstance(quantizer_cfg, Union[Dict, DictConfig])
+            if not isinstance(quantizer_cfg, Union[Dict, DictConfig]):
+                log.error(f'Quantizer {quantizer_name:10s}\t within layer: {self.name} is not nested.')
             #get type of quantizer in order to construct specific quantargs instance
-            assumed_quantizer_type = quantizer_cfg.get('type')
-            if assumed_quantizer_type is None:
-                assumed_quantizer_type = search(r'(weight|act|bias)', quantizer_name)[0]
-                #use first type in name
-                log.debug(f'Assuming type of quantizer {self.name + " " + quantizer_name} as type: {assumed_quantizer_type}')
-            if assumed_quantizer_type is None or assumed_quantizer_type not in ['weight', 'act', 'bias']:
+            assumed_quantizer_type = quantizer_cfg.get('type', default_value="")
+            if assumed_quantizer_type == "": #property not specified
+                log.debug(f'Field "type" for quantizer {quantizer_name} of layer {self.name} not specified. Assuming type from quantizer name.')
+                assumed_quantizer_type = search(r'(weight|act|bias|input|output)', quantizer_name)
+                assumed_quantizer_type = assumed_quantizer_type.group(0) if assumed_quantizer_type else ""
+            #input and output type are activations
+            assumed_quantizer_type: str = subn(r'(input|output)', 'act', assumed_quantizer_type)[0]
+            if assumed_quantizer_type not in ('weight', 'act', 'bias'):
                 log.error(f'Type of Quantizer \"{quantizer_name}\" for layer {self.name} can not be categorized as either weight, act or bias')
                 raise ValueError
+            #use first type in name
             quantizer_class = getattr(package_self, assumed_quantizer_type.capitalize() + 'Quant')
             try:
-                self.quantizers[quantizer_name] = quantizer_class(**{"type": assumed_quantizer_type, **quantizer_cfg})
+                self.quantizers[quantizer_name] = quantizer_class(**{"type": assumed_quantizer_type[0], **quantizer_cfg})
             except Exception as e:
                 log.error(f'Quantizer cleanup for quantizer {quantizer_name} of layer {self.name} failed due to: {e}')
 
@@ -415,4 +429,5 @@ def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
     if hasattr(log,"trace"): log.trace(f'Configured quantization config: {pprint.PrettyPrinter(indent=1).pformat(quant_cfg)}')
     #get_classes necessary, otherwise a circular import error will occur
     quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer, quant_cfg)
+    sys.exit(1000)
     return quantizer

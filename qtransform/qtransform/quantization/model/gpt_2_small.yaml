@@ -22,7 +22,7 @@ layers:
           float_to_int_impl_type : ROUND #how should the quantized values be clipped to fit into the quantized datatype
           narrow_range : TRUE #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
           signed : True #can quantized values take on negative values
-          #zero_point_impl : ZeroZeroPoint #how is zero point infered
+          zero_point_impl : ZeroZeroPoint #how is zero point infered
 
           scaling_impl_type : STATS #how the scale qparam should be calculated, for now: from statistics (weight tensors of layer)
 

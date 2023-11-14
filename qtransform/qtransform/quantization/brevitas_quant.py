@@ -107,7 +107,9 @@ class BrevitasQuantizer(Quantizer):
         try:
             quantized_layer = quantized_layer_class(**args)
         except Exception as e:
-            log.critical(f'Quantization for layer \"{layer_name}\" unsuccessful. Skipping layer.')
+            #TODO: should layers be skipped or the entire quantization process fail?
+            log.error(f'Quantization for layer \"{layer_name}\" unsuccessful.')
+            raise ValueError
             #TODO: find good path for error messages
         return quantized_layer
 
