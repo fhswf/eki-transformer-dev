@@ -429,5 +429,4 @@ def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
     if hasattr(log,"trace"): log.trace(f'Configured quantization config: {pprint.PrettyPrinter(indent=1).pformat(quant_cfg)}')
     #get_classes necessary, otherwise a circular import error will occur
     quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer, quant_cfg)
-    sys.exit(1000)
     return quantizer
