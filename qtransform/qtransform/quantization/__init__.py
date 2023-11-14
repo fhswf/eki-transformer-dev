@@ -137,7 +137,6 @@ class BaseQuant():
     args: Optional[QuantArgs] = None
     
     def __post_init__(self):
-        log.critical(f'{self.args}\n\n{self.__class__}')
         #remember how often the supplied default quantizer is not within supported modules
         failed_lookup: int = 0
         #user supplied module in which quantizer appears in, not necessary though
@@ -294,32 +293,31 @@ class LayerQuantConfig:
             Returns: Dict[quantization_kind: custom_quantizer_class] e.g. {"weight": <class Int8WeightTensorFloat>, "bias": <class CustomBiasLinearQuantizer>} 
                      if default quantizers for the corresponding quantization_kind is set. Otherwise {}
         """
-        raise NotImplementedError("REWRITE GET_CUSTOM_QUANTIZERS")
         #mapping of custom quantizer classes for the entire layer
         quantizers: Dict[str, type] = dict()
         
-        for layer_quant_name in ["weight", "bias", "act", "input", "output"]:
-            quant_args = getattr(self, layer_quant_name)
-            if quant_args == None:
-                continue
-            log.debug(f'Setting custom quantizer for type: {layer_quant_name} and args: {quant_args}')
+        for quantizer_name, quantizer_cfg in self.quantizers.items() if self.quantizers is not None else []:
+            log.debug(f'Setting custom quantizer for type: {quantizer_name} and args: {quantizer_cfg}')
             #import module that has default quantizer
-            quantizer_module: ModuleType = import_module(quant_args.quantizer_module)
+            quantizer_module: ModuleType = import_module(quantizer_cfg.quantizer_module)
             #create subclass from that quantizer and override values
             #from: https://stackoverflow.com/questions/9269902/is-there-a-way-to-create-subclasses-on-the-fly
             quantizer_args = dict()
             #type constructor needs dict for args, not (data)class
-            for field in fields(quant_args.args) if quant_args.args is not None else []:
-                quant_value = getattr(quant_args.args, field.name)
+            for field in fields(quantizer_cfg.args) if quantizer_cfg.args is not None else []:
+                quant_value = getattr(quantizer_cfg.args, field.name)
                 if quant_value:
-                    quantizer_args[field.name] = getattr(quant_args.args, field.name)
+                    quantizer_args[field.name] = quant_value
             #property access of class from module
-            quantizer_class = getattr(quantizer_module, quant_args.default_quantizer)
+            quantizer_class = getattr(quantizer_module, quantizer_cfg.default_quantizer)
+            #cleanup name of quantizer for quantized brevitas class
+            #structure: <type>_quant
+            suffix = '_quant' if search('_quant', quantizer_name) is None else ''
             #make subclass of default quantizer
             #it is not an instance, but of type class
             #it also overrides qparams from default quantizer with supplied quantizers
-            quantizers[layer_quant_name + '_quant'] = type(
-                    'Custom' + self.name.capitalize() + self.layer_type.capitalize() + str(layer_quant_name).capitalize() + 'Quantizer', 
+            quantizers[quantizer_name + suffix] = type(
+                    'Custom' + self.name.capitalize() + self.layer_type.capitalize() + str(quantizer_name).capitalize() + 'Quantizer', 
                     (quantizer_class,), 
                     quantizer_args
                 )

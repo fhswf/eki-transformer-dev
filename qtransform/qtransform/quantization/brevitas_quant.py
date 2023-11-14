@@ -52,6 +52,7 @@ class BrevitasQuantizer(Quantizer):
                     raise ValueError
              #sublayer should now contain the layer to be quantized
             quantizers = layer_cfg.get_custom_quantizers()
+            if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
             quantized_layer: Module = self.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
             #see if models are moved to corresponding device 
             #quantized_layer.to(device=self.quant_cfg.device, dtype=self.quant_cfg.dtype)
@@ -76,15 +77,15 @@ class BrevitasQuantizer(Quantizer):
             quantized_layer_class: type = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=object)
         except KeyError:
             #quantize custom layers
-            log.error(f'Module \"{quant_class}\" not found within \"{qnn.__package__}\". Maybe check spelling? (E.g. ReLU has to be ReLU and not relu, Relu...)')
+            log.error(f'Module \"{quant_class}\" not found within \"{qnn.__package__}\". Maybe check spelling? (E.g. ReLU has to be ReLU and not relu, Relu, ReLu...)')
             raise ValueError
         log.debug(f'Quantized layer found for \"{layer_name}\": \"{quantized_layer_class}\"')
         #retrieve all set hyperparameters of unquantized layer
         #usually supplied in constructor
         #exceptions: dtype, device have to be retrieved from general config
-        signature = inspect.signature(layer.__init__)
+        signature_unquantized_layer = inspect.signature(layer.__init__)
         hyperparameters = dict()
-        for attribute_name in set(signature.parameters.keys()) - set(['self', 'dtype', 'device', 'inplace']):
+        for attribute_name in set(signature_unquantized_layer.parameters.keys()) - set(['self', 'dtype', 'device', 'inplace']):
             #some init parameters are not necessarily stored as attributes in layer
             #e.g. dtype, device, _weight, ...
             try:
@@ -96,6 +97,10 @@ class BrevitasQuantizer(Quantizer):
             hyperparameters["bias"] = True if hyperparameters["bias"] is not None else False
         except:
             pass
+        #check what quantizers are going to actually be applied during instantiation
+        signature_quantized_layer = inspect.signature(quantized_layer_class.__init__)
+        for i in set(quantizers.keys()) - set(x for x in signature_quantized_layer.parameters.keys() if x.find('_quant') != -1):
+            log.warning(f'Quantizer for type: {i} of layer {layer_name} is not going to be applied as the quantized layer does not have an attribute with its name in the constructor. Maybe check spelling?')
         args = {**hyperparameters, **quantizers}
         log.debug(f'Quantizing layer \"{layer_name}\" with args: \"{args}\"')
         #create object of quantized layer, passing hyperparameters from current layer and (custom) quantizer classes

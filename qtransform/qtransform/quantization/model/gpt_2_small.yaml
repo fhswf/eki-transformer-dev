@@ -39,17 +39,13 @@ layers:
   transformer.layer.1.attn.mha: # only layver with id 1? yes
     quantize: True
     layer_type: MultiheadAttention
-    #-----------option 1
-    #keep current structure, layerquantargs has to contain more attributes
-    #or contain a dict and cleanup during modelquantargs
-    #since some quantizer names are different, need to explicitly define name in config
     quantizers: 
       weight:
         type: weight #if unspecified, infer type from name 
         default_quantizer: Int8WeightPerTensorFloat
         template: ""
         args:
-      in_proc_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+      in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
         default_quantizer: Int8WeightPerTensorFloat
         template: ""
         args:
