@@ -118,7 +118,7 @@ class BrevitasQuantizer(Quantizer):
             Unlike pytorch, no special function has to be called in order to calibrate the qparams and train the model.
         """
         function(model, *args)
-        raise NotImplementedError()
+        return model
 
     def export_model(self, model: Module, filepath: str) -> None:
         #Idea: something along the lines of export_qonnx(model, export_path=filepath)

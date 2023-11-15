@@ -38,7 +38,6 @@ class GPTConfig:
     n_head: int = 12
     n_embd: int = 768
     dropout: float = 0.0
-    quantize: bool = False # quantize weights
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
     flash: bool = False # cuda flas hattention
 

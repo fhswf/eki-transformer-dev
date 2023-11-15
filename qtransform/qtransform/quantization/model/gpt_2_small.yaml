@@ -49,3 +49,13 @@ layers:
         default_quantizer: Int8WeightPerTensorFloat
         template: ""
         args:
+  #TODO: make config apply for all layers within container ModuleList or ModuleConfig
+  transformer.layer.1.mlp.c_fc:
+    quantize: True
+    layer_type: Linear
+  transformer.layer.1.mlp.c_proj:
+    quantize: True
+    layer_type: Linear
+  transformer.layer.1.mlp.active:
+    quantize: True
+    layer_type: ReLU
