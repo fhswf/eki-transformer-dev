@@ -82,9 +82,9 @@ def run(cfg: DictConfig):
         log.debug(f'Running quantized model')    
         quant_cfg.device = device.type
         from qtransform.quantization import get_quantizer
-        quantizer = get_quantizer(quant_cfg)
+        quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         #add qat qparams (scale and zero)
-        model = quantizer.get_quantized_model(model, inplace=True)
+        model = quantizer.get_quantized_model(model_quant_cfg, model, inplace=True)
         #calibrate the scales for each weight and activation
         # TODO make this a decorater so it can return stuff
         model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])

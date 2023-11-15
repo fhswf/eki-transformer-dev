@@ -3,7 +3,7 @@ from brevitas import nn as qnn
 from torch import device
 from torch.nn import Module, ModuleDict
 import logging
-from qtransform.quantization import Quantizer, ActQuantArgs, BiasQuantArgs, WeightQuantArgs
+from qtransform.quantization import Quantizer, ModelQuantConfig
 from qtransform.classloader import get_data
 import re
 from typing import Dict
@@ -24,13 +24,19 @@ class BrevitasQuantizer(Quantizer):
         As it stands, the dev branch of brevitas is used for quantization. As opposed to pytorch, brevitas offers native GPU
         quantization as well as allowing quantization on a specified number of bits among other hyperparameters specified in the .yaml files of this module.
     """
-    def get_quantized_model(self, model: Module, inplace=False) -> Module:
+    def get_quantized_model(quant_cfg: ModelQuantConfig, model: Module, inplace=False) -> Module:
+        if quant_cfg is None or model is None:
+            log.error(f'Quantization needs to have both config and model')
+            raise KeyError
+        if quant_cfg.model != model:
+            log.error(f'Passed model does not suit the passed quantization configuration')
+            raise ValueError
         #perform all property access operations with quantized model
         quantized_model: Module = model if inplace else deepcopy(model)
         #go through all submodules, then all layers within quant config 
         #for submodule_name, submodule_cfg in self.quant_cfg.modules.items():
         #name -> sublayerquantargs -> name -> sublayerquantargs...
-        layers = self.quant_cfg.layers
+        layers = quant_cfg.layers
         #TODO: find out when that could happen
         if not layers:
             log.error(f'Quantization config for model {model} is not applicable')
@@ -57,14 +63,14 @@ class BrevitasQuantizer(Quantizer):
             #sublayer should now contain the layer to be quantized
             quantizers = layer_cfg.get_custom_quantizers()
             if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
-            quantized_layer: Module = self.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
+            quantized_layer: Module = BrevitasQuantizer.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
             #see if models are moved to corresponding device 
             #quantized_layer.to(device=self.quant_cfg.device, dtype=self.quant_cfg.dtype)
             #replace current non-quantized layer with quantized layer
             submodule.add_module(sublayer_names[-1], quantized_layer)
         return quantized_model
     
-    def get_quantized_layer(self, layer: Module, layer_type: str, quantizers: Dict[str, type], layer_name: str = None):
+    def get_quantized_layer(layer: Module, layer_type: str, quantizers: Dict[str, type], layer_name: str = None):
         """
             Quantizes a layer as specified in the yaml config file for the corresponding model. 
         """
@@ -119,13 +125,13 @@ class BrevitasQuantizer(Quantizer):
             #TODO: find good path for error messages
         return quantized_layer
 
-    def train_qat(self, model: Module, function: any, args: list) -> Module:
+    def train_qat(model: Module, function: any, args: list) -> Module:
         """
             Unlike pytorch, no special function has to be called in order to calibrate the qparams and train the model.
         """
         function(model, *args)
         return model
 
-    def export_model(self, model: Module, filepath: str) -> None:
+    def export_model(model: Module, filepath: str) -> None:
         #Idea: something along the lines of export_qonnx(model, export_path=filepath)
         raise NotImplementedError

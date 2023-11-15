@@ -1,4 +1,11 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
+#containers:
+#  #TODO: make config apply for all layers within container ModuleList or ModuleConfig
+#  #idea: regex within name
+#  #! marks start and end of regex
+#  transformer.layer.![0-9]!.mlp.c_fc:
+#    quantize: True
+#    layer_type: Linear
 layers:
   #<module>.<submodule>.<submodule>.<quantized_layer>
   #-> quantized layer at the bottom, always
@@ -31,7 +38,7 @@ layers:
           #test if args from template are really applied
           #bit_width : 6 #bit width of quantized values
 
-  transformer.layer.1.attn.mha: # only layver with id 1? yes
+  transformer.layer.1.attn.mha:
     quantize: True
     layer_type: MultiheadAttention
     quantizers: 
@@ -41,11 +48,17 @@ layers:
         template: ""
         args:
       in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+        type: weight
         default_quantizer: Int8WeightPerTensorFloat
         template: ""
         args:
-  #TODO: make config apply for all layers within container ModuleList or ModuleConfig
-  #idea: regex within name
+  #iterate through each sublayer, see if it is regex
+  #if regex: parse statement and find all layer names within model
+  #otherwise, continue with iteration until last layer
+  #add all found layers inside of a dict, construct layerquantargs object for each entry
+  #transformer.layer.![2-4]!.attn.mha:
+  #  quantize: True
+  #  layer_type: MultiheadAttention  
   transformer.layer.1.mlp.c_fc:
     quantize: True
     layer_type: Linear

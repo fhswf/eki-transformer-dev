@@ -1,4 +1,4 @@
-from abc import ABC, abstractclassmethod
+from abc import ABC, abstractclassmethod, abstractmethod
 import logging
 import json
 from torch.nn import Module
@@ -140,7 +140,7 @@ from os.path import join, exists
 class BaseQuant():
     default_quantizer: str
     template: Optional[str] = None
-    type: Optional[str] = None #weight, bias, act, input, output. if left unspecified, infer from config name
+    type: Optional[str] = None #weight, bias, act, input, output. if left unspecified, infer from config name. that happens in LayerQuantArgs
     #module name, e.g. brevitas.quant.scaled_int for all int quantizers
     #should not be set within config
     quantizer_module: str = None #InitVar[str] = None
@@ -205,7 +205,7 @@ class ActQuant(BaseQuant):
 from importlib import import_module
 from types import ModuleType
 
-from re import search, subn
+from re import search, subn, compile
 import qtransform.quantization as package_self
 
 @dataclass
@@ -345,6 +345,7 @@ class ModelQuantConfig:
     layers: Dict[str, LayerQuantConfig]
     dtype: str
     device: str
+    model: Module
 
     def __post_init__(self):
         """
@@ -367,6 +368,7 @@ class ModelQuantConfig:
         #layer_cfg is the quantization config for the last layer within submodules_list_string, so for the example
         #it would be mha
         for submodules_list_string, layer_cfg in layers.items():
+            #generic typechecking for config
             if not isinstance(layer_cfg, Union[Dict, DictConfig]):
                 log.error(f'Config for layer \"{submodules_list_string}\" has to be a dictionary, not {type(layer_cfg)}')
                 raise TypeError
@@ -375,7 +377,18 @@ class ModelQuantConfig:
             #use last config of layer that is mentioned multiple times in yaml file
             elif submodules_list_string in self.layers.keys():
                 log.warning(f"""Config for layer {submodules_list_string} already exists with properties \n{self.layers[submodules_list_string]}\n. Replacing them with {pprint.PrettyPrinter(indent=1).pformat(layer_cfg)}""")
-            if hasattr(log, "trace"): log.trace(f"Processing layer \"{submodules_list_string}\" {layer_cfg}")
+            if hasattr(log, "trace"): log.trace(f"Processing layer \"{submodules_list_string}\" {layer_cfg}")            #check if sublayers even exist within the model
+            #check if layers within config even exist in model
+            submodule = self.model
+            for submodule_name in submodules_list_string:
+
+                #compile regex pattern to apply config for multiple layers
+                regex_pattern = search(r'^\!(.+)\!$', submodule_name)
+                if not regex_pattern:
+                    continue
+                #regex pattern found
+                regex_layer = compile(regex_pattern.groups()[0])
+
             #quick check if properties in config (do not) appear in LayerQuantConfig dataclass
             layer = LayerQuantConfig(**{"name": submodules_list_string, **layer_cfg})
             try:
@@ -384,6 +397,9 @@ class ModelQuantConfig:
                 log.error(f'Layer configs only support these properties: {[x.name + " (required)" if get_origin(x.type) is not Union else x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
                 raise TypeError
             self.layers[submodules_list_string] = layer
+    
+    def check_layer_exists(model: Module, layer_name: str):
+        pass
 
 """
     Supported torch.nn modules for quantization by Brevitas:
@@ -399,36 +415,41 @@ class Quantizer(ABC):
         As it stands right now, brevitas should be chosen for QAT related purposes.
     """
 
-    def __init__(self, quant_cfg: ModelQuantConfig):
-        self.quant_cfg: ModelQuantConfig = quant_cfg
-
-    @abstractclassmethod
-    def get_quantized_model(self, model: Module, inplace: bool = False) -> Module:
+    @staticmethod
+    @abstractmethod
+    def get_quantized_model(quant_cfg: ModelQuantConfig, model: Module, inplace: bool = False) -> Module:
         """
             Prepares a model for QAT by applying qparams to the corresponding layers of the model specified in the
             quant_cfg. 
         """
         pass
 
-    @abstractclassmethod
-    def train_qat(self, model: Module, function: any, args: list) -> Module:
+    @staticmethod
+    @abstractmethod
+    def train_qat(model: Module, function: any, args: list) -> Module:
         """    
             Performs QAT on a model that has been prepared with get_quantized_model. During training,
             the qparams are calibrated in order to turn the weights into the quantized datatype. 
-
         """
         pass
 
-    @abstractclassmethod
-    def export_model(self, model: Module, filepath: str) -> None:
+    @staticmethod
+    @abstractmethod
+    def export_model(model: Module, filepath: str) -> None:
         pass
 
 log = logging.getLogger(__name__)
 
-def get_quantizer(_quant_cfg: DictConfig) -> Quantizer:
+def get_quantizer(_quant_cfg: DictConfig, model: Module) -> Tuple[Quantizer, ModelQuantConfig]:
+    if not model:
+        log.error(f'In order to perform quantization, the model needs to be passed.')
+        raise KeyError
+    elif not _quant_cfg:
+        log.error(f'Error: Missing hydra quantization config for model.')
+        raise KeyError
     if hasattr(log,"trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(_quant_cfg), indent=2))
-    quant_cfg = ModelQuantConfig(**_quant_cfg.model)
+    quant_cfg = ModelQuantConfig(**{**_quant_cfg.model, "model": model})
     if hasattr(log,"trace"): log.trace(f'Configured quantization config: {pprint.PrettyPrinter(indent=1).pformat(quant_cfg)}')
     #get_classes necessary, otherwise a circular import error will occur
-    quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer, quant_cfg)
-    return quantizer
+    quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer)
+    return (quantizer, quant_cfg)
