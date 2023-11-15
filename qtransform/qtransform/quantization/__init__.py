@@ -134,7 +134,7 @@ SUPPORTED_QUANTIZERS: Dict[str, List[str]] = {
     brevitas_fixed_point_module: all_fp_quantizers
 }
 
-from os.path import join
+from os.path import join, exists
 
 @dataclass
 class BaseQuant():
@@ -161,16 +161,17 @@ class BaseQuant():
                 log.debug(f'Default quantizer for {self.default_quantizer} appeared in {self.quantizer_module}')
                 break
         if failed_lookup == len(list(SUPPORTED_QUANTIZERS.keys())):
-            log.error(f'Quantizer class \"{self.default_quantizer}\" did not appear in modules: {list(SUPPORTED_QUANTIZERS.keys())}')
-            raise ValueError()
+            raise ValueError(f'Quantizer class \"{self.default_quantizer}\" did not appear in modules: {list(SUPPORTED_QUANTIZERS.keys())}')
         #cleanup quantargs, if present
         if not isinstance(self.args, QuantArgs) and self.args is not None:
             self.args = QuantArgs(**self.args)
         #load template config
         if self.template:
-            path_of_init = '/'.join(__file__.split('/')[:-1])
+            path_of_init = join('/'.join(__file__.split('/')[:-1]), 'model', 'templates', self.template + '.yaml')
             #TODO: should path of template directory be configurable?
-            with open(join(path_of_init,'model', 'templates', self.template + '.yaml'), 'r') as yaml_file:
+            if not exists(path_of_init):
+                raise FileNotFoundError(f'Quantization template \"{path_of_init}\" does not exist.')
+            with open(path_of_init, 'r') as yaml_file:
                 template_yaml: Dict[str, str] = yaml.safe_load(yaml_file)
             #currently, arguments from model yaml file are loaded in self.args
             #the existing values should override values from template
@@ -286,6 +287,7 @@ class LayerQuantConfig:
                 self.quantizers[quantizer_name] = quantizer_class(**{"type": assumed_quantizer_type, **quantizer_cfg})
             except Exception as e:
                 log.error(f'Quantizer cleanup for quantizer {quantizer_name} of layer {self.name} failed due to: {e}')
+                raise TypeError
 
     def get_layers(self) -> Tuple[str]:
         """

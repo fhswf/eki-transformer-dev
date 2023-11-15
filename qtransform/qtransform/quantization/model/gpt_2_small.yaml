@@ -1,9 +1,4 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
-#scope:
-#  transformer.layer:
-#    type: container
-#    quantized_layre: attn.mha
-#    scope: 0,1,2,4,5 #0-5 also possible
 layers:
   #<module>.<submodule>.<submodule>.<quantized_layer>
   #-> quantized layer at the bottom, always
@@ -50,6 +45,7 @@ layers:
         template: ""
         args:
   #TODO: make config apply for all layers within container ModuleList or ModuleConfig
+  #idea: regex within name
   transformer.layer.1.mlp.c_fc:
     quantize: True
     layer_type: Linear

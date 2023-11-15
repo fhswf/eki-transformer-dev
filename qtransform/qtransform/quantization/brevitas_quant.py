@@ -44,13 +44,17 @@ class BrevitasQuantizer(Quantizer):
                 log.debug(f'Quantizing layer {layer_cfg.name}')
             submodule: Module = quantized_model
             sublayer_names = layer_cfg.get_layers()
+            #let the user know which layers specifically are not found within model
+            existing_sublayer_names = str()
             for sublayer_name in sublayer_names:
                 try:
                     submodule = submodule.get_submodule(sublayer_name)
+                    existing_sublayer_names += sublayer_name + '.'
                 except AttributeError:
-                    log.error(f'Passed model for quantization does not have submodule of name {layer_cfg.name}')
+                    error = f'Check layer \"{existing_sublayer_names}\"' if len(existing_sublayer_names) > 0 else f'The top layer {sublayer_names[0]} does not exist'
+                    log.error(f'Passed model for quantization does not have submodule of name \"{layer_cfg.name}\". {error}')
                     raise ValueError
-             #sublayer should now contain the layer to be quantized
+            #sublayer should now contain the layer to be quantized
             quantizers = layer_cfg.get_custom_quantizers()
             if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
             quantized_layer: Module = self.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
@@ -77,7 +81,9 @@ class BrevitasQuantizer(Quantizer):
             quantized_layer_class: type = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=object)
         except KeyError:
             #quantize custom layers
-            log.error(f'Module \"{quant_class}\" not found within \"{qnn.__package__}\". Maybe check spelling? (E.g. ReLU has to be ReLU and not relu, Relu, ReLu...)')
+            error = f'The config for layer {layer_name} specifies that it is of type \"{layer_type}\", however no quantized layer has been found within \"{qnn.__package__}\".'
+            error += f'\nMaybe check spelling? (E.g. ReLU has to be specified as ReLU and not relu, Relu, ReLu...)'
+            log.error(error)
             raise ValueError
         log.debug(f'Quantized layer found for \"{layer_name}\": \"{quantized_layer_class}\"')
         #retrieve all set hyperparameters of unquantized layer
@@ -108,7 +114,7 @@ class BrevitasQuantizer(Quantizer):
             quantized_layer = quantized_layer_class(**args)
         except Exception as e:
             #TODO: should layers be skipped or the entire quantization process fail?
-            log.error(f'Quantization for layer \"{layer_name}\" unsuccessful.')
+            log.error(f'Quantization for layer \"{layer_name}\" unsuccessful. Reason:\n{e}')
             raise ValueError
             #TODO: find good path for error messages
         return quantized_layer
