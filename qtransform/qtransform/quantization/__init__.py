@@ -1,15 +1,14 @@
 from abc import ABC, abstractclassmethod
 import logging
-import sys
 import json
 from torch.nn import Module
 from omegaconf import DictConfig, OmegaConf
 import pprint 
 from typing import List, Optional, Dict, Tuple, Union, get_args, get_origin #get_args: get raw type of wrapper -> Optional[str] is (), Dict[str, str] = (str, str)...
-from dataclasses import dataclass, fields, InitVar
+from dataclasses import dataclass, fields
 from qtransform.classloader import get_data
 from qtransform.utils.introspection import get_optional_type
-from enum import Enum
+from enum import EnumMeta
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
 from brevitas.jit import ScriptModule
 import yaml
@@ -25,7 +24,7 @@ class QuantArgs:
     """ 
     quant_type : Optional[QuantType] = None #Integer, binary, ternary, fixed point integer
     bit_width_impl_type : Optional[BitWidthImplType] = None# is the bit width backpropagated and optimised
-    float_to_int_impl_type : Optional[FloatToIntImplType] = None#how should the quantized values be clipped to fit into the quantized datatype
+    float_to_int_impl_type : Optional[FloatToIntImplType] = None #how should the quantized values be clipped to fit into the quantized datatype
     narrow_range : Optional[bool] = None #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
     signed : Optional[bool] = None #can quantized values take on negative values
     zero_point_impl : Optional[ScriptModule] = None #how is zero point infered (static zero, from stats (weights) etc.)
@@ -63,7 +62,8 @@ class QuantArgs:
             try:
                 setattr(self, field.name, origin_type(current_value_for_field))
             except:
-                log.warning(f'Quantization argument {field.name} can only take these values: {list(origin_type.__members__.keys())}, not \'{current_value_for_field}\' Skipping argument.')
+                supported_values = list(origin_type.__members__.keys()) if isinstance(origin_type, EnumMeta) else str(origin_type)
+                log.warning(f'Quantization argument {field.name} can only take these values: {supported_values}, not \'{current_value_for_field}\' Skipping argument.')
                 setattr(self, field.name, None)
         #cleanup zero_point_impl field
         if self.zero_point_impl is not None:
@@ -283,7 +283,7 @@ class LayerQuantConfig:
             #use first type in name
             quantizer_class = getattr(package_self, assumed_quantizer_type.capitalize() + 'Quant')
             try:
-                self.quantizers[quantizer_name] = quantizer_class(**{"type": assumed_quantizer_type[0], **quantizer_cfg})
+                self.quantizers[quantizer_name] = quantizer_class(**{"type": assumed_quantizer_type, **quantizer_cfg})
             except Exception as e:
                 log.error(f'Quantizer cleanup for quantizer {quantizer_name} of layer {self.name} failed due to: {e}')
 
