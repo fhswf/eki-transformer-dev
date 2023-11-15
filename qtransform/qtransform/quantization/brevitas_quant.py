@@ -24,13 +24,11 @@ class BrevitasQuantizer(Quantizer):
         As it stands, the dev branch of brevitas is used for quantization. As opposed to pytorch, brevitas offers native GPU
         quantization as well as allowing quantization on a specified number of bits among other hyperparameters specified in the .yaml files of this module.
     """
-    def get_quantized_model(quant_cfg: ModelQuantConfig, model: Module, inplace=False) -> Module:
-        if quant_cfg is None or model is None:
+    def get_quantized_model(quant_cfg: ModelQuantConfig, inplace=False) -> Module:
+        if quant_cfg is None:
             log.error(f'Quantization needs to have both config and model')
             raise KeyError
-        if quant_cfg.model != model:
-            log.error(f'Passed model does not suit the passed quantization configuration')
-            raise ValueError
+        model = quant_cfg.model
         #perform all property access operations with quantized model
         quantized_model: Module = model if inplace else deepcopy(model)
         #go through all submodules, then all layers within quant config 
@@ -65,9 +63,12 @@ class BrevitasQuantizer(Quantizer):
             if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
             quantized_layer: Module = BrevitasQuantizer.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
             #see if models are moved to corresponding device 
+            #TODO: check if cuda drivers are usable, otherwise use cpu
             #quantized_layer.to(device=self.quant_cfg.device, dtype=self.quant_cfg.dtype)
             #replace current non-quantized layer with quantized layer
             submodule.add_module(sublayer_names[-1], quantized_layer)
+        #remember that model within config is quantized
+        quant_cfg.quantized = True if inplace else False
         return quantized_model
     
     def get_quantized_layer(layer: Module, layer_type: str, quantizers: Dict[str, type], layer_name: str = None):

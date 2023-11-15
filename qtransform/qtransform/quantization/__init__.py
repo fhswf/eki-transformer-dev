@@ -339,6 +339,8 @@ class LayerQuantConfig:
                 )
         return quantizers
 
+REGEX_ESCAPE_SEQUENCE = '\!' #sublayers which are regex strings should start and end with that character. needs to be escaped
+
 @dataclass
 class ModelQuantConfig:
     cls: str
@@ -346,6 +348,7 @@ class ModelQuantConfig:
     dtype: str
     device: str
     model: Module
+    quantized: bool = False #is self.model already quantized?
 
     def __post_init__(self):
         """
@@ -380,13 +383,17 @@ class ModelQuantConfig:
             if hasattr(log, "trace"): log.trace(f"Processing layer \"{submodules_list_string}\" {layer_cfg}")            #check if sublayers even exist within the model
             #check if layers within config even exist in model
             submodule = self.model
-            for submodule_name in submodules_list_string:
-
+            #transformer.layer.![2-4]!.attn.mha
+            #-> go until transformer.layer, check if it exists
+            #parse regex and find all layers that fit the description from previous layer that does not contain regex ('layer')
+            #if found, iterate further
+            #if not found, throw error that regex is not applicable
+            for index in range(len(submodules_list_string)):
                 #compile regex pattern to apply config for multiple layers
-                regex_pattern = search(r'^\!(.+)\!$', submodule_name)
+                regex_pattern = search(r'^' + REGEX_ESCAPE_SEQUENCE+r'(.+)' + REGEX_ESCAPE_SEQUENCE + '$', submodules_list_string[index])
                 if not regex_pattern:
                     continue
-                #regex pattern found
+                #regex pattern found -> all layers before regex should be searched for future layers
                 regex_layer = compile(regex_pattern.groups()[0])
 
             #quick check if properties in config (do not) appear in LayerQuantConfig dataclass
@@ -398,8 +405,23 @@ class ModelQuantConfig:
                 raise TypeError
             self.layers[submodules_list_string] = layer
     
-    def check_layer_exists(model: Module, layer_name: str):
-        pass
+    def check_layer_exists(model: Module, layers_dotted: Union[str, List[str]]) -> Module:
+        """
+            Checks if a chain of layers notated by <sublayer>.<sublayer2>.etc.<final_layer> exists within a model.
+        """
+        if isinstance(layers_dotted, str):
+            layers_dotted = layers_dotted.split('.')
+        existing_sublayer_names = str()
+        submodule = model
+        for sublayer_name in layers_dotted:
+            try:
+                submodule = submodule.get_submodule(sublayer_name)
+                existing_sublayer_names += sublayer_name + '.'
+            except AttributeError:
+                error = f'Check layer \"{existing_sublayer_names}\"' if len(existing_sublayer_names) > 0 else f'The top layer {layers_dotted[0]} does not exist'
+                log.error(f'Passed model for quantization does not have submodule of name \"{layers_dotted}\". {error}')
+                raise ValueError
+        return submodule
 
 """
     Supported torch.nn modules for quantization by Brevitas:

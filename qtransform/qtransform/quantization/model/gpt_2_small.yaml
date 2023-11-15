@@ -56,9 +56,16 @@ layers:
   #if regex: parse statement and find all layer names within model
   #otherwise, continue with iteration until last layer
   #add all found layers inside of a dict, construct layerquantargs object for each entry
-  #transformer.layer.![2-4]!.attn.mha:
-  #  quantize: True
-  #  layer_type: MultiheadAttention  
+  transformer.layer.![2-4]!.attn.mha:
+    quantize: True
+    layer_type: MultiheadAttention  
+    quantizers:
+      in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+        type: weight
+        default_quantizer: Int8WeightPerChannelFloat
+        template: ""
+        args:
+          bit_width: 5
   transformer.layer.1.mlp.c_fc:
     quantize: True
     layer_type: Linear
