@@ -388,16 +388,19 @@ class ModelQuantConfig:
             #parse regex and find all layers that fit the description from previous layer that does not contain regex ('layer')
             #if found, iterate further
             #if not found, throw error that regex is not applicable
+            #TODO: submodules_list_string is a string, not list -> split by .
             for index in range(len(submodules_list_string)):
                 #compile regex pattern to apply config for multiple layers
                 regex_pattern = search(r'^' + REGEX_ESCAPE_SEQUENCE+r'(.+)' + REGEX_ESCAPE_SEQUENCE + '$', submodules_list_string[index])
-                if not regex_pattern:
-                    continue
-                #regex pattern found -> all layers before regex should be searched for future layers
-                regex_layer = compile(regex_pattern.groups()[0])
-
+                if regex_pattern:
+                    #regex pattern found -> all layers before regex should be searched for future layers
+                    regex_layer = compile(regex_pattern.groups()[0])
+                    found_regex_layers = list(filter(regex_layer, dict(submodule.named_children()).keys()))
+                    if len(found_regex_layers) == 0:
+                        log.error(f'Regular expression {regex_layer.pattern} for layer {submodules_list_string} did not yield any results.')
+                        raise ValueError
             #quick check if properties in config (do not) appear in LayerQuantConfig dataclass
-            layer = LayerQuantConfig(**{"name": submodules_list_string, **layer_cfg})
+            #TODO: create LayerQuantConfig object for each found layer within regex, otherwise one if no regex is specified
             try:
                 layer = LayerQuantConfig(**{"name": submodules_list_string, **layer_cfg})
             except TypeError as e:

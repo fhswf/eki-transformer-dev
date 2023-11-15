@@ -1,9 +1,11 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
-#scope:
-#  transformer.layer:
-#    type: container
-#    quantized_layre: attn.mha
-#    scope: 0,1,2,4,5 #0-5 also possible
+#containers:
+#  #TODO: make config apply for all layers within container ModuleList or ModuleConfig
+#  #idea: regex within name
+#  #! marks start and end of regex
+#  transformer.layer.![0-9]!.mlp.c_fc:
+#    quantize: True
+#    layer_type: Linear
 layers:
   #<module>.<submodule>.<submodule>.<quantized_layer>
   #-> quantized layer at the bottom, always
@@ -22,7 +24,7 @@ layers:
           float_to_int_impl_type : ROUND #how should the quantized values be clipped to fit into the quantized datatype
           narrow_range : TRUE #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
           signed : True #can quantized values take on negative values
-          #zero_point_impl : ZeroZeroPoint #how is zero point infered
+          zero_point_impl : ZeroZeroPoint #how is zero point infered
 
           scaling_impl_type : STATS #how the scale qparam should be calculated, for now: from statistics (weight tensors of layer)
 
@@ -32,69 +34,51 @@ layers:
 
           scaling_per_output_channel : True #per tensor or per channel quantization
           restrict_scaling_type : FP #restrict range of values that scale qparam can have
+
+          #test if args from template are really applied
           #bit_width : 6 #bit width of quantized values
 
-  #transformer.gelu:
-  #  layer_type: ReLU
-  #  act:
-  #    default_quantizer: Int8ActPerTensorFloat
-  #    template: "" 
-  #    args:
-  #      min_val: 0.0
-  #      max_val: 100.0
-  
-  #covering all modules inside of a sublayer is going to be difficult
-  #currently, each entry inside of the config applied to exactly one layer that should be quantized
-  #if wider coverage is needed, another property beside layers could be implemented
-  #transformer.layer.attn.mha: # does .layer (it is an array) cover all Moduels in this torch.nn.ModuleList? 
-  #  layer_type: MultiheadAttention
-  #  weight:
-  #    default_quantizer: Int8WeightPerTensorFloat
-    
-
-  #all other layers: weight, act, bias, input, output
-  #mha: in_proc_weight, out_proc_weight, <prefix>_act, ...
-  #problem: structure of config reflects structure of dataclass
-  #if fields are not present as attributes in dataclass, error occurs
-
-
-#type, subtype, quant_cfg
-#type, quant_cfg
-#goal: make config as flat as possible
-#problem: dataclass structure
-#best to not create attributes corresponding to layers, but dict entries
-#however: dict entries create hierarchy
-#problem: currently, type checking and cleanup is done through dataclasses.fields -> dependent on attributes
-
-  transformer.layer.1.attn.mha: # only layver with id 1? yes
+  transformer.layer.1.attn.mha:
     quantize: True
     layer_type: MultiheadAttention
-    #-----------option 1
-    #keep current structure, layerquantargs has to contain more attributes
-    #or contain a dict and cleanup during modelquantargs
-    #since some quantizer names are different, need to explicitly define name in config
     quantizers: 
       weight:
         type: weight #if unspecified, infer type from name 
         default_quantizer: Int8WeightPerTensorFloat
         template: ""
         args:
-      in_proc_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+      in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+        type: weight
         default_quantizer: Int8WeightPerTensorFloat
         template: ""
         args:
-    #-----------option 2
-    #dict of quantbase
-    #weight: #quantizer options is a dict since some layers e.g. multi head attention have more than one quantizer for a certain type
-    #  weight:
-    #    default_quantizer: Int8WeightPerTensorFloat
-    #    template: ""
-    #    args:
-    #  in_proc: 
-    #    default_quantizer: Int8WeightPerTensorFloat
-    #    template: ""
-    #    args:
-    # no args at all = brevitas default, so only weight and nothing else ?
-    # basically yes, usually the quantized layers only have a default quantizer for weights
-    # it sometimes depends on the implementation of the layer in brevitas, for example
-    # activation functions have a default activation quantizer and no weight quantizer
+  transformer.layer.1.mlp.c_fc:
+    quantize: True
+    layer_type: Linear
+  transformer.layer.1.mlp.c_proj:
+    quantize: True
+    layer_type: Linear
+  transformer.layer.1.mlp.active:
+    quantize: True
+    layer_type: ReLU
+
+
+  
+  #---------------------------------------  REGEX
+  #iterate through each sublayer, see if it is regex
+  #if regex: parse statement and find all layer names within model
+  #otherwise, continue with iteration until last layer
+  #add all found layers inside of a dict, construct layerquantargs object for each entry
+  #option 1: special characters appear in start and end of expression ->transformer.layer.![2-4]!.attn.mha:
+  #option 2: use regex syntax of python and call regex object directly -> transformer.layer.r'[2-4]'.attn.mha
+  #compile is slow, checking for strings is fast
+  transformer.layer.r'[2-4]'.attn.mha:
+    quantize: True
+    layer_type: MultiheadAttention  
+    quantizers:
+      in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+        type: weight
+        default_quantizer: Int8WeightPerChannelFloat
+        template: ""
+        args:
+          bit_width: 5
