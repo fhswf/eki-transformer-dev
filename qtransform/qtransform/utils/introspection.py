@@ -88,7 +88,7 @@ def get_dtype(dtype_alias: str) -> np_dtype:
         raise KeyError()
     return dtype
 
-from typing import Union, get_origin, get_args
+from typing import Union, get_origin, get_args, List
 def get_optional_type(_type):
     """
         Unwraps a type which might be encapsulated in type "Optional" from the typing package.
@@ -104,3 +104,9 @@ def get_optional_type(_type):
     else: 
         origin_type =  field_origin
     return origin_type
+
+def concat_strings(strings: List[str]) -> str:
+    """
+        Concats a list of immutable strings by joining them together. 
+    """
+    return ''.join(strings)

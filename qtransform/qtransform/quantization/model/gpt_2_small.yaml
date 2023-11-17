@@ -1,11 +1,4 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
-#containers:
-#  #TODO: make config apply for all layers within container ModuleList or ModuleConfig
-#  #idea: regex within name
-#  #! marks start and end of regex
-#  transformer.layer.![0-9]!.mlp.c_fc:
-#    quantize: True
-#    layer_type: Linear
 layers:
   #<module>.<submodule>.<submodule>.<quantized_layer>
   #-> quantized layer at the bottom, always
@@ -34,11 +27,10 @@ layers:
 
           scaling_per_output_channel : True #per tensor or per channel quantization
           restrict_scaling_type : FP #restrict range of values that scale qparam can have
-
-          #test if args from template are really applied
-          #bit_width : 6 #bit width of quantized values
-
-  transformer.layer.1.attn.mha:
+  
+  #all layers inside layer container having name 00 to 99
+  #if only 10 layers exist (0 to 9), only those are picked
+  transformer.layer.r'[0-9]{1,2}'.attn.mha: 
     quantize: True
     layer_type: MultiheadAttention
     quantizers: 

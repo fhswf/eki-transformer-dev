@@ -6,6 +6,16 @@ cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, a
 #  transformer.layer.![0-9]!.mlp.c_fc:
 #    quantize: True
 #    layer_type: Linear
+
+
+  #IDEA: '': quant_args for entire model such as:
+  #in order to do that, custom quantizers for entire models need to be implemented
+  #'': 
+  #  layer_type: gpt
+  #  quantizers: 
+  #    ...
+
+
 layers:
   #<module>.<submodule>.<submodule>.<quantized_layer>
   #-> quantized layer at the bottom, always
@@ -72,6 +82,32 @@ layers:
   #option 1: special characters appear in start and end of expression ->transformer.layer.![2-4]!.attn.mha:
   #option 2: use regex syntax of python and call regex object directly -> transformer.layer.r'[2-4]'.attn.mha
   #compile is slow, checking for strings is fast
+  
+  when regex occurs -> take previous layer and find all immediate children that fit regex (sublayers[max(0, index-1)] to make sure not to have negative indices)
+  save all children and iterate through sublayer string once again, apply search filter attn to all found layers
+  do that until the last layer is found
+  -> 1-n layers could be found depending on how many layers are found by regex
+  transformer 0
+  layer 1
+  regex 2
+  attn 3
+  mha 4
+
+
+  transformer.layer.r'[2-4]'.r'.+'.r'.+'
+  -> 3 regex strings, bit hard to read
+  transformer 0
+  layer 1
+  regex 2
+  regex 3
+  regex 4
+  -> n2, n3, n4 for regex could yield more than one layer
+  -> regex 2 finds all layers that fit the expression in layer (1)
+  -> regex 3 finds all layers that fit the expression in yielded layers from regex 2
+  -> apply search filter for regex for more than one layer
+  -> filter
+
+  #currently, regex breaks if the character ' appears in actual regex string e.g. r'abcd'efg' -> searching for abcd'efg
   transformer.layer.r'[2-4]'.attn.mha:
     quantize: True
     layer_type: MultiheadAttention  
