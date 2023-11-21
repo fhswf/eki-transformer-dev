@@ -10,6 +10,7 @@ from typing import Dict
 import inspect
 from brevitas.export import export_qonnx
 from pprint import PrettyPrinter
+from qtransform import device_singleton
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
@@ -62,9 +63,6 @@ class BrevitasQuantizer(Quantizer):
             quantizers = layer_cfg.get_custom_quantizers()
             if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
             quantized_layer: Module = BrevitasQuantizer.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
-            #see if models are moved to corresponding device 
-            #TODO: check if cuda drivers are usable, otherwise use cpu
-            #quantized_layer.to(device=self.quant_cfg.device, dtype=self.quant_cfg.dtype)
             #replace current non-quantized layer with quantized layer
             submodule.add_module(sublayer_names[-1], quantized_layer)
         #remember that model within config is quantized
@@ -124,7 +122,7 @@ class BrevitasQuantizer(Quantizer):
             log.error(f'Quantization for layer \"{layer_name}\" unsuccessful. Reason:\n{e}')
             raise ValueError
             #TODO: find good path for error messages
-        return quantized_layer
+        return quantized_layer.to(device=device_singleton.device)
 
     def train_qat(model: Module, function: any, args: list) -> Module:
         """

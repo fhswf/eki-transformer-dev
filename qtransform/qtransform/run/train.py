@@ -26,29 +26,13 @@ def run(cfg: DictConfig):
     #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
     ## note: float16 data type will automatically use a GradScaler
     #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-
-    cuda = None
-    device = None
-    if "cuda" in cfg:
-        cuda = cfg.cuda and torch.cuda.is_available()
-    else:
-        cuda = torch.cuda.is_available()
-    mps = None
-    if "mps" in cfg:
-        mps = cfg.mps and torch.backends.mps.is_available()
-    else:
-        mps = torch.backends.mps.is_available()
-
-    torch.manual_seed(cfg.seed)    
-    if cuda:
-        device = torch.device("cuda")
+    from qtransform import device_singleton
+    device_singleton.device = cfg.device
+    device = device_singleton.device
+    if device == 'cuda':
         cuda_kwargs = {'pin_memory': True,}
         cfg.dataset.dataloader.update(cuda_kwargs)
-    elif mps:
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
-    log.info(f"using device: {str(device)}")
+    torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
     from qtransform.model import get_model

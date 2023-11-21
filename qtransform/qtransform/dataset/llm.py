@@ -9,6 +9,7 @@ from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
 import os
 import glob
 import logging
+from qtransform import device_singleton
 log = logging.getLogger(__name__)
 
 class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
@@ -86,7 +87,7 @@ class _FileSystemLLMDataset(Dataset):
         #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. The returned tensor is not resizable.
         #therefore, copy part of np array or use torch.stack()
         offset = index + self.block_size
-        data: torch.Tensor = torch.from_numpy(np.copy(self.data[index:offset]))
+        data: torch.Tensor = torch.from_numpy(np.copy(self.data[index:offset])).to(device=device_singleton.device)
         """
         if offset > self.length:
             #data Tensor currently has less than self.block_size items
@@ -100,7 +101,7 @@ class _FileSystemLLMDataset(Dataset):
             #grab a random index lower than the value of argument index
             offset = torch.randint(index-self.block_size, (1,))
             label_offset = offset + self.block_size
-        labels : torch.Tensor = torch.from_numpy(np.copy(self.data[offset:label_offset]))
+        labels : torch.Tensor = torch.from_numpy(np.copy(self.data[offset:label_offset])).to(device=device_singleton.device)
         return data, labels
 
     def _gather_files(self, file_path: str):
