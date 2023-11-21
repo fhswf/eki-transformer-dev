@@ -66,13 +66,20 @@ class CausalSelfAttention(nn.Module):
         y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None) # Q, K, V, attn_mask y
         return y
         
+from logging import getLogger
+log = getLogger(__name__)
+
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
         self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
-        self.activation = nn.ReLU6()
-        self.active  = getattr(nn, config.transformer_active_func)()
+        #self.activation = nn.ReLU6()
+        self.active  = getattr(nn, config.transformer_active_func, None)
+        if not self.active:
+            log.error(f'{config.transformer_active_func} is not a valid activation function. Check property transformer_active_func')
+            raise ValueError
+        self.active = self.active()
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x): 
