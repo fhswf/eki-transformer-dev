@@ -48,6 +48,9 @@ def main(cfg: DictConfig):
         case "export":
             from qtransform.run import export
             return  export.run(cfg)
+        case "test":
+            from qtransform.run import test
+            return test.run(cfg)
         case _:
             log.error(f'Command "{cfg.run.command}" not recognized')
 

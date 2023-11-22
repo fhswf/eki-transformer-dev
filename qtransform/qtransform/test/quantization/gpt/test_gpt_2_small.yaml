@@ -1,31 +1,12 @@
-cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
-#containers:
-#  #TODO: make config apply for all layers within container ModuleList or ModuleConfig
-#  #idea: regex within name
-#  #! marks start and end of regex
-#  transformer.layer.![0-9]!.mlp.c_fc:
-#    quantize: True
-#    layer_type: Linear
-
-
-  #IDEA: '': quant_args for entire model such as:
-  #in order to do that, custom quantizers for entire models need to be implemented
-  #'': 
-  #  layer_type: gpt
-  #  quantizers: 
-  #    ...
-
-
+#test config to verify correctness of quantization
+cls: gpt
 layers:
-  #<module>.<submodule>.<submodule>.<quantized_layer>
-  #-> quantized layer at the bottom, always
-  transformer.wte: #name of layer
-    #quantize: True #assume that layer should be quantized if it is in config
+
+  #word token and word position embedding
+  transformer.r'w[tp]e':
     layer_type: Embedding
     quantizers: 
       weight: 
-        #type: weight
-        #order of overriding: default_quantizer, then template, then args
         default_quantizer: Int8WeightPerTensorFloat
         template: weight_round_minmax  #config in yaml files under ./templates
         args:
@@ -48,6 +29,44 @@ layers:
           #test if args from template are really applied
           #bit_width : 6 #bit width of quantized values
 
+  #check if config are applied by regex already
+  #should throw warning
+  transformer.wte:
+    layer_type: Embedding
+    quantizers: 
+      weight: 
+        default_quantizer: Int8WeightPerTensorFloat
+        template: ""  #config in yaml files under ./templates
+        args:
+          quant_type : INT #Integer, binary, ternary, fixed point integer
+          bit_width_impl_type : CONST #is the bit width backpropagated and optimised
+          float_to_int_impl_type : ROUND #how should the quantized values be clipped to fit into the quantized datatype
+          narrow_range : TRUE #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
+          signed : True #can quantized values take on negative values
+          zero_point_impl : ZeroZeroPoint #how is zero point infered
+
+          scaling_impl_type : PARAMETER_FROM_STATS #how the scale qparam should be calculated, for now: from statistics (weight tensors of layer)
+
+          #attributes only applied when scaling_impl_type is statistics
+          scaling_stats_op : MAX #max value, minmax etc.
+          scaling_min_val : 1e-3 #minimum value that the scale is going to have during calibration
+
+          scaling_per_output_channel : False #per tensor or per channel quantization
+          restrict_scaling_type : POWER_OF_TWO #restrict range of values that scale qparam can have
+
+          #test if args from template are really applied
+          #bit_width : 6 #bit width of quantized values
+
+  transformer.wpe:
+    layer_type: Embedding
+    quantizers:
+      weight:
+        default_quantizer: Int8ActPerTensorFloatMSE
+
+  transformer.dropout:
+    layer_type: Dropout
+  transformer.ln_out:
+    layer_type: LayerNorm
   transformer.layer.1.attn.mha:
     quantize: True
     layer_type: MultiheadAttention
@@ -72,42 +91,7 @@ layers:
     quantize: True
     layer_type: ReLU
 
-
-  
-  #---------------------------------------  REGEX
-  #iterate through each sublayer, see if it is regex
-  #if regex: parse statement and find all layer names within model
-  #otherwise, continue with iteration until last layer
-  #add all found layers inside of a dict, construct layerquantargs object for each entry
-  #option 1: special characters appear in start and end of expression ->transformer.layer.![2-4]!.attn.mha:
-  #option 2: use regex syntax of python and call regex object directly -> transformer.layer.r'[2-4]'.attn.mha
-  #compile is slow, checking for strings is fast
-  
-  when regex occurs -> take previous layer and find all immediate children that fit regex (sublayers[max(0, index-1)] to make sure not to have negative indices)
-  save all children and iterate through sublayer string once again, apply search filter attn to all found layers
-  do that until the last layer is found
-  -> 1-n layers could be found depending on how many layers are found by regex
-  transformer 0
-  layer 1
-  regex 2
-  attn 3
-  mha 4
-
-
-  transformer.layer.r'[2-4]'.r'.+'.r'.+'
-  -> 3 regex strings, bit hard to read
-  transformer 0
-  layer 1
-  regex 2
-  regex 3
-  regex 4
-  -> n2, n3, n4 for regex could yield more than one layer
-  -> regex 2 finds all layers that fit the expression in layer (1)
-  -> regex 3 finds all layers that fit the expression in yielded layers from regex 2
-  -> apply search filter for regex for more than one layer
-  -> filter
-
-  #currently, regex breaks if the character ' appears in actual regex string e.g. r'abcd'efg' -> searching for abcd'efg
+  #regex test
   transformer.layer.r'[2-4]'.attn.mha:
     quantize: True
     layer_type: MultiheadAttention  
@@ -118,3 +102,15 @@ layers:
         template: ""
         args:
           bit_width: 5
+      out_proj_weight_quant:
+        type: weight
+        default_quantizer: Int8WeightPerChannelFloat
+        template: ""
+        args:
+          bit_width: 7
+  transformer.layer.r'[0-9]+'.mlp.r'c_.+':
+    quantize: True
+    layer_type: Linear
+  transformer.layer.r'[0-9]+'.r'ln_[1-2]':
+    quantize: True
+    layer_type: LayerNorm

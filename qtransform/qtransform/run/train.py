@@ -81,7 +81,7 @@ def run(cfg: DictConfig):
         from qtransform.run import export
         OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint)
         export.run(cfg)
-
+        
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""

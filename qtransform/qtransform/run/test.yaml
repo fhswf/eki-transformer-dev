@@ -1,0 +1,4 @@
+command: test
+
+scope: #python modules within this package 
+  - quantization

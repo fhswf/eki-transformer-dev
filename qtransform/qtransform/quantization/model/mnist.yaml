@@ -31,8 +31,9 @@ layers:
     quantize: True
     layer_type: ReLU
     quantizers:
-      act: 
-        default_quantizer: Uint8ActPerTensorFloat
+      #act: 
+      #quantizers for unsigned integers are not supported
+      #  default_quantizer: Int8ActPerTensorFloat
   model.conv2:
     quantize: True
     layer_type: Conv2d
@@ -44,7 +45,7 @@ layers:
     layer_type: ReLU
     quantizers:
       act: 
-        default_quantizer: Uint8ActPerTensorFloat
+        default_quantizer: Int8ActPerTensorFloat
   #for some reason, some layers like maxpool2d do not have quantizer for parameters
   model.maxpool2d:
     quantize: False
@@ -61,19 +62,19 @@ layers:
       weight:
         default_quantizer: Int8WeightPerTensorFloat
       act:
-        default_quantizer: Uint8ActPerTensorFloat
+        default_quantizer: Int8ActPerTensorFloatMinMaxInit
       bias:
         default_quantizer: Int8Bias
       input:
-        default_quantizer: Uint8ActPerTensorFloat
+        default_quantizer: Int8ActPerTensorFloat
       output:
-        default_quantizer: Uint8ActPerTensorFloat
+        default_quantizer: Int8ActPerTensorFloat
   model.relu3:
     quantize: True
     layer_type: ReLU
     quantizers:
       act: 
-        default_quantizer: Uint8ActPerTensorFloat   
+        default_quantizer: Int8ActPerTensorFloat   
   model.dropout2: 
     quantize: True
     layer_type: Dropout
@@ -84,10 +85,10 @@ layers:
       weight:
         default_quantizer: Int8WeightPerTensorFloat
       act:
-        default_quantizer: Uint8ActPerTensorFloat
+        default_quantizer: Int8ActPerTensorFloat
       bias:
         default_quantizer: Int8Bias
       input:
-        default_quantizer: Uint8ActPerTensorFloat
+        default_quantizer: Int8ActPerTensorFloat
       output:
-        default_quantizer: Uint8ActPerTensorFloat
+        default_quantizer: Int8ActPerTensorFloat

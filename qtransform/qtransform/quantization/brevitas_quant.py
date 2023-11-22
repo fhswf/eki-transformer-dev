@@ -119,7 +119,7 @@ class BrevitasQuantizer(Quantizer):
             quantized_layer = quantized_layer_class(**args)
         except Exception as e:
             #TODO: should layers be skipped or the entire quantization process fail?
-            log.error(f'Quantization for layer \"{layer_name}\" unsuccessful. Reason:\n{e}')
+            log.error(f'Quantization for layer \"{layer_name}\" unsuccessful. Reason:\n{e}. Maybe the specified quantizer needs more config arts to be set?')
             raise ValueError
             #TODO: find good path for error messages
         return quantized_layer.to(device=device_singleton.device)
