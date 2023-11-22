@@ -1,6 +1,6 @@
 colorlog
 tzdata
-datasets
+datasets~=2.14
 torch 
 hydra-core
 setuptools_rust
@@ -13,3 +13,4 @@ qonnx
 python-dateutil
 aiohttp
 pyyaml
+protobuf==3.20.3
