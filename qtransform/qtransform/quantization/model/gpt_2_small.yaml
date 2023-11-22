@@ -1,23 +1,23 @@
-name: gpt
-
-modules:
-  transformer: #name of submodule
-    wte: #name of layer
-      layer_type: Embedding
-      quantize: True
-      #quantization for different kinds, e.g. weight
-      #not all layers support quantization of all kinds, e.g. activation functions do not have weight quantization
+cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
+layers:
+  #<module>.<submodule>.<submodule>.<quantized_layer>
+  #-> quantized layer at the bottom, always
+  transformer.wte: #name of layer
+    #quantize: True #assume that layer should be quantized if it is in config
+    layer_type: Embedding
+    quantizers: 
       weight: 
+        #type: weight
         #order of overriding: default_quantizer, then template, then args
         default_quantizer: Int8WeightPerTensorFloat
-        template: "" #config in yaml files under ./templates
+        template: weight_round_minmax  #config in yaml files under ./templates
         args:
           quant_type : INT #Integer, binary, ternary, fixed point integer
           bit_width_impl_type : CONST #is the bit width backpropagated and optimised
           float_to_int_impl_type : ROUND #how should the quantized values be clipped to fit into the quantized datatype
           narrow_range : TRUE #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
           signed : True #can quantized values take on negative values
-          #zero_point_impl : ZeroZeroPoint #how is zero point infered
+          zero_point_impl : ZeroZeroPoint #how is zero point infered
 
           scaling_impl_type : STATS #how the scale qparam should be calculated, for now: from statistics (weight tensors of layer)
 
@@ -27,60 +27,29 @@ modules:
 
           scaling_per_output_channel : True #per tensor or per channel quantization
           restrict_scaling_type : FP #restrict range of values that scale qparam can have
-          bit_width : 6 #bit width of quantized values
-    gelu:
-      quantize: True
-      layer_type: ReLU
-      act:
-        default_quantizer: Int8ActPerTensorFloat
-        template: "" 
-        args:
-          min_val: 0.0
-          max_val: 100.0
-    #this is the utmost barebone way to quantize a layer
-    #it applies the config from the default quantizer 
-    barebone_layer:
-      quantize: True
-      layer_type: Linear
+  
+  #all layers inside layer container having name 00 to 99
+  #if only 10 layers exist (0 to 9), only those are picked
+  transformer.layer.r'[0-9]{1,2}'.attn.mha: 
+    quantize: True
+    layer_type: MultiheadAttention
+    quantizers: 
       weight:
+        type: weight #if unspecified, infer type from name 
         default_quantizer: Int8WeightPerTensorFloat
-    layer:
-      attn:
-        mha:
-          quantize: True
-          layer_type: MultiheadAttention
-          weight:
-            default_quantizer: Int8WeightPerTensorFloat
-    #you can skip certain layers by setting quantize to False or implicitly skip them by not listing them in the yaml file
-    another_layer:
-      quantize: False
-
-
-# ## for context: this config should match in structure to the model description from pytorch "print(model)""
-# GPT(
-#   (transformer): ModuleDict(
-#     (wte): Embedding(50304, 768)
-#     (wpe): Embedding(1024, 768)
-#     (dropout): Dropout(p=0.0, inplace=False)
-#     (layer): ModuleList(
-#       (0-11): 12 x TransformerBlock(
-#         (ln_1): LayerNorm()
-#         (attn): CausalSelfAttention(
-#           (mha): MultiheadAttention(
-#             (out_proj): NonDynamicallyQuantizableLinear(in_features=768, out_features=768, bias=True)
-#           )
-#         )
-#         (ln_2): LayerNorm()
-#         (mlp): MLP(
-#           (c_fc): Linear(in_features=768, out_features=3072, bias=True)
-#           (c_proj): Linear(in_features=3072, out_features=768, bias=True)
-#           (activation): ReLU6()
-#           (active): ReLU()
-#           (dropout): Dropout(p=0.0, inplace=False)
-#         )
-#       )
-#     )
-#     (ln_out): LayerNorm()
-#   )
-#   (linear_out): Linear(in_features=768, out_features=50304, bias=False)
-# )
+        template: ""
+        args:
+      in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+        type: weight
+        default_quantizer: Int8WeightPerTensorFloat
+        template: ""
+        args:
+  transformer.layer.1.mlp.c_fc:
+    quantize: True
+    layer_type: Linear
+  transformer.layer.1.mlp.c_proj:
+    quantize: True
+    layer_type: Linear
+  transformer.layer.1.mlp.active:
+    quantize: True
+    layer_type: ReLU

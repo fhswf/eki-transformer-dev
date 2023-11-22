@@ -15,3 +15,5 @@ build/
 dist/
 *.onnx
 **/*_epoch*
+#python virtual environment
+qtransform/eki

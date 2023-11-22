@@ -4,3 +4,6 @@ type: BrevitasQuantizer #The Framework that supports quantization, appended with
 
 defaults: 
   - model: ???
+model:
+  dtype: ${data.dtype}
+  device: ${device}

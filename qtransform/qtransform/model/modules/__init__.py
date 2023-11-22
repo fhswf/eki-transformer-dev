@@ -58,33 +58,28 @@ class CausalSelfAttention(nn.Module):
         self.n_head = config.n_head
         self.n_embd = config.n_embd
         self.dropout = config.dropout
-        self.quantize = config.quantize
         self.block_size = config.block_size
-
-        if config.quantize:
-            self.mha = qnn.QuantMultiheadAttention(config.n_embd, config.n_head, batch_first=True)
-            self.attn_mask = torch.tril(torch.ones((config.block_size,config.block_size))) # limit to left in the input sequence
-        else: 
-            self.mha = nn.MultiheadAttention(config.n_embd, config.n_head, dropout=self.dropout, batch_first=True)
-            self.attn_mask = torch.tril(torch.ones((config.block_size,config.block_size))) # limit to left in the input sequence
+        self.mha = nn.MultiheadAttention(config.n_embd, config.n_head, dropout=self.dropout, batch_first=True)
+        self.attn_mask = torch.tril(torch.ones((config.block_size,config.block_size))) # limit to left in the input sequence
 
     def forward(self, x):
         y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None) # Q, K, V, attn_mask y
         return y
         
+from logging import getLogger
+log = getLogger(__name__)
+
 class MLP(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.quantize = config.quantize
-        if not self.quantize:
-            self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
-            self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
-            self.activation = nn.ReLU6()
-            self.active  = getattr(nn, config.transformer_active_func)()
-        else:
-            self.c_fc    = qnn.QuantLinear(config.n_embd, 4 * config.n_embd, bias=config.bias, weight_bit_width=8)
-            self.c_proj  = qnn.QuantLinear(4 * config.n_embd, config.n_embd, bias=config.bias, weight_bit_width=8)
-            self.active  = qnn.QuantReLU(bit_width=8)
+        self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
+        self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
+        #self.activation = nn.ReLU6()
+        self.active  = getattr(nn, config.transformer_active_func, None)
+        if not self.active:
+            log.error(f'{config.transformer_active_func} is not a valid activation function. Check property transformer_active_func')
+            raise ValueError
+        self.active = self.active()
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x): 
