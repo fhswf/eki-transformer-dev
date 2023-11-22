@@ -12,6 +12,7 @@ from datetime import datetime
 import torch.nn.functional as F
 from qtransform.utils import load_checkpoint, save_checkpoint
 from pprint import PrettyPrinter
+from qtransform import device_singleton
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +27,6 @@ def run(cfg: DictConfig):
     #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
     ## note: float16 data type will automatically use a GradScaler
     #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-    from qtransform import device_singleton
     device_singleton.device = cfg.device
     device = device_singleton.device
     if device == 'cuda':
@@ -143,25 +143,20 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
 def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.DataLoader,
            optimizer: optim.Optimizer, mini_run: bool=False) -> Any:
     """ training loop over steps/batches """
+    model.train() #if it was quantized, it could have been set to eval
     last_loss = 0
     running_loss = 0
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
-
-        # TODO 
-        #data.to(device)
         inputs, labels = data
-        #if model.quant:
-            #fake quantize inputs
-        #    inputs = model.quant(inputs)
+        inputs = inputs.to(device_singleton.device)
+        labels = labels.to(device_singleton.device)
         if cfg.model.calc_loss_in_model:
             outputs, loss = model(inputs, labels)
         else:
             outputs = model(inputs)
             loss = F.nll_loss(outputs, labels)
         """TODO: pytorch support maybe"""
-        #if model.dequant:
-        #    outputs = model.dequant(outputs)
         loss.backward()
         optimizer.step()
 

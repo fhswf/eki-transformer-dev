@@ -103,7 +103,6 @@ class _FileSystemLLMDataset(Dataset):
             label_offset = offset + self.block_size
         labels : torch.Tensor = torch.from_numpy(np.copy(self.data[offset:label_offset])).to(device=device_singleton.device)
         return data, labels
-
     def _gather_files(self, file_path: str):
         self.file_path = file_path
         file_list = glob.glob(self.file_path + "*")
