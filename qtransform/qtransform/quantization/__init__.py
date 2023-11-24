@@ -159,6 +159,9 @@ SUPPORTED_QUANTIZERS: Dict[str, List[str]] = {
 
 from os.path import join, exists
 
+#IDEA: during post init, get default quantizer / quantizer of layer and inject quantargs with corresponding values
+#      not entirely necessary as each layer has at least default quantizer that can be subclassed from
+
 @dataclass
 class BaseQuant():
     default_quantizer: str
@@ -239,10 +242,12 @@ import qtransform.quantization as package_self
 
 @dataclass
 class LayerQuantConfig:
+    #if a field is not wrapped within Optional[], it should be set
+    #the check for existence is done within __post_init__()
     layer: Module
     quantize: bool = True #if layer is specified in config, assume that it should be quantized
     layer_type: Optional[str] = None #Linear, Embedding, MHA, ReLU ...
-    quantized_layer_type: type = None #quantized class of layer_type (QuantLinear for Linear, QuantMultiheadAttention for MultiheadAttention ...)
+    #quantized_layer_type: type = None #quantized class of layer_type (QuantLinear for Linear, QuantMultiheadAttention for MultiheadAttention ...)
     name: str = None #necessary to iterate through layers in model. set by ModelQuantArgs __post_init__
     #after using a default Quantizer, it is necessary to do the injection part ourselves
     #which means creating a custom Class deriving of the base brevitas quantizer class and overriding qparams

@@ -1,8 +1,9 @@
 
 import logging
-from typing import Any
+from typing import Any, Dict
 from omegaconf import DictConfig
 from qtransform.utils.helper import load_checkpoint
+from qtransform.classloader import get_data
 from torch.onnx import export
 from datetime import datetime
 import torch
@@ -10,25 +11,11 @@ import torch
 import pkgutil
 import importlib
 import qtransform
-from abc import ABC, abstractmethod
+from dataclasses import dataclass
 import unittest
 from qtransform.classloader import get_data
-import qtransform.test as test_module
-from qtransform.test.quantization import test_quant
-
-class TestClass(unittest.TestSuite, ABC):
-    """
-        Boilerplate to make sure that test suites have a function that can be called for all scopes to be tested
-    """
-    @classmethod
-    @abstractmethod
-    def test_everything():
-        pass
-
-
 
 log = logging.getLogger(__name__)
-
 def run(cfg: DictConfig):
     """ Runs unit tests for a certain scope (usually the modules within this package) specified in the yaml config. Each module represents a feature such as
         quantization, tokenization, datasets, models, optimization, export.
@@ -39,15 +26,23 @@ def run(cfg: DictConfig):
     log.info("================")
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
-    qtransform_modules = {x.name:x for x in pkgutil.iter_modules(qtransform.__path__)}
-    for test_suite in scope:
-        log.info(f'Currently testing: {test_suite}')
-        if test_suite not in qtransform_modules.keys():
-            log.error(f'Module {test_suite} was not found')
+    qtransform_packages = {x.name:x for x in pkgutil.iter_modules(qtransform.__path__)}
+
+    runner=unittest.TextTestRunner()
+    #test each package
+    for test_package_name in scope:
+        log.info(f'Currently testing: {test_package_name}')
+        if test_package_name not in qtransform_packages.keys():
+            log.error(f'Module {test_package_name} was not found')
             raise KeyError
-        #get_data(log, )
-        #log.critical(qtransform_modules[test_suite][1])
-        #importlib.import_module(qtransform_modules[test_suite].module_finder)
-        #log.critical(qtransform_modules)
-        #module_scope = getattr(qtransform_package, test_suite, None)
-        test_quant.TestQuantization().test_small_gpt()
+        test_suite = unittest.TestSuite()
+        #one module can have multiple test iterations, each ahving different configs
+        count = 0
+        test_package = importlib.import_module('qtransform.test.' + qtransform_packages[test_package_name].name)
+        test_class = "Test" + test_package_name.capitalize()
+        for test_args in test_package_name:
+            #TODO: pass args
+            test_case: unittest.TestCase = get_data(log, test_package ,test_class , unittest.TestCase, test_args)
+            test_case.run()
+            #test_suite.addTest(test_case(str(count)))
+        #runner.run(test_suite)

@@ -40,7 +40,7 @@ class GPTConfig:
     dropout: float = 0.0
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
     flash: bool = False # cuda flas hattention
-    transformer_active_func: str = 'GELU' #specify which activation function to use in MLP (feed forwad neural network)
+    transformer_active_func: str = 'ReLU' #specify which activation function to use in MLP (feed forwad neural network)
 
 from dataclasses import fields
 class GPT(nn.Module):
