@@ -13,6 +13,7 @@ from typing import Dict, Any, Union
 from omegaconf import DictConfig
 from logging import getLogger
 from qtransform.utils.introspection import get_optional_type
+from qtransform.test.quantization.test_regex import QuantizationRegexTest
 import torch
 from dataclasses import dataclass
 
@@ -42,7 +43,7 @@ class Testargs():
 
 from qtransform.model import get_model
 #for now, each test case to be used has the name Test<Module>
-class TestQuantization(unittest.TestCase):
+class QuantizationTest(unittest.TestCase):
     """
         Testclass to verify if the quantization of a model for a certain config file is applied correctly.
         In order to test specific models, a class should be created that derives from this and contains
@@ -103,6 +104,12 @@ class TestQuantization(unittest.TestCase):
                 continue
             self.assertEqual(getattr(self.model_quant_cfg, key), self.yaml_quant_cfg[key])
         log.info(f'Types attributes immediately within ModelQuantConfig are correct. Checking layers next.')
+        #possible regex strings within config in order map the layerquantconfig names which have been
+        #interpreted during parsing
+        yaml_layers = self.yaml_quant_cfg["layers"].keys()
+        def parse_layer_regex(layer_regex_string: str):
+            for sublayer in findall(r'(r\'[^\']+\'|[^\.]+)', layer_regex_string):
+                pass
         #next, check each LayerQuantConfig entry 
         for layer_name, layer_quant_cfg in self.model_quant_cfg.layers.items():
             yaml_layer_quant_cfg = self.yaml_quant_cfg["layers"][layer_name]
@@ -139,6 +146,7 @@ class TestQuantization(unittest.TestCase):
         self.assertEqual(isinstance(yaml_layer_quantizers, Union[Dict, DictConfig]), True)
         #check if all quantizers for the layer are stored within LayerQuantConfig
         #-> difference between keys is zero
+        log.critical(layer_quant_cfg)
         log.critical(f'{set(layer_quant_cfg.quantizers.keys())} {set(yaml_layer_quantizers.keys())}')
         self.assertEqual(len(set(layer_quant_cfg.quantizers.keys()) - set(yaml_layer_quantizers.keys())), 0)
         

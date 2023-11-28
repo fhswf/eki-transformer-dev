@@ -66,20 +66,21 @@ layers:
     layer_type: Dropout
   transformer.ln_out:
     layer_type: LayerNorm
-  transformer.layer.1.attn.mha:
-    quantize: True
-    layer_type: MultiheadAttention
-    quantizers: 
-      weight:
-        type: weight #if unspecified, infer type from name 
-        default_quantizer: Int8WeightPerTensorFloat
-        template: ""
-        args:
-      in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
-        type: weight
-        default_quantizer: Int8WeightPerTensorFloat
-        template: ""
-        args:
+  #another config for the same layer exists in form of a regex string -> last one should be applied
+  #transformer.layer.1.attn.mha:
+  #  quantize: True
+  #  layer_type: MultiheadAttention
+  #  quantizers: 
+  #    weight:
+  #      type: weight #if unspecified, infer type from name 
+  #      default_quantizer: Int8WeightPerTensorFloat
+  #      template: ""
+  #      args:
+  #    in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+  #      type: weight
+  #      default_quantizer: Int8WeightPerTensorFloat
+  #      template: ""
+  #      args:
   transformer.layer.1.mlp.c_fc:
     quantize: True
     layer_type: Linear
