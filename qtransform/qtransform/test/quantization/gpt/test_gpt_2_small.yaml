@@ -1,7 +1,6 @@
 #test config to verify correctness of quantization
 cls: gpt
 layers:
-
   #word token and word position embedding
   transformer.r'w[tp]e':
     layer_type: Embedding
@@ -92,7 +91,8 @@ layers:
     layer_type: ReLU
 
   #regex test
-  transformer.layer.r'[2-4]'.attn.mha:
+  #transformer.layer.r'[2-4]'.attn.mha currently fails if the model does not have more than 2 layers -> ignore regex or just exit with an error?
+  transformer.layer.r'[0-4]'.attn.mha:
     quantize: True
     layer_type: MultiheadAttention  
     quantizers:

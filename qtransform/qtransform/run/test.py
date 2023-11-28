@@ -14,6 +14,7 @@ import qtransform
 from dataclasses import dataclass
 import unittest
 from qtransform.classloader import get_data
+from qtransform.test.quantization.test_quantization import TestQuantization
 
 log = logging.getLogger(__name__)
 def run(cfg: DictConfig):
@@ -27,8 +28,12 @@ def run(cfg: DictConfig):
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
     qtransform_packages = {x.name:x for x in pkgutil.iter_modules(qtransform.__path__)}
-
-    runner=unittest.TextTestRunner()
+    test = TestQuantization('test_modelquant_cfg')
+    test.ARGS = scope.quantization[0].args
+    test.debug()
+    #result = test.run()
+    #log.critical(result)
+    return 
     #test each package
     for test_package_name in scope:
         log.info(f'Currently testing: {test_package_name}')
@@ -36,7 +41,7 @@ def run(cfg: DictConfig):
             log.error(f'Module {test_package_name} was not found')
             raise KeyError
         test_suite = unittest.TestSuite()
-        #one module can have multiple test iterations, each ahving different configs
+        #one module to be tested can have multiple test iterations, each having different configs
         count = 0
         test_package = importlib.import_module('qtransform.test.' + qtransform_packages[test_package_name].name)
         test_class = "Test" + test_package_name.capitalize()

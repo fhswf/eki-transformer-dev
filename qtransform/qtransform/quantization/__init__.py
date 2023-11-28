@@ -425,7 +425,7 @@ class ModelQuantConfig:
                 continue
             #use last config of layer that is mentioned multiple times in yaml file
             elif submodules_list_string in self.layers.keys():
-                log.warning(f"""Config for layer {submodules_list_string} already exists with properties \n{self.layers[submodules_list_string]}\n. Replacing them with {pprint.PrettyPrinter(indent=1).pformat(layer_cfg)}""")
+                log.warning(f"""Config for layer {submodules_list_string} already exists with properties: \n{pprint.PrettyPrinter(indent=1).pformat(self.layers[submodules_list_string])}.\n\n Replacing them with:\n {pprint.PrettyPrinter(indent=1).pformat(layer_cfg)}""")
             #find all layers that fit the config name
             found_layers = ModelQuantConfig.search_layers(submodules_list_string, self.model)
             if hasattr(log, "trace"): log.trace(f'Found layers for config {submodules_list_string}: {found_layers}')
