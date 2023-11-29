@@ -23,8 +23,6 @@ def run(cfg: DictConfig):
     
     # load model checkpoint
     _, checkpoint = load_checkpoint(cfg=cfg)
-    print(checkpoint.keys())
-
     from qtransform.model import get_model
     model = None
     if "model" in cfg and "cls" in cfg.model:
@@ -36,7 +34,7 @@ def run(cfg: DictConfig):
         return 1
     model.load_state_dict(checkpoint['model_state_dict'])
 
-    log.info(f"Model structure: {model}")
+    log.trace(f"Model structure: {model}")
     log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
     sample_tensor = torch.randint(0, checkpoint['model_cfg']['args']['vocab_size'], (1, checkpoint['model_cfg']['args']['block_size']), dtype=int)
 
@@ -57,13 +55,20 @@ def run(cfg: DictConfig):
         output_names = ['output'],      # the model's output names
         dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
                     'output' : {0 : 'batch_size'}})
-    
     """
-    if 'quantize' in checkpoint['model_cfg']['args'] and checkpoint['model_cfg']['args']:
+    try:
         export_qonnx(model, torch.tensor(sample_tensor), export_path="export_qonnx_" + filename, opset_version=16)
-        #export_brevitas_onnx(model, torch.tensor(sample_tensor), export_path="export_brevitas_onnx_" + filename, opset_version=16)
-    else:
-        export(model, torch.tensor(sample_tensor), filename, opset_version=16)
-
-    # TODO more export options
-    pass
+    except Exception:
+        log.error(f"Export via {export_qonnx.__module__}.{export_qonnx.__name__} failed, reason", exc_info=True)
+    #try:
+    #    export_brevitas_onnx(model, torch.tensor(sample_tensor), export_path="export_brevitas_onnx_" + filename, opset_version=16)
+    #except:
+    #    log.error(f"Export via {export_brevitas_onnx.__module__}.{export_brevitas_onnx.__name__} failed, reason", exc_info=True)
+    try:
+        export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path="export_onnx_qcdq_onnx_" + filename, opset_version=16)
+    except:
+        log.error(f"Export via {export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__} failed, reason", exc_info=True)
+    try:
+        export(model, torch.tensor(sample_tensor), "export_torch_onnx_" + filename, opset_version=16)
+    except:
+        log.error(f"Export via {export.__module__}.{export.__name__} failed, reason", exc_info=True)
