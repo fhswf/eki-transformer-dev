@@ -1,0 +1,51 @@
+#note down layers which are going to be used to test the regex strings on
+#the models are going to be referenced in regex_strings along with the amount of hits it should return
+models:
+  test_model_1:
+    - transformer.layer.1.mlp.c_something
+    - transformer.layer.2.mlp.c_something
+    - transformer.layer1.1.mlp.c_something
+    - etc.etc.etc.etc
+
+regex_strings: 
+  #note down all regex strings that need to be tested and see if it is interpreted correctly
+  #the field "valid" is mandatory and specifies if the name can be parsed correctly.
+  #the field "number_of_sublayers" is set to one by default, 
+  #"regex_strings" contains the indices of sublayers which should be interpreted as a regex in form of a list.
+  #it starts at index 0. if "regex_strings" is omited, an empty list is used.
+  transformer.layer.r'[0-9]+'.mlp.r'c_.+': 
+    valid: True #mandatory
+    number_of_sublayers: 5 #how many layers are within the string, if regex yields more than one layer, group them as one
+    regex_index: #list containing indices  of layers that should be interpreted as regex. index starts at 0, empty list by default
+      - 2
+      - 4
+    models: #if the regex string should be tested on a specific list of layers, reference items from models here
+      test_model_1:
+        hits: 2 #how many layers should be found with the regex string
+  
+  #example of regex strings that should fail
+  #if it fails, it should not be tested further
+  transformer.layer.'[0-9]+'.mlp.r'c_.+':
+    valid: False #does not contain r''
+    models: #test if the regex string is not evaluated further
+      test_model_1:
+        hits: 2 #how many layers should be found with the regex string
+  transformer.layer.[0-9]+'.mlp.'c_.+': #'c_.+' is interpreted as two layers since it is not contained within r'' expression
+    number_of_sublayers: 5
+    valid: False #etc.
+  transformer.layer.[0-9]+.mlp.r'c_.+: 
+    number_of_sublayers: 5
+    valid: False
+  transformer.layer.r'[0-9]+.mlp.rc_.+': 
+    number_of_sublayers: 5
+    valid: False
+  abcd: 
+    valid: True
+    number_of_sublayers: 1
+  #empty strings
+  #TODO: empty strings result in all layers being found -> ignore empty strings or treat them seperately
+  #empty strings always return a match
+  "": 
+    valid: False
+  " ": 
+    valid: False

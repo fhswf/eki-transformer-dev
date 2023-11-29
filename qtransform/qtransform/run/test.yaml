@@ -3,19 +3,5 @@ command: test
 #TODO: maybe make multiple yaml files for testing
 scope: #python modules within this package 
   quantization: #can test one module multiple times with list
-    - method: test_quantization #specific test method to call, otherwise invoke the default method runTest
-      args: #arguments to feed into the testcase
-        config_file: '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/gpt/test_gpt_2_small.yaml' #relative or absolute paths?
-        model: 
-          cls: GPT
-          calc_loss_in_model: True
-          args:   
-            n_layer : 2
-            n_head : 2
-            n_embd : 256
-            dropout : 0.0 # for pretraining 0 is good, for finetuning try 0.1+
-            bias : True # do we use bias inside LayerNorm and Linear layers? # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-            block_size : 64 
-            vocab_size : 26 # shakespeare characters
-            transformer_active_func: ReLU
-            flash: False
+    - module: regex
+      filename: '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/gpt/test_gpt_2_small.yaml' #contains everything needed to test module

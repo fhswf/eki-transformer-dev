@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict, List
 from torch.nn import Module
-from re import search, subn, compile, findall, match
+from re import search, subn, compile, findall, match, Pattern
 from logging import getLogger
 from qtransform.utils.introspection import concat_strings
 
@@ -10,13 +10,7 @@ log = getLogger(__name__)
 LAYER_SEPERATOR_STRING = r'(r\'[^\']+\'|[^\.]+)' #regular expressions within config to apply config for multiple layers should be notated as a python raw string
 REGEX_SEARCH_PATTERN = r'r\'([^\']+)\'' #a regex within a layer string should have the structure: "r'regex-term'"
 
-@dataclass
-class SearchResult():
-    found_layers: List[str]
-    regex_index: List[int]
-    number_of_sublayers: int
 
-    
 def search_layers_from_module(layer_dotted: str, model: Module) -> Dict[str, Module]:
     """
         Returns the name of all layers that appear inside of a model which have the pattern layer_dotted. 
@@ -33,14 +27,33 @@ def search_layers_from_module(layer_dotted: str, model: Module) -> Dict[str, Mod
     #model itself is included in named_modules as ''
     #model config currently only works for sublayers, not the entire model
     all_layers_within_model.pop(0)
-    search_result = search_layers_from_strings(layer_dotted, all_layers_within_model)
-    return {x: model.get_submodule(x) for x in search_result.found_layers}
+    found_layers = search_layers_from_strings(layer_dotted, all_layers_within_model)
+    return {x: model.get_submodule(x) for x in found_layers}
 
-def search_layers_from_strings(layer_dotted: str, layers: List[str]) -> SearchResult:
+#TODO: maybe replace exceptions with property "valid" which is then set to False within SearchResult object
+def search_layers_from_strings(layer_dotted: str, layers: List[str]) -> List[str]:
     """
         Constructs a regular expression from layer_dotted and filters all entries within layers with 
         it. layer_dotted needs to be in form of <layer1>.layer2>.etc, each layer can also be a regex in form
         of a raw string r'.+'.etc
+    """
+    #search all layers for pattern
+    search_filter = compile_pattern_from_layerstring(layer_dotted).pattern
+    found_layers= list(filter(lambda string: search(search_filter, string), layers))
+    return found_layers
+
+@dataclass
+class CompileResult():
+    regex_index: List[int]
+    number_of_sublayers: int
+    pattern: Pattern
+    
+
+def compile_pattern_from_layerstring(layer_dotted: str) -> CompileResult:
+    """
+        Compiles a nested layer string, possibly containing regular expressions, into a Pattern object. The Pattern object
+        can be used in order to find layers within a model or to simply test the correctness of a nested layer string.
+
     """
     sublayers = findall(LAYER_SEPERATOR_STRING, layer_dotted)
     if len(sublayers) == 0:
@@ -68,6 +81,4 @@ def search_layers_from_strings(layer_dotted: str, layers: List[str]) -> SearchRe
     filtered_layer_string = filtered_layer_string[:-2]
     search_filter = compile(filtered_layer_string + "$")
     if hasattr(log, "trace"): log.trace(f'Pattern to be compiled: {filtered_layer_string}. Compiled: {search_filter}')
-    #search all layers for pattern
-    found_layers= list(filter(lambda string: search(search_filter, string), layers))
-    return SearchResult(found_layers = found_layers, regex_index = regex_index, number_of_sublayers = len(sublayers))
+    return CompileResult(regex_index=regex_index, number_of_sublayers=len(sublayers), pattern=search_filter)

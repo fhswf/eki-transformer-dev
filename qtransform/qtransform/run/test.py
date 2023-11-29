@@ -10,11 +10,20 @@ import torch
 #from qtransform.quantization.testing import test_quant
 import pkgutil
 import importlib
-import qtransform
+import qtransform.test
 from dataclasses import dataclass
 import unittest
-from qtransform.classloader import get_data
-from qtransform.test.quantization.test_quantization import TestQuantization
+from qtransform.utils.introspection import _get_module
+from qtransform.test.quantization.regex import suite
+
+
+@dataclass 
+class TestConfig():
+    """
+        Boilerplate for syntax highlighting
+    """
+    module: str
+    filename: str
 
 log = logging.getLogger(__name__)
 def run(cfg: DictConfig):
@@ -27,27 +36,12 @@ def run(cfg: DictConfig):
     log.info("================")
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
-    qtransform_packages = {x.name:x for x in pkgutil.iter_modules(qtransform.__path__)}
-    test = TestQuantization('test_modelquant_cfg')
-    test.ARGS = scope.quantization[0].args
-    test.debug()
-    #result = test.run()
-    #log.critical(result)
-    return 
+    qtransform_test_packages = {x.name:x for x in pkgutil.iter_modules(qtransform.test.__path__)}
+    unittest.TextTestRunner().run(suite())
     #test each package
     for test_package_name in scope:
         log.info(f'Currently testing: {test_package_name}')
-        if test_package_name not in qtransform_packages.keys():
+        if test_package_name not in qtransform_test_packages.keys():
             log.error(f'Module {test_package_name} was not found')
-            raise KeyError
-        test_suite = unittest.TestSuite()
-        #one module to be tested can have multiple test iterations, each having different configs
-        count = 0
-        test_package = importlib.import_module('qtransform.test.' + qtransform_packages[test_package_name].name)
-        test_class = "Test" + test_package_name.capitalize()
-        for test_args in test_package_name:
-            #TODO: pass args
-            test_case: unittest.TestCase = get_data(log, test_package ,test_class , unittest.TestCase, test_args)
-            test_case.run()
-            #test_suite.addTest(test_case(str(count)))
-        #runner.run(test_suite)
+            raise KeyError()
+        
