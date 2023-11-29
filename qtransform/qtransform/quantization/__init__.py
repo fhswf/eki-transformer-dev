@@ -13,6 +13,7 @@ from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType,
 from brevitas.jit import ScriptModule
 import yaml
 from brevitas.core import zero_point
+from qtransform.quantization.model_regex_filter import search_layers_from_module
 
 @dataclass 
 class QuantArgs:
@@ -236,9 +237,8 @@ class ActQuant(BaseQuant):
 
 from importlib import import_module
 from types import ModuleType
-
-from re import search, subn, compile, findall, match
 import qtransform.quantization as package_self
+from re import search, subn
 
 @dataclass
 class LayerQuantConfig:
@@ -378,7 +378,6 @@ class LayerQuantConfig:
                 )
         return quantizers
 
-REGEX_SEARCH_PATTERN = r'(r\'[^\']+\'|[^\.]+)' #regular expressions within config to apply config for multiple layers should be notated as a python raw string
 
 @dataclass
 class ModelQuantConfig:
@@ -427,7 +426,7 @@ class ModelQuantConfig:
             elif submodules_list_string in self.layers.keys():
                 log.warning(f"""Config for layer {submodules_list_string} already exists with properties: \n{pprint.PrettyPrinter(indent=1).pformat(self.layers[submodules_list_string])}.\n\n Replacing them with:\n {pprint.PrettyPrinter(indent=1).pformat(layer_cfg)}""")
             #find all layers that fit the config name
-            found_layers = ModelQuantConfig.search_layers(submodules_list_string, self.model)
+            found_layers = search_layers_from_module(submodules_list_string, self.model)
             if hasattr(log, "trace"): log.trace(f'Found layers for config {submodules_list_string}: {found_layers}')
             if len(found_layers) == 0:
                 log.error(f'No layers could be found with config: {submodules_list_string}')
@@ -439,52 +438,6 @@ class ModelQuantConfig:
             except TypeError as e:
                 log.error(f'Layer configs only support these properties: {[x.name + " (required)" if get_origin(x.type) is not Union else x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
                 raise TypeError
-    
-    @staticmethod
-    def search_layers(layer_dotted: str, model: Module) -> Dict[str, Module]:
-        """
-            Returns the name of all layers that appear inside of a model which have the pattern layer_dotted. 
-            layer_dotted is the format a layer is returned by torch.nn.Module.named_modules(), meaning:
-            sublayer.sublayer2.sublayer3.final_layer with each layer being seperated by a dot. Each sublayer can also
-            be a regex term encapsulated in python raw string notation (r'<regex-to-be-applied>'). If layer_dotted ends with a 
-            dot (sublayer.sublayer2.), the last dot is ignored and all layers of a model under sublayer.sublayer2 are found.
-        """
-        #IDEA: create list of re.match objects and filter corresponding layers of model by iterating through each match object
-        #if result is zero, log an error that no layer could be found and stop iteration
-        #after iteration, add all found layers as layerquantargs
-        #'deeply_nested_layer.deeply_nested_layer3.3'
-        all_layers_within_model = list(dict(model.named_modules()).keys())
-        #model itself is included in named_modules as ''
-        #model config currently only works for sublayers, not the entire model
-        all_layers_within_model.pop(0)
-        #split name of a layer config (layer1.layer2.quantize_layer) into its respective sublayers to check for regex
-        sublayers = findall(REGEX_SEARCH_PATTERN, layer_dotted)
-        #if len(sublayers) == 0:
-        #    print(f'Layer config {layers} is an empty string.')
-        #    raise ValueError
-        #the string which is going to be used to filter the model's layers
-        filtered_layer_string = ""
-        for sublayer in sublayers:
-            log.debug(f'going through layer: {sublayer}')
-            is_regex = match(r'r\'([^\']+)\'', sublayer)
-            if is_regex:
-                #extract actual_regex from r'actual_regex' as search is going to be done with previously iterated layers
-                #end of regex ($) cannot be used, otherwise checking stops from that regex
-                filtered_layer_string = concat_strings([filtered_layer_string, is_regex.groups()[0].replace("$", ""), "\."])
-            #problem when model for some reason has characters that variable names usually canno have, for example when
-            #creating layer names from a string
-            elif not sublayer.replace('_', '').isalnum():
-                log.error(f'Sublayer {sublayer} for layer {layer_dotted} contains special characters without being encapsulated in a regex term.')
-                raise KeyError
-            else:
-                filtered_layer_string = concat_strings([filtered_layer_string, sublayer, "\."])
-        #iteration has added one layer seperator (\.) too much
-        filtered_layer_string = filtered_layer_string[:-2]
-        search_filter = compile(filtered_layer_string + "$")
-        if hasattr(log, "trace"): log.trace(f'Pattern to be compiled: {filtered_layer_string}. Compiled: {search_filter}')
-        #search all layers for pattern
-        found_layers= list(filter(lambda string: search(search_filter, string), all_layers_within_model))
-        return {x: model.get_submodule(x) for x in found_layers}
 
 """
     Supported torch.nn modules for quantization by Brevitas:
