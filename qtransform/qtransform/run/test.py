@@ -37,11 +37,21 @@ def run(cfg: DictConfig):
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
     qtransform_test_packages = {x.name:x for x in pkgutil.iter_modules(qtransform.test.__path__)}
-    unittest.TextTestRunner().run(suite())
+    runner = unittest.TextTestRunner()
     #test each package
-    for test_package_name in scope:
+    for test_package_name, test_cfgs in scope.items():
         log.info(f'Currently testing: {test_package_name}')
         if test_package_name not in qtransform_test_packages.keys():
             log.error(f'Module {test_package_name} was not found')
             raise KeyError()
-        
+        for test_module in test_cfgs:
+            try:
+                module = importlib.import_module('qtransform.test.' + test_package_name + "." + test_module.module)
+                #every module has to contain a method called "suite" which returns a unittest.TestSuite instance with the test cases
+                #the cases were configured from the filename, specified in the test.yaml config
+            except Exception as e:
+                log.error(f'Test suite for {test_module} failed. Reason: {e}')
+                raise KeyError()
+            suite = getattr(module, "suite")
+            #TODO: somehow print info stuff before actual tests
+            runner.run(suite(test_module.filename))

@@ -4,4 +4,4 @@ command: test
 scope: #python modules within this package 
   quantization: #can test one module multiple times with list
     - module: regex
-      filename: '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/gpt/test_gpt_2_small.yaml' #contains everything needed to test module
+      filename: '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/regex/regex_strings.yaml' #contains everything needed to test module
