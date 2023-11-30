@@ -1,8 +1,13 @@
 command: test
-
-#TODO: maybe make multiple yaml files for testing
+#structure:
+#field tests is a list, containing which module to be tested (in python dotted format) 
+#along with the filename which describes the tests to be conducted.
+#currently, the filenames have to be absolute.
+#the fields "module" and "filename" are mandatory.
 tests: 
   - module: quantization.regex #python modules within test package
-    filename: '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/regex/regex_strings.yaml' #contains everything needed to test module
-  #- module: quantization
-  #  filename: 'gpt/test_gpt_2_small.yaml'
+    filenames: 
+      - '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/regex/cfg_files/regex_strings.yaml' 
+  - module: quantization.quantization
+    filenames: 
+      - '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/quantization/cfg_files/test_gpt.yaml'

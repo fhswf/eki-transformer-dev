@@ -36,7 +36,7 @@ class RegexStringTest():
             self.models = dict()
 
 from os.path import join
-REGEX_STRINGS_FILE = join('/'.join(__file__.split('/')[:-1]), 'regex_strings.yaml')
+REGEX_STRINGS_FILE = join('/'.join(__file__.split('/')[:-1]), 'cfg_files', 'regex_strings.yaml')
 
 
 class QuantizationregexTest(unittest.TestCase):
@@ -85,10 +85,14 @@ class QuantizationregexTest(unittest.TestCase):
     def runTest(self):
         self.test_regex_strings()
 
-def suite(filename: str = REGEX_STRINGS_FILE) -> unittest.TestSuite:
+def suite(filename: str) -> unittest.TestSuite:
+    """
+        Creates multiple testcases from a config file and adds them to a test suite.
+        The suite is returned and can be run with a unittest.runner.
+    """
     return unittest.TestSuite(collect_testcases(filename=filename))
 
-def collect_testcases(filename: str = REGEX_STRINGS_FILE) -> List[QuantizationregexTest]:
+def collect_testcases(filename: str) -> List[QuantizationregexTest]:
         with open(filename, 'r') as file:
             test_cases = list()
             regex_cfg = safe_load(file)

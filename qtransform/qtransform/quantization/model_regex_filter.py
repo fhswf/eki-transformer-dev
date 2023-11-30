@@ -73,7 +73,7 @@ def compile_pattern_from_layerstring(layer_dotted: str) -> CompileResult:
         #problem when model for some reason has characters that variable names usually canno have, for example when
         #creating layer names from a string
         elif not sublayer.replace('_', '').isalnum():
-            log.error(f'Sublayer {sublayer} for layer {layer_dotted} contains special characters without being encapsulated in a regex term.')
+            log.error(f'Sublayer \"{sublayer} for layer \"{layer_dotted}\" contains special characters without being encapsulated in a regex term.')
             raise ValueError
         else:
             filtered_layer_string = concat_strings([filtered_layer_string, sublayer, "\."])

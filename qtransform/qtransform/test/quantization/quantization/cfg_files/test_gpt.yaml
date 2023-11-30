@@ -1,0 +1,6 @@
+#absolute paths for now. 
+#TODO: where should config files be stored? should files from qtransform.quantization and qtransform.model be referenced?
+#TODO: should one config file contain multiple test cases?
+test_cases: 
+  - config_file: '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/quantization/quant_cfg/gpt/gpt_2_small.yaml' 
+    model: '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/quantization/models/gpt_2_small.yaml'

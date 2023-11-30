@@ -46,12 +46,12 @@ from dataclasses import fields
 class GPT(nn.Module):
     def __init__(self, config: GPTConfig):
         super().__init__()
-        assert config.vocab_size is not None
-        assert config.block_size is not None
         try:
             self.config = config if isinstance(config, GPTConfig) else GPTConfig(**config) 
         except:   
             log.error(f'Model config {config} could not be applied. Config can only have options: {[x.name for x in fields(GPTConfig)]}')
+        assert config.vocab_size is not None
+        assert config.block_size is not None
         log.info(f"Model config: {self.config}")
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),

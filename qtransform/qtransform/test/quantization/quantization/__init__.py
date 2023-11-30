@@ -9,13 +9,13 @@ import brevitas.nn as qnn
 from re import compile, search, findall, match
 from dataclasses import fields
 from enum import Enum
-from typing import Dict, Any, Union
+from typing import Dict, Any, Union, List
 from omegaconf import DictConfig
 from logging import getLogger
 from qtransform.utils.introspection import get_optional_type
-from qtransform.test.quantization.test_regex import QuantizationRegexTest
 import torch
 from dataclasses import dataclass
+from qtransform.test.quantization.regex import QuantizationregexTest
 
 #to make sure that quantization does not fail
 log = getLogger(__name__)
@@ -52,31 +52,27 @@ class QuantizationTest(unittest.TestCase):
     ARGS: Testargs = None #since setting up a custom constructor for test cases is a headache, use ARGS and setUp to store state
 
     def setUp(self):
-        #TODO: refactor attributes with dataclasses
         log.debug(f'Setup for quantizaton testing')
         self.assertNotEqual(self.ARGS, None)
         if isinstance(self.ARGS, Union[Dict, DictConfig]):
             self.ARGS = Testargs(**self.ARGS)
-        self.config_file = self.ARGS.config_file
         self.model = get_model(model_cfg=self.ARGS.model)
         device_singleton.device = torch.device(self.ARGS.device)
-        self.dtype = self.ARGS.dtype
         #TODO: distinguish between relative and absolute path
-        with open(self.config_file,  'r') as yaml_file:
+        with open(self.ARGS.config_file,  'r') as yaml_file:
             self.yaml_quant_cfg: dict = yaml.safe_load(yaml_file)
             log.debug(self.yaml_quant_cfg)
             #dtype is arbitrary
-            self.yaml_quant_cfg.update({"model":self.model,"device": device_singleton.device, "dtype":self.dtype})
-        log.info(f'Testing with ModelQuantConfig from config file: "{self.config_file}"')
+            self.yaml_quant_cfg.update({"model":self.model,"device": device_singleton.device, "dtype":self.ARGS.dtype})
+        log.info(f'Testing with ModelQuantConfig from config file: "{self.ARGS.config_file}"')
     
     def tearDown(self):
         """
         
         """
         self.ARGS = None
-        self.config_file.dispose()
-        self.model.dispose()
-        self.yaml_quant_cfg.dispose()
+        self.model= None
+        self.yaml_quant_cfg = None
         
     def check_args(self):
         """
@@ -239,3 +235,37 @@ class QuantizationTest(unittest.TestCase):
         """
         self.test_modelquant_cfg()
         self.test_layer_quantization()
+
+def suite(filename: str) -> unittest.TestSuite:
+    """
+        Creates multiple testcases from a config file and adds them to a test suite.
+        The suite is returned and can be run with a unittest.runner.
+    """
+    return unittest.TestSuite(collect_testcases(filename=filename))
+
+from yaml import safe_load
+from omegaconf import OmegaConf #Dict items can be accessed as attributes with DictConfig class
+
+ERROR_PREFIX = "Error with file: "
+
+def collect_testcases(filename: str) -> List[QuantizationTest]:
+    with open(filename, 'r') as file:
+        test_file = safe_load(file)
+    if test_file.get('test_cases') is None:
+        log.error(f'{ERROR_PREFIX} "{filename}". No test cases specified for quantization.')
+        raise KeyError
+    elif not isinstance(test_file["test_cases"], list):
+        log.error(f'{ERROR_PREFIX} "{filename}". Field "test_cases" is not a list.')
+    test_cases = list()
+    log.critical(test_file["test_cases"])
+    for test_case in test_file["test_cases"]:
+        config_file = test_case.get("config_file")
+        model = test_case.get("model")
+        with open(model, 'r') as model_fio:
+            #check if syntax works
+            #model_cfg: Testmodel = Testmodel(**safe_load(model_fio))
+            model_cfg = OmegaConf.create(safe_load(model_fio))
+        test = QuantizationTest()
+        test.ARGS = Testargs(config_file, model_cfg)
+        test_cases.append(test)
+    return test_cases
