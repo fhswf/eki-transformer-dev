@@ -124,9 +124,3 @@ def collect_testcases(filename: str = REGEX_STRINGS_FILE) -> List[Quantizationre
                 test_cases.append(test_case)
             log.debug(f'Config specified: {regex_cfg}')
             return test_cases
-
-for case in collect_testcases():
-    case.run()
-
-unittest.TextTestRunner().run(suite())
-

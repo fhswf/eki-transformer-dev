@@ -1,7 +1,8 @@
 command: test
 
 #TODO: maybe make multiple yaml files for testing
-scope: #python modules within this package 
-  quantization: #can test one module multiple times with list
-    - module: regex
-      filename: '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/regex/regex_strings.yaml' #contains everything needed to test module
+tests: 
+  - module: quantization.regex #python modules within test package
+    filename: '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/regex/regex_strings.yaml' #contains everything needed to test module
+  #- module: quantization
+  #  filename: 'gpt/test_gpt_2_small.yaml'

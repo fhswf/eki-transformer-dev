@@ -27,7 +27,7 @@ regex_strings:
   #if it fails, it should not be tested further
   transformer.layer.'[0-9]+'.mlp.r'c_.+':
     valid: False #does not contain r''
-    models: #test if the regex string is not evaluated further
+    models: #test if the regex string is not evaluated further if it is not valid
       test_model_1:
         hits: 2 #how many layers should be found with the regex string
   transformer.layer.[0-9]+'.mlp.'c_.+': #'c_.+' is interpreted as two layers since it is not contained within r'' expression
