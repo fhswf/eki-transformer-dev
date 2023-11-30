@@ -1,5 +1,6 @@
 #test config to verify correctness of quantization
 cls: gpt
+throw_errors_on_duplicate: False
 layers:
   #word token and word position embedding
   transformer.r'w[tp]e':

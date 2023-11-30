@@ -1,4 +1,5 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
+throw_errors_on_duplicate : False #If the same layer has multiple configs within this file, pick the last one and throw warnings. Otherwise, throw an error and exit
 layers:
   #<module>.<submodule>.<submodule>.<quantized_layer>
   #-> quantized layer at the bottom, always

@@ -10,7 +10,6 @@ log = getLogger(__name__)
 LAYER_SEPERATOR_STRING = r'(r\'[^\']+\'|[^\.]+)' #regular expressions within config to apply config for multiple layers should be notated as a python raw string
 REGEX_SEARCH_PATTERN = r'r\'([^\']+)\'' #a regex within a layer string should have the structure: "r'regex-term'"
 
-
 def search_layers_from_module(layer_dotted: str, model: Module) -> Dict[str, Module]:
     """
         Returns the name of all layers that appear inside of a model which have the pattern layer_dotted. 
@@ -49,7 +48,7 @@ class CompileResult():
     pattern: Pattern
     
 
-def compile_pattern_from_layerstring(layer_dotted: str) -> CompileResult:
+def compile_pattern_from_layerstring(layer_dotted: str, log_errors: bool = True) -> CompileResult:
     """
         Compiles a nested layer string, possibly containing regular expressions, into a Pattern object. The Pattern object
         can be used in order to find layers within a model or to simply test the correctness of a nested layer string.
@@ -73,7 +72,7 @@ def compile_pattern_from_layerstring(layer_dotted: str) -> CompileResult:
         #problem when model for some reason has characters that variable names usually canno have, for example when
         #creating layer names from a string
         elif not sublayer.replace('_', '').isalnum():
-            log.error(f'Sublayer \"{sublayer} for layer \"{layer_dotted}\" contains special characters without being encapsulated in a regex term.')
+            if log_errors: log.error(f'Sublayer \"{sublayer} for layer \"{layer_dotted}\" contains special characters without being encapsulated in a regex term.')
             raise ValueError
         else:
             filtered_layer_string = concat_strings([filtered_layer_string, sublayer, "\."])

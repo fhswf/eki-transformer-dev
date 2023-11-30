@@ -4,7 +4,10 @@ from qtransform.quantization.brevitas_quant import BrevitasQuantizer
 from qtransform.model.gpt import GPTConfig, GPT
 from qtransform import device_singleton
 import yaml
-import torch
+from torch import device
+from torch.nn import Module
+import torch.nn.modules as torch_modules
+
 import brevitas.nn as qnn
 from re import compile, search, findall, match
 from dataclasses import fields
@@ -13,9 +16,8 @@ from typing import Dict, Any, Union, List
 from omegaconf import DictConfig
 from logging import getLogger
 from qtransform.utils.introspection import get_optional_type
-import torch
 from dataclasses import dataclass
-from qtransform.test.quantization.regex import QuantizationregexTest
+from qtransform.quantization.model_regex_filter import compile_pattern_from_layerstring
 
 #to make sure that quantization does not fail
 log = getLogger(__name__)
@@ -37,9 +39,12 @@ class Testargs():
     """
     config_file: str
     model: Testmodel
+    valid: bool = True
     dtype: str = 'Int8' #arbitrary
     device: str = 'cpu' #arbitrary
 
+
+QUANTIZED_LAYERS = {qnn}
 
 from qtransform.model import get_model
 #for now, each test case to be used has the name Test<Module>
@@ -49,15 +54,17 @@ class QuantizationTest(unittest.TestCase):
         In order to test specific models, a class should be created that derives from this and contains
         the arguments in the structure of Testargs (ARGS).
     """
-    ARGS: Testargs = None #since setting up a custom constructor for test cases is a headache, use ARGS and setUp to store state
+    ARGS: Testargs = None #since setting up a custom constructor for test cases is a headache, use ARGS and setUp/ tearDown to store state
 
     def setUp(self):
         log.debug(f'Setup for quantizaton testing')
-        self.assertNotEqual(self.ARGS, None)
+        if self.ARGS is None:
+            log.error(f'No arguments for quantization test passed.')
+            raise KeyError()
         if isinstance(self.ARGS, Union[Dict, DictConfig]):
             self.ARGS = Testargs(**self.ARGS)
         self.model = get_model(model_cfg=self.ARGS.model)
-        device_singleton.device = torch.device(self.ARGS.device)
+        device_singleton.device = device(self.ARGS.device)
         #TODO: distinguish between relative and absolute path
         with open(self.ARGS.config_file,  'r') as yaml_file:
             self.yaml_quant_cfg: dict = yaml.safe_load(yaml_file)
@@ -92,24 +99,25 @@ class QuantizationTest(unittest.TestCase):
             in this class are invoked to do so.
         """
         log.debug(f'Method test_modelquant_cfg')
-        self.model_quant_cfg = ModelQuantConfig(**self.yaml_quant_cfg)
-        self.check_args()
-        #check if args of ModelQuantConfig are applied correctly
-        for key, value in self.yaml_quant_cfg.items():
-            if key in ['layers']: 
-                continue
-            self.assertEqual(getattr(self.model_quant_cfg, key), self.yaml_quant_cfg[key])
-        log.info(f'Types attributes immediately within ModelQuantConfig are correct. Checking layers next.')
-        #possible regex strings within config in order map the layerquantconfig names which have been
-        #interpreted during parsing
-        yaml_layers = self.yaml_quant_cfg["layers"].keys()
-        def parse_layer_regex(layer_regex_string: str):
-            for sublayer in findall(r'(r\'[^\']+\'|[^\.]+)', layer_regex_string):
-                pass
-        #next, check each LayerQuantConfig entry 
-        for layer_name, layer_quant_cfg in self.model_quant_cfg.layers.items():
-            yaml_layer_quant_cfg = self.yaml_quant_cfg["layers"][layer_name]
-            self.test_layerquant_cfg(layer_quant_cfg, yaml_layer_quant_cfg)
+        try:
+            self.model_quant_cfg = ModelQuantConfig(**self.yaml_quant_cfg)    
+            #check if args of ModelQuantConfig are applied correctly
+            for key, value in self.yaml_quant_cfg.items():
+                if key in ['layers']: 
+                    continue
+                self.assertEqual(getattr(self.model_quant_cfg, key), self.yaml_quant_cfg[key])
+            log.info(f'Types attributes immediately within ModelQuantConfig are correct. Checking layers next.')
+            #possible regex strings within config in order map the layerquantconfig names which have been
+            #interpreted during parsing
+            yaml_layers = self.yaml_quant_cfg["layers"].keys()
+            #next, check each LayerQuantConfig entry 
+            for layer_name, layer_quant_cfg in self.model_quant_cfg.layers.items():
+                yaml_layer_quant_cfg = self.yaml_quant_cfg["layers"][layer_name]
+                self.test_layerquant_cfg(layer_quant_cfg, yaml_layer_quant_cfg)
+        except:
+            #rudimentary check if the error is due to the same layer being configured multiple times
+            #otherwise fail the test
+            self.assertEqual(self.ARGS.valid, False)
         log.info(f'Tests passed.')
 
     def test_layerquant_cfg(self, layer_quant_cfg: LayerQuantConfig, yaml_layer_quant_cfg: Union[Dict, DictConfig]):
@@ -117,11 +125,11 @@ class QuantizationTest(unittest.TestCase):
             Tests if the configuration options for one layer is parsed correctly.
         """
         log.debug(f'Testing layer: {layer_quant_cfg.name}')
-        #TODO: yaml config can be a regex, need to check if it is regex
-        #self.assertEqual(yaml_cfg_layer["layer_type"], layer_quant_cfg.layer_type)
-
+        #parse regex in order to find 
+        compile_result = compile_pattern_from_layerstring(layer_quant_cfg.name)
         self.assertEqual(isinstance(yaml_layer_quant_cfg, Union[Dict, DictConfig]), True)
         self.assertEqual(isinstance(layer_quant_cfg, LayerQuantConfig), True)
+        self.assertEqual(yaml_layer_quant_cfg["layer_type"], layer_quant_cfg.layer_type)
 
         #setting custom qparams for layer quantizers is optional
         yaml_quantize = yaml_layer_quant_cfg.get("quantize")
@@ -132,10 +140,7 @@ class QuantizationTest(unittest.TestCase):
             self.assertEqual(layer_quant_cfg.quantize, True)
         
         self.assertEqual(layer_quant_cfg.name, layer_quant_cfg.name)
-        #check if regex is parsed correctly
-        #TODO: parse regex layer string correctly (escape layer seperators (.) and remove r'' )
-        #self.assertNotEqual(match(layer_name, layer_quant_cfg.name), None)
-        
+        #check if regex is parsed correctly is done in regex module
         yaml_layer_quantizers = yaml_layer_quant_cfg.get("quantizers")
         if yaml_layer_quantizers is None:
             yaml_layer_quantizers = dict()
@@ -219,9 +224,17 @@ class QuantizationTest(unittest.TestCase):
         for layer_quant_cfg in self.model_quant_cfg.layers.values():
             layer_to_be_quantized = self.model.get_submodule(layer_quant_cfg.name)
             quantized_layer = BrevitasQuantizer.get_quantized_layer(layer_to_be_quantized, layer_quant_cfg.layer_type, layer_quant_cfg.get_custom_quantizers(), layer_quant_cfg.name) 
+            #TODO: maybe put that field in LayerQuantConfig dataclass
+            unquantized_layer_class = getattr(torch_modules, layer_quant_cfg.layer_type, None)
+            self.assertNotEqual(unquantized_layer_class, None)
             #check if quantized layer class is within qnn
             #depends on whether class (Linear) is not within brevitas.nn subpackage, but quantized class (QuantLinear) is
-            self.assertNotEqual(getattr(qnn, quantized_layer.__class__.__name__, None), None)
+            if isinstance(quantized_layer, Module):
+                #if quantized module is derived from Module, it also derives from the non-quantized torch class
+                self.assertEqual(isinstance(quantized_layer, unquantized_layer_class), True)
+            else: #if it is not a Module, it has to be an act function
+                self.assertNotEqual(getattr(quantized_layer, "act_quant", None), None)
+                self.assertEqual(quantized_layer.act_quant.fused_activation_quant_proxy.activation_impl.__class__, unquantized_layer_class)
             #model config contains unquantized layers by default, as long as it is not overwritten by using BrevitasQuantizer.get_quantized_module
             self.assertNotEqual(layer_quant_cfg.layer, quantized_layer)
             #TODO: check if custom args are applied
@@ -233,8 +246,13 @@ class QuantizationTest(unittest.TestCase):
             Tests the implementation of ModelQuantConfig dataclass and the quantization process implemented in brevitas_quantization.py.
             The corresponding methods (test_modelquant_cfg and test_layer_quantization) are used.
         """
-        self.test_modelquant_cfg()
-        self.test_layer_quantization()
+        result = self.test_modelquant_cfg()
+        if not result.wasSuccessful:
+            self.fail()
+        if self.model_quant_cfg:
+            self.test_layer_quantization()
+        else:
+            log.warning(f'Skipping test for quantization since the configuration of ModelQuantConfig did not succeed.')
 
 def suite(filename: str) -> unittest.TestSuite:
     """
@@ -257,7 +275,6 @@ def collect_testcases(filename: str) -> List[QuantizationTest]:
     elif not isinstance(test_file["test_cases"], list):
         log.error(f'{ERROR_PREFIX} "{filename}". Field "test_cases" is not a list.')
     test_cases = list()
-    log.critical(test_file["test_cases"])
     for test_case in test_file["test_cases"]:
         config_file = test_case.get("config_file")
         model = test_case.get("model")

@@ -5,10 +5,10 @@ from typing import Dict, Union, List, Optional
 import re
 from dataclasses import dataclass
 from logging import getLogger
-from qtransform.quantization.model_regex_filter import search_layers_from_strings, compile_pattern_from_layerstring, REGEX_SEARCH_PATTERN, LAYER_SEPERATOR_STRING
+from qtransform.quantization.model_regex_filter import search_layers_from_strings, compile_pattern_from_layerstring
+from qtransform.quantization.model_regex_filter import REGEX_SEARCH_PATTERN, LAYER_SEPERATOR_STRING
 
 log = getLogger(__name__)
-
 
 @dataclass
 class ModelConfig():
@@ -66,7 +66,7 @@ class QuantizationregexTest(unittest.TestCase):
         try: 
             #check if syntax is okay
             #if syntax is not okay, every other test should not be checked
-            search_result = compile_pattern_from_layerstring(self.regex_layer_name)
+            search_result = compile_pattern_from_layerstring(self.regex_layer_name, False)
             self.assertEqual(sorted(self.regex_cfg.regex_index), search_result.regex_index)
             self.assertEqual(search_result.number_of_sublayers, self.regex_cfg.number_of_sublayers)
             #check if correct layers are found

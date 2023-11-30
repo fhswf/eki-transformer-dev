@@ -2,6 +2,7 @@ from abc import ABC, abstractclassmethod, abstractmethod
 import logging
 import json
 from torch.nn import Module
+from torch.nn.modules import __all__ as supported_torch_layers #all layer names of torch
 from omegaconf import DictConfig, OmegaConf
 import pprint 
 from typing import Any, List, Optional, Dict, Tuple, Union, get_args, get_origin #get_args: get raw type of wrapper -> Optional[str] is (), Dict[str, str] = (str, str)...
@@ -263,6 +264,10 @@ class LayerQuantConfig:
         if self.quantize and self.layer_type == None:
             log.error(f'Layer {self.name} has to contain a property \"layer_type\" which describes its type, e.g. \"Linear\" for linear layers.')
             raise TypeError
+        #check if layer_type is the name of a torch module
+        elif self.layer_type not in supported_torch_layers:
+            log.error(f'Layer {self.layer_type} is not a valid torch.nn Module')
+            raise ValueError
         if not isinstance(self.name, str):
             try:
                 self.name = str(self.name)
@@ -393,7 +398,8 @@ class ModelQuantConfig:
     dtype: str
     device: str
     model: Module
-    quantized: bool = False #is self.model already quantized?
+    quantized: bool = False #does self.model contain a quantized model?
+    throw_errors_on_duplicate: bool = False #if duplicates for layers exist within config, throw error based on this field
 
     def __post_init__(self):
         """
@@ -424,7 +430,12 @@ class ModelQuantConfig:
                 continue
             #use last config of layer that is mentioned multiple times in yaml file
             elif submodules_list_string in self.layers.keys():
-                log.warning(f"""Config for layer {submodules_list_string} already exists with properties: \n{pprint.PrettyPrinter(indent=1).pformat(self.layers[submodules_list_string])}.\n\n Replacing them with:\n {pprint.PrettyPrinter(indent=1).pformat(layer_cfg)}""")
+                DUPLICATE_MSG = f"""Config for layer {submodules_list_string} already exists with properties: \n{pprint.PrettyPrinter(indent=1).pformat(self.layers[submodules_list_string])}."""
+                if self.throw_errors_on_duplicate:
+                    log.error(DUPLICATE_MSG)
+                    raise ValueError()
+                else:
+                    log.warning(DUPLICATE_MSG + f'\n\n Replacing them with:\n {pprint.PrettyPrinter(indent=1).pformat(layer_cfg)}')
             #find all layers that fit the config name
             found_layers = search_layers_from_module(submodules_list_string, self.model)
             if hasattr(log, "trace"): log.trace(f'Found layers for config {submodules_list_string}: {found_layers}')
