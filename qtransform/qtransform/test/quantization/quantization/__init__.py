@@ -12,12 +12,16 @@ import brevitas.nn as qnn
 from re import compile, search, findall, match
 from dataclasses import fields
 from enum import Enum
-from typing import Dict, Any, Union, List
+from typing import Dict, Any, Union, List, Union
 from omegaconf import DictConfig
 from logging import getLogger
 from qtransform.utils.introspection import get_optional_type
 from dataclasses import dataclass
-from qtransform.quantization.model_regex_filter import compile_pattern_from_layerstring
+from qtransform.quantization.model_regex_filter import compile_pattern_from_layerstring, search_layers_from_module
+from pprint import PrettyPrinter
+#currently, activation functions derive from QuantNLAL
+from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
+from brevitas.core import zero_point
 
 #to make sure that quantization does not fail
 log = getLogger(__name__)
@@ -101,22 +105,53 @@ class QuantizationTest(unittest.TestCase):
         log.debug(f'Method test_modelquant_cfg')
         try:
             self.model_quant_cfg = ModelQuantConfig(**self.yaml_quant_cfg)    
-            #check if args of ModelQuantConfig are applied correctly
+            #no layers specified -> nothing can be quantized
+            self.assertNotEqual(self.yaml_quant_cfg.get("layers"), None, "No layers within yaml config specified")
+            self.assertEqual(isinstance(self.yaml_quant_cfg, Union[Dict, DictConfig]), True, "Field layers within yaml config is not a dict")
+            #check if the exact amount of fields within ModelQuantConfig appear within yaml file
+            #check if generic args of ModelQuantConfig are applied correctly
             for key, value in self.yaml_quant_cfg.items():
                 if key in ['layers']: 
                     continue
-                self.assertEqual(getattr(self.model_quant_cfg, key), self.yaml_quant_cfg[key])
-            log.info(f'Types attributes immediately within ModelQuantConfig are correct. Checking layers next.')
-            #possible regex strings within config in order map the layerquantconfig names which have been
-            #interpreted during parsing
-            yaml_layers = self.yaml_quant_cfg["layers"].keys()
-            #next, check each LayerQuantConfig entry 
-            for layer_name, layer_quant_cfg in self.model_quant_cfg.layers.items():
-                yaml_layer_quant_cfg = self.yaml_quant_cfg["layers"][layer_name]
-                self.test_layerquant_cfg(layer_quant_cfg, yaml_layer_quant_cfg)
+                self.assertEqual(getattr(self.model_quant_cfg, key), self.yaml_quant_cfg[key], 
+                    f'Field {key} is not set properly.')
+            log.info(f'Generic fields within ModelQuantConfig are correct. Checking layers next.')
+            #need to filter out the configs of layers which actually have been applied
+            #some might not be applied if one layer is configured multiple times (field throw_errors_on_duplicate set to False)
+            remaining_quant_cfg_layers = self.model_quant_cfg.layers.keys()
+            #check if only the maximum amount of layers within the model appear within ModelQuantConfig object
+            self.assertEqual(len(self.model_quant_cfg.layers.keys()) <= len(dict(self.model.named_modules()).keys()), True, 
+                "ModelQuantConfig object stores more layers than the model contains")
+            #note down all layers from yaml file which appear in data structure
+            parsed_yaml_cfgs = dict()
+            all_modelquantcfg_layers = set(self.model_quant_cfg.layers.keys())
+            #check which configs are going to be applied if one layer is defined multiple times
+            for yaml_layer, yaml_layer_cfg in self.yaml_quant_cfg["layers"].items():
+                #find all matching layers from yaml layer name within model
+                found_model_layers = set(search_layers_from_module(yaml_layer, self.model).keys())
+                #if no layers were found, an exception should have been raised
+                self.assertGreater(len(found_model_layers), 0, 
+                    f'No layers could be found with regex string "{yaml_layer}" in model.')
+                #check if the layers also appear within modelquantconfig
+                matching_modelquant_cfg_layers = all_modelquantcfg_layers & found_model_layers
+                log.debug(f'Regex term: {yaml_layer}. Found layers: {matching_modelquant_cfg_layers}')
+                self.assertEqual(len(matching_modelquant_cfg_layers) > 0, True, 
+                    f'Error with layer {yaml_layer}. It exists within the model, but not in ModelQuantConfig')
+                duplicate_layers = matching_modelquant_cfg_layers & set(parsed_yaml_cfgs.keys())
+                #configs for layers already exist, either due to multiple declaration or due to regex
+                if len(duplicate_layers) > 0:
+                    self.assertEqual(self.model_quant_cfg.throw_errors_on_duplicate, False,
+                    f'Duplicate configs for layers even with field "throw_errors_on_duplicate" set to True ({duplicate_layers})')
+                #map current yaml config to the found layers, overwrite existing ones if needed
+                parsed_yaml_cfgs.update({x: yaml_layer_cfg for x in matching_modelquant_cfg_layers})
+            log.debug(f'Cleaned up regex strings and redundancies within yaml config for testing. Result: {PrettyPrinter(indent=1).pformat(parsed_yaml_cfgs)}')
+            #finally, check layerquantconfig
+            for layer_name, layer_quant_cfg in parsed_yaml_cfgs.items():
+                self.test_layerquant_cfg(layer_quant_cfg = self.model_quant_cfg.layers[layer_name], yaml_layer_quant_cfg = layer_quant_cfg)
+            #self.assertEqual(found_modelquantcfg_layers.keys())
         except:
-            #rudimentary check if the error is due to the same layer being configured multiple times
-            #otherwise fail the test
+            #self.assertEqual(self.yaml_quant_cfg.get("throw_errors_on_duplicate"), self.model_quant_cfg.throw_errors_on_duplicate)
+            #rudimentary check if the config file is faulty
             self.assertEqual(self.ARGS.valid, False)
         log.info(f'Tests passed.')
 
@@ -125,8 +160,6 @@ class QuantizationTest(unittest.TestCase):
             Tests if the configuration options for one layer is parsed correctly.
         """
         log.debug(f'Testing layer: {layer_quant_cfg.name}')
-        #parse regex in order to find 
-        compile_result = compile_pattern_from_layerstring(layer_quant_cfg.name)
         self.assertEqual(isinstance(yaml_layer_quant_cfg, Union[Dict, DictConfig]), True)
         self.assertEqual(isinstance(layer_quant_cfg, LayerQuantConfig), True)
         self.assertEqual(yaml_layer_quant_cfg["layer_type"], layer_quant_cfg.layer_type)
@@ -147,14 +180,16 @@ class QuantizationTest(unittest.TestCase):
         self.assertEqual(isinstance(yaml_layer_quantizers, Union[Dict, DictConfig]), True)
         #check if all quantizers for the layer are stored within LayerQuantConfig
         #-> difference between keys is zero
-        log.critical(layer_quant_cfg)
-        log.critical(f'{set(layer_quant_cfg.quantizers.keys())} {set(yaml_layer_quantizers.keys())}')
+        #log.warning(layer_quant_cfg)
+        #log.warning(f'{set(layer_quant_cfg.quantizers.keys())} {set(yaml_layer_quantizers.keys())}')
         self.assertEqual(len(set(layer_quant_cfg.quantizers.keys()) - set(yaml_layer_quantizers.keys())), 0)
         
         #test BaseQuant quantizers within layer
         for layer_quantizer_name, layer_quantizer in layer_quant_cfg.quantizers.items():
             log.debug(f'Testing quantizer: {layer_quantizer_name}')
-            yaml_layer_quantizer = yaml_layer_quantizers[layer_quantizer_name]
+            yaml_layer_quantizer = yaml_layer_quantizers.get(layer_quantizer_name)
+            #check if configured quantizer for layer appears within yaml
+            self.assertNotEqual(yaml_layer_quantizer, None)
             self.test_quantbase_cfg(layer_name = layer_quantizer_name, layer_quantizer = layer_quantizer, yaml_layer_quantizer = yaml_layer_quantizer)
         log.info(f'Tests for layer {layer_quant_cfg.name} passed.')
 
@@ -212,9 +247,22 @@ class QuantizationTest(unittest.TestCase):
             #check if type is correct, important for brevitas' enum driven api
             self.assertEqual(optional_type, type(layer_qparam))
         log.debug(f'Testing field zero_point_impl')
-
+        zero_point_impl = getattr(layer_qparams, 'zero_point_impl', None)
+        zero_point_impl_yaml = yaml_layer_qparams.get('zero_point_impl')
+        if zero_point_impl is None:
+            self.assertEqual(zero_point_impl_yaml, None)
+        else:
+            self.assertEqual(zero_point_impl_yaml in zero_point.__all__, True)
+            self.assertEqual(getattr(zero_point, zero_point_impl_yaml), zero_point_impl)
         #########
         log.info(f'Tests for QuantArgs passed.')
+
+
+    from brevitas.nn import QuantMultiheadAttention
+    #checking whether the unquantized layer has the same class as the quantized layer usually is done
+    #by checking if the quantized layer derives from the class. 
+    #classes within NOT_DERIVED_QUANTIZERS are the exception
+    NOT_DERIVED_QUANTIZERS = [QuantMultiheadAttention]
 
     def test_layer_quantization(self):
         """
@@ -229,9 +277,14 @@ class QuantizationTest(unittest.TestCase):
             self.assertNotEqual(unquantized_layer_class, None)
             #check if quantized layer class is within qnn
             #depends on whether class (Linear) is not within brevitas.nn subpackage, but quantized class (QuantLinear) is
-            if isinstance(quantized_layer, Module):
-                #if quantized module is derived from Module, it also derives from the non-quantized torch class
-                self.assertEqual(isinstance(quantized_layer, unquantized_layer_class), True)
+            if not isinstance(quantized_layer, QuantNLAL):
+                if type(quantized_layer) in self.__class__.NOT_DERIVED_QUANTIZERS:
+                    #for now, just check if names of classes are similiar
+                    self.assertNotEqual(search(unquantized_layer_class.__name__, quantized_layer.__class__.__name__), None)
+                else:
+                    #if quantized module is derived from Module, it also derives from the non-quantized torch class
+                    self.assertEqual(isinstance(quantized_layer, unquantized_layer_class), True, 
+                        f'Quantized layer is of class: {quantized_layer}, not {unquantized_layer_class}')
             else: #if it is not a Module, it has to be an act function
                 self.assertNotEqual(getattr(quantized_layer, "act_quant", None), None)
                 self.assertEqual(quantized_layer.act_quant.fused_activation_quant_proxy.activation_impl.__class__, unquantized_layer_class)
@@ -246,13 +299,9 @@ class QuantizationTest(unittest.TestCase):
             Tests the implementation of ModelQuantConfig dataclass and the quantization process implemented in brevitas_quantization.py.
             The corresponding methods (test_modelquant_cfg and test_layer_quantization) are used.
         """
-        result = self.test_modelquant_cfg()
-        if not result.wasSuccessful:
-            self.fail()
-        if self.model_quant_cfg:
+        model_parsing_result = self.test_modelquant_cfg()
+        if self.ARGS.valid:
             self.test_layer_quantization()
-        else:
-            log.warning(f'Skipping test for quantization since the configuration of ModelQuantConfig did not succeed.')
 
 def suite(filename: str) -> unittest.TestSuite:
     """

@@ -65,23 +65,24 @@ layers:
 
   transformer.dropout:
     layer_type: Dropout
-  transformer.ln_out:
-    layer_type: LayerNorm
+  #layernorm does not exist within brevitas
+  #transformer.ln_out:
+  #  layer_type: LayerNorm
   #another config for the same layer exists in form of a regex string -> last one should be applied
-  #transformer.layer.1.attn.mha:
-  #  quantize: True
-  #  layer_type: MultiheadAttention
-  #  quantizers: 
-  #    weight:
-  #      type: weight #if unspecified, infer type from name 
-  #      default_quantizer: Int8WeightPerTensorFloat
-  #      template: ""
-  #      args:
-  #    in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
-  #      type: weight
-  #      default_quantizer: Int8WeightPerTensorFloat
-  #      template: ""
-  #      args:
+  transformer.layer.1.attn.mha:
+    quantize: True
+    layer_type: MultiheadAttention
+    quantizers: 
+      weight:
+        type: weight #if unspecified, infer type from name 
+        default_quantizer: Int8WeightPerTensorFloat
+        template: ""
+        args:
+      in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+        type: weight
+        default_quantizer: Int8WeightPerTensorFloat
+        template: ""
+        args:
   transformer.layer.1.mlp.c_fc:
     quantize: True
     layer_type: Linear
@@ -113,6 +114,3 @@ layers:
   transformer.layer.r'[0-9]+'.mlp.r'c_.+':
     quantize: True
     layer_type: Linear
-  transformer.layer.r'[0-9]+'.r'ln_[1-2]':
-    quantize: True
-    layer_type: LayerNorm

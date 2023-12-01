@@ -46,6 +46,10 @@ class CompileResult():
     regex_index: List[int]
     number_of_sublayers: int
     pattern: Pattern
+
+    def __post_init__(self):
+        if not isinstance(self.regex_index, list):
+            self.regex_index = list()
     
 
 def compile_pattern_from_layerstring(layer_dotted: str, log_errors: bool = True) -> CompileResult:
