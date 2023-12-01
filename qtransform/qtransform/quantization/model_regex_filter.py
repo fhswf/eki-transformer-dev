@@ -7,7 +7,7 @@ from qtransform.utils.introspection import concat_strings
 
 log = getLogger(__name__)
 
-LAYER_SEPERATOR_STRING = r'(r\'[^\']+\'|[^\.]+)' #regular expressions within config to apply config for multiple layers should be notated as a python raw string
+LAYER_SEPERATOR_STRING = r'(r\'[^\']+\'|[^\. ]+)' #regular expressions within config to apply config for multiple layers should be notated as a python raw string
 REGEX_SEARCH_PATTERN = r'r\'([^\']+)\'' #a regex within a layer string should have the structure: "r'regex-term'"
 
 def search_layers_from_module(layer_dotted: str, model: Module) -> Dict[str, Module]:
@@ -56,7 +56,7 @@ def compile_pattern_from_layerstring(layer_dotted: str, log_errors: bool = True)
     """
     sublayers = findall(LAYER_SEPERATOR_STRING, layer_dotted)
     if len(sublayers) == 0:
-        print(f'Layer config {layers} is an empty string.')
+        if log_errors: log.error(f'Layer config {layers} is an empty string.')
         raise ValueError
     #the string which is going to be used to filter the model's layers
     filtered_layer_string = ""

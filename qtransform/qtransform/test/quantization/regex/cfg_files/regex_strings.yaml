@@ -43,9 +43,15 @@ regex_strings:
     valid: True
     number_of_sublayers: 1
   #empty strings
-  #TODO: empty strings result in all layers being found -> ignore empty strings or treat them seperately
-  #empty strings always return a match
+  #should throw an empty string exception regardless of the number of whitespaces
   "": 
     valid: False
   " ": 
+    valid: False
+  
+  " \"\"   ":
+    valid: False
+  "            ":
+    valid: False
+  "           .             .   . transformer":
     valid: False
