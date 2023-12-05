@@ -39,8 +39,6 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
         #transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
         return train, test
 
-    
-#TODO: implement using datasets from huggingface or pytorch
 #TODO: implement download=True option
 class _FileSystemLLMDataset(Dataset):
     
@@ -91,19 +89,15 @@ class _FileSystemLLMDataset(Dataset):
         index = min(self.length - self.block_size - 2, index + self.block_size)
         offset = index + self.block_size
         #From https://pytorch.org/docs/stable/generated/torch.from_numpy.html:
-        #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. The returned tensor is not resizable.
+        #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. 
+        #The returned tensor is not resizable.
         #therefore, copy part of np array or use torch.stack()
         data: torch.Tensor = torch.from_numpy(np.copy(self.data[index:offset]))
-        """
-        if offset > self.length:
-            #data Tensor currently has less than self.block_size items
-            remaining = offset - self.length
-            tensor = torch.from_numpy(np.copy(self.data[:remaining]))
-            data = torch.cat((data, tensor), 1)
-            offset = remaining
-        """
         #label_offset = offset + self.block_size
         labels : torch.Tensor = torch.from_numpy(np.copy(self.data[index +1:offset+1]))
+        #maybe in custom test suite
+        #assert labels.size(dim=0) == self.block_size
+        #assert data.size(dim=0) == self.block_size
         return data, labels
 
     def _gather_files(self, file_path: str):

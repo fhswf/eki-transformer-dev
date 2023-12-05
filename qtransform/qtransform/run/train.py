@@ -1,6 +1,6 @@
 import logging
 from typing import Any
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 import os
 import torch
 from torch import nn
@@ -29,9 +29,14 @@ def run(cfg: DictConfig):
     #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
     device_singleton.device = cfg.device
     device = device_singleton.device
-    if device == 'cuda':
+    if device.type == 'cuda':
         cuda_kwargs = {'pin_memory': True,}
-        cfg.dataset.dataloader.update(cuda_kwargs)
+        #struct flag of dictconf prevents additional keys to be added (https://omegaconf.readthedocs.io/en/latest/usage.html#struct-flag)
+        with open_dict(cfg.dataset.dataloader):
+            cfg.dataset.dataloader.update(cuda_kwargs)
+        import sys
+        log.critical(cfg.dataset.dataloader)
+        sys.exit(1000)
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
