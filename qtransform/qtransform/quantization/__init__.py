@@ -57,6 +57,7 @@ class QuantArgs:
 
     #def __setattr__(self, __name: str, __value: Any) -> None:
         #IDEA: control values of dataclass with __setattr__ intsead of cleaning up types
+        #field self.fields = {x.name:x for x in fields(self)} has to be defined
         #if __name == 'zero_point_impl':
         #    pass
         #else:

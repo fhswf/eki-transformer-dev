@@ -148,7 +148,6 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     model.train() #if it was quantized, it could have been set to eval
     last_loss = 0
     running_loss = 0
-    
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
         inputs, labels = data
