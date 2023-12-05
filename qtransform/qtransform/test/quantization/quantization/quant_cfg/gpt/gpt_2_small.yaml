@@ -28,7 +28,6 @@ layers:
 
           #test if args from template are really applied
           #bit_width : 6 #bit width of quantized values
-
   #check if config are applied by regex already
   #should throw warning
   transformer.wte:
@@ -114,3 +113,7 @@ layers:
   transformer.layer.r'[0-9]+'.mlp.r'c_.+':
     quantize: True
     layer_type: Linear
+    quantizers:
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
+        template: weight_round_minmax

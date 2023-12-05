@@ -180,8 +180,7 @@ class QuantizationTest(unittest.TestCase):
         self.assertEqual(isinstance(yaml_layer_quantizers, Union[Dict, DictConfig]), True)
         #check if all quantizers for the layer are stored within LayerQuantConfig
         #-> difference between keys is zero
-        #log.warning(layer_quant_cfg)
-        #log.warning(f'{set(layer_quant_cfg.quantizers.keys())} {set(yaml_layer_quantizers.keys())}')
+        #self.assertEqual(set(layer_quant_cfg.quantizers.keys()), set(yaml_layer_quantizers.keys()))
         self.assertEqual(len(set(layer_quant_cfg.quantizers.keys()) - set(yaml_layer_quantizers.keys())), 0)
         
         #test BaseQuant quantizers within layer
@@ -205,16 +204,32 @@ class QuantizationTest(unittest.TestCase):
         self.assertEqual(isinstance(layer_quantizer.default_quantizer, str), True)
         self.assertEqual(layer_quantizer.default_quantizer, yaml_layer_quantizer["default_quantizer"])
         self.assertEqual(layer_quantizer.template, yaml_layer_quantizer.get("template"))
+        #QuantArgs contains custom quantizer args. Should exist, even when no custom args are specified
+        #yaml config does not have to contain args field
+        if yaml_layer_quantizer.get("args") is None:
+            yaml_layer_quantizer["args"] = dict()
+        self.assertEqual(isinstance(layer_quantizer.args, QuantArgs), True)
         #check if type is inferred correctly from name
         if yaml_layer_quantizer.get("type") is None:
             self.assertNotEqual(search(layer_quantizer.type, layer_name), None)
         else:
             self.assertEqual(yaml_layer_quantizer.get("type"), layer_quantizer.type)
         #quantizer_module should not be set within yaml config
+        #the property points to the module in which the quantizer is defined, 
+        #e.g. brevitas.quant.scaled_int for Int8WeightPerTensorFloat
         yaml_quantizer_module = yaml_layer_quantizer.get("quantizer_module")
         if yaml_quantizer_module:
             self.assertEqual(layer_quantizer.quantizer_module, yaml_quantizer_module)
         #check if quantizer module even is within brevitas
+        if layer_quantizer.template:
+            self.assertEqual(layer_quantizer.template, yaml_layer_quantizer.get("template"), 
+            f'Filepaths for templates in {layer_name} are different')
+            loaded_yaml_template: Dict = BaseQuant.load_yaml_template(layer_quantizer.template, True)
+            self.assertEqual(isinstance(loaded_yaml_template.get("args"), Dict), True)
+            #overwrite values from yaml config with template qparams
+            empty_qparams = set([x.name for x in fields(QuantArgs) if yaml_layer_quantizer.get("args").get(x.name) is None])
+            for new_qparam in set(loaded_yaml_template["args"].keys()) & empty_qparams:
+                yaml_layer_quantizer["args"][new_qparam] = loaded_yaml_template["args"][new_qparam]
         self.test_quantargs_cfg(layer_qparams=layer_quantizer.args, yaml_layer_qparams = yaml_layer_quantizer.get("args"))
         log.info(f'Tests for QuantBase passed')
 
@@ -239,7 +254,8 @@ class QuantizationTest(unittest.TestCase):
             layer_qparam = getattr(layer_qparams, field.name, None)
             #quantizer args are optional
             if yaml_qparam is None:
-                self.assertEqual(layer_qparam, None)
+                self.assertEqual(layer_qparam, None, 
+                    f'Failed on qparam: {field.name}')
                 continue
             optional_type = get_optional_type(field.type)
             #numbers could be in scientific notation, so cast them to the according type

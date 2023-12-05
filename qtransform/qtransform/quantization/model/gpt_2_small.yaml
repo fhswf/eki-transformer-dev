@@ -25,7 +25,6 @@ layers:
           #attributes only applied when scaling_impl_type is statistics
           scaling_stats_op : MIN_MAX #max value, minmax etc.
           scaling_min_val : 1e-10 #minimum value that the scale is going to have during calibration
-
           scaling_per_output_channel : True #per tensor or per channel quantization
           restrict_scaling_type : FP #restrict range of values that scale qparam can have
   

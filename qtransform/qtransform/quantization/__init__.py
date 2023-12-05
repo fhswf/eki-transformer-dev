@@ -196,30 +196,60 @@ class BaseQuant():
         elif self.default_quantizer[0].capitalize() == "U":
             raise ValueError(f'Quantizers for unsigned values are not supported.')
         #cleanup quantargs, if present
-        if not isinstance(self.args, QuantArgs) and self.args is not None:
-            self.args = QuantArgs(**self.args)
+        if not isinstance(self.args, QuantArgs):
+            if self.args is not None:
+                self.args = QuantArgs(**self.args)
+            else:
+                self.args = QuantArgs()
         #load template config
         if self.template:
-            #for now, templates are within quantization/model/templates
-            path_of_init = join('/'.join(__file__.split('/')[:-1]), 'model', 'templates', self.template + '.yaml')
-            if not exists(path_of_init):
-                raise FileNotFoundError(f'Quantization template \"{path_of_init}\" does not exist.')
-            with open(path_of_init, 'r') as yaml_file:
-                template_yaml: Dict[str, str] = yaml.safe_load(yaml_file)
+            loaded_yaml_template = self.load_yaml_template(self.template + '.yaml', relative=True)
+            self.set_args_from_template(self.args, loaded_yaml_template)
+    
+    @staticmethod
+    def load_yaml_template(filepath: str, relative: bool = False) -> Dict:
+        """
+            Loads a template containing quantization arguments from filepath. The filepath can be relative or absolute.
+            If the filepath is relative, yaml files within the directory where the module is defined will be loaded.
+        """
+        #for now, templates are within quantization/model/templates
+        path_of_init = join('/'.join(__file__.split('/')[:-1]), 'model', 'templates', filepath) if relative else filepath
+        #append file extension just in case
+        if not match(r'.+\.yaml$', path_of_init):
+            path_of_init += '.yaml'
+        if not exists(path_of_init):
+            raise FileNotFoundError(f'Quantization template \"{path_of_init}\" does not exist.')
+        with open(path_of_init, 'r') as yaml_file:
+            template_yaml: Dict[str, str] = yaml.safe_load(yaml_file)
+        return template_yaml
+    
+    @staticmethod
+    def set_args_from_template(args: QuantArgs, loaded_yaml_template: Union[Dict, DictConfig]):
+        """
+            Sets the fields of a QuantArgs instance args with the values from a loaded template containing qparams.
+            Only arguments which have not been set within args will be set in order to prioritize qparams which have been set within
+            the model configuration. 
+        """
+        if loaded_yaml_template is None:
+            raise KeyError(f'Cannot load yaml qparameters if no loaded yaml config is given')
+        template_args = loaded_yaml_template.get('args')
+        if template_args is None:
+            raise KeyError(f'Template {filepath} is missing property \"args\" which contains the quant parameters.')
+        #all possible config options in self.args which are not set in config
+        empty_qparams = set([x.name for x in fields(args) if getattr(args, x.name, None) is None])
+        not_supported_fields = set(template_args.keys()) - set([x.name for x in fields(args)])
+        if len(not_supported_fields) > 0:
+            log.warning(f'Specified fields {not_supported_fields} in yaml template are not supported.')
+        log.debug(f'Setting args from yaml file for QuantArgs: {args}')
+        if not isinstance(args, QuantArgs):
+            raise ValueError(f'Cannot set values of type {type(args)} when loading yaml quantizer config.')
+        #only apply values from template which are not currently set and which are also supported
+        for field in set(template_args.keys()) & empty_qparams :
             #currently, arguments from model yaml file are loaded in self.args
             #the existing values should override values from template
             #therefore, only values not set in self.args attribute are looked at
-            template_args = template_yaml.get('args')
-            if template_args is None:
-                log.warning(f'Template {self.template} is missing property \"args\" which contains the quant parameters. Skipping template configuration.')
-                return
-            #all possible config options in self.args which are not set in config
-            empty_qparams = set([x.name for x in fields(self.args) if getattr(self.args, x.name, None) is None])
-            #only apply values from template which are not currently set and which are also supported
-            for field in set(template_args.keys()) & empty_qparams :
-                setattr(self.args, field, template_args[field])
-            self.args.clean_types()
-        
+            setattr(args, field, template_args[field])
+        args.clean_types()
         
         
 #creating explicit classes in order to avoid future type collisions with Union[WeightQuantArgs, BiasQuantArgs, ActQuantArgs]
@@ -239,7 +269,7 @@ class ActQuant(BaseQuant):
 from importlib import import_module
 from types import ModuleType
 import qtransform.quantization as package_self
-from re import search, subn
+from re import search, subn, match
 
 @dataclass
 class LayerQuantConfig:
