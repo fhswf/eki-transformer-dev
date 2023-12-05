@@ -34,9 +34,6 @@ def run(cfg: DictConfig):
         #struct flag of dictconf prevents additional keys to be added (https://omegaconf.readthedocs.io/en/latest/usage.html#struct-flag)
         with open_dict(cfg.dataset.dataloader):
             cfg.dataset.dataloader.update(cuda_kwargs)
-        import sys
-        log.critical(cfg.dataset.dataloader)
-        sys.exit(1000)
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
@@ -77,7 +74,7 @@ def run(cfg: DictConfig):
         #add qat qparams (scale and zero)
         model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         #calibrate the scales for each weight and activation
-        # TODO make this a decorater so it can return stuff
+        # TODO make this a decorator so it can return stuff
         model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
     else:
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
