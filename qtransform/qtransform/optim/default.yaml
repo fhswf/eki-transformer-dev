@@ -13,4 +13,3 @@ args:
   betas : 
     - 0.9
     - 0.95
-  grad_clip : 0.7 # clip gradients at this value, or disable if :: 0.0

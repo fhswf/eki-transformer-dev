@@ -11,6 +11,7 @@ export: True ## perform an export after #epochs are done
 max_iters : 600000 # total number of training iterations
 save_epoch_interval: 1
 log_steps_interval : 10
+grad_clip : 0.7 # clip gradients at this value, or disable if :: 0.0
 
 ## old stuff:
 

@@ -57,11 +57,12 @@ def run(cfg: DictConfig):
     if eval_dataoader is not None and not isinstance(eval_dataoader, data.DataLoader):
         eval_dataoader   = get_loader(data=eval_dataoader, dataloader_cfg=cfg.dataset.dataloader)
 
-    # TODO dynamic optim
     from qtransform.optim import get_optim#, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
     #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
     optimizer = get_optim(model=model, optim_cfg=cfg.optim)
+    log.debug(f'Configured optimizer ({type(optimizer)}): {optimizer}')
+    # TODO dynamic scheduler
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1)
 
     last_checkpoint = None
@@ -164,6 +165,10 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
             outputs = model(inputs)
             loss = F.nll_loss(outputs, labels)
         loss.backward()
+        #clip gradients to prevent vanishing/exploding gradient problem
+        # (https://neptune.ai/blog/understanding-gradient-clipping-and-how-it-can-fix-exploding-gradients-problem)
+        if isinstance(cfg.run.get("grad_clip"), float):
+            nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg.run.grad_clip)
         optimizer.step()
 
         running_loss += loss.item()
