@@ -58,9 +58,10 @@ def run(cfg: DictConfig):
         eval_dataoader   = get_loader(data=eval_dataoader, dataloader_cfg=cfg.dataset.dataloader)
 
     # TODO dynamic optim
-    # from qtransform.optim import get_optim, get_scheduler
+    from qtransform.optim import get_optim#, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
-    optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
+    #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
+    optimizer = get_optim(model=model, optim_cfg=cfg.optim)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1)
 
     last_checkpoint = None
@@ -150,6 +151,8 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     model.train() #if it was quantized, it could have been set to eval
     last_loss = 0
     running_loss = 0
+    #cfg is entire hydra config
+
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
         inputs, labels = data
@@ -160,7 +163,6 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
         else:
             outputs = model(inputs)
             loss = F.nll_loss(outputs, labels)
-        """TODO: pytorch support maybe"""
         loss.backward()
         optimizer.step()
 
@@ -171,6 +173,9 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
         if mini_run and i>=200: # run for more than one data point
+            break
+        #dataloaders for custom implemented datasets iterate endlessly
+        elif i>= cfg.run.max_iters:
             break
     return last_loss    
 
