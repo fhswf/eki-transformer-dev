@@ -1,7 +1,12 @@
-wrapper: HuggingfaceDataset #name of class within torchvision.py
+wrapper: HuggingfaceDatasetWrapper #name of class within torchvision.py
 module: huggingface
 name: ???
 type: huggingface
+sizes: 
+  train: 0.3
+  eval: 0.05
+  test: 0.05
+  bench: 0.3
 args:
 
 defaults:

@@ -76,6 +76,7 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
 #TODO: implement download=True option
 class _FileSystemLLMDataset(Dataset):
     
+    #TODO: is dtype necessary? since each file only contains the ids of tokens, not the actual embeddings
     def __init__(self, token_file: str, dtype: np.dtype, block_size: int, start: float=0.0, end: float = 1.0):
         """
             The seperation of a dataset in different splits is done with the start and end parameter

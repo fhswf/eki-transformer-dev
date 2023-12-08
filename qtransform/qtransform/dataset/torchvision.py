@@ -10,15 +10,12 @@ from omegaconf import DictConfig
 import logging
 log = logging.getLogger(__name__)
 
-class TorchvisionDataset(DatasetWrapper):
+class TorchvisionDatasetWrapper(DatasetWrapper):
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
 
     def load_dataset(self, split: str) -> DatasetInfo:
-        splits = [x.name for x in fields(self.dataset_sizes)]
-        if split not in splits:
-            log.error(f'Datasets can only be split among {splits}, not {split}')
-            raise ValueError()
+        self.check_split(split)
         available_datasets = get_classes(datasets, Dataset)
         if self.cfg.name not in available_datasets:
             log.error(f"Dataset {self.cfg.name} not found in {datasets.__package__}")

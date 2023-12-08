@@ -21,7 +21,7 @@ class TikTokenizer(Tokenizer):
         encoder: Encoding = get_encoding(tokenizer_cfg.encoding)
         tokens: List[int] = list()
         #int64: 2^(8*8)
-        highest_token_allowed = 2**(dtype(tokenizer_cfg.dtype).itemsize*8)
+        highest_token_allowed = 2**(dtype(tokenizer_cfg.dtype).itemsize*8) - 1 
         for file in get_files(tokenizer_cfg):
             with open(file, 'r') as f:
                 try:
