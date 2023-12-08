@@ -50,7 +50,10 @@ def run(cfg: DictConfig):
     data_wrapper: DatasetWrapper = get_data(cfg.dataset)
     dataset_info = data_wrapper.load_dataset('train')
     train_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_info.train)
-    eval_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_info.eval)
+    if dataset_info.eval is not None:
+        eval_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_info.eval)
+    else:
+        eval_dataloader = None
 
     from qtransform.optim import get_optim#, get_scheduler
     log.debug(f"optim config: {cfg.optim}")

@@ -52,7 +52,7 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
                 dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
         return dataset_info
     
-    def shuffle():
+    def shuffle(self):
         raise NotImplementedError()
 
 #TODO: implement download=True option

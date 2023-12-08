@@ -88,7 +88,7 @@ class DatasetWrapper(ABC):
 
     @classmethod
     @abstractmethod
-    def shuffle():
+    def shuffle(self):
         """
             Idea:   Have an instance of type dataset (named all_datasets), its size is the sum of all instantiated datasets in DatasetInfo
                     E.g. training, eval dataset each are 10MB, all_datasets is 20MB of size
