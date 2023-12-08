@@ -9,42 +9,58 @@ from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
 import os
 import glob
 import logging
-from qtransform import device_singleton
+from dataclasses import fields
+
 log = logging.getLogger(__name__)
 
-class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
+class FileSystemLLMDatasetWrapper(DatasetWrapper):
     """
         DatasetWrapper used to load .bin files from root_path and return a Dataset storing a numpy memmap
     """
-    def __init__(self) -> None:
-        pass
-
-    def load_dataset(data_cfg: DictConfig) -> Dataset:
+    def __init__(self, cfg: DictConfig) -> None:
+        super().__init__(cfg)
+        if self.cfg.args.get('dtype') is None:
+            log.error(f'Missing dtype for "{self.cfg.name}" dataset.')
+            raise KeyError()
+        self.dtype = get_dtype(self.cfg.args.dtype)
         # TODO find good structure for all our data
-        paths: list = data_cfg.dataset_dir
-        paths.extend(["tokenized", data_cfg.name + "-" + data_cfg.tokenizer.encoding + "-" + data_cfg.dtype + ".bin"])
-        root_path = concat_paths(paths) ## TODO replace all "~" in conf
-        #get dtype class to pass onto Dataset class
-        dtype = get_dtype(data_cfg.dtype)
-        log.info(f'Loading dataset: {data_cfg.name}, with encoding: {data_cfg.tokenizer.encoding} and dtype: {data_cfg.dtype}')
-        if not os.path.exists(root_path):
+        paths: list = self.cfg.dataset_dir
+        paths.extend(["tokenized", self.cfg.name + "-" + self.cfg.tokenizer.encoding + "-" + self.cfg.args.dtype + ".bin"])
+        self.root_path = concat_paths(paths) ## TODO replace all "~" in conf
+
+    def load_dataset(self, split: str) -> DatasetInfo:
+        splits = [x.name for x in fields(self.dataset_sizes)]
+        if split not in splits:
+            log.error(f'Datasets can only be split among {splits}, not {split}')
+            raise ValueError()
+        log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
+        if not os.path.exists(self.root_path):
             #no instance, only classname
-            tokenizer: Tokenizer = get_tokenizer(data_cfg.tokenizer)
-            tokenizer.tokenize(data_cfg.tokenizer)
-        split = data_cfg.args.split
-        if split == None:
-            split = 0.0
-        train = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, end= 1.0 - split)
-        test = _FileSystemLLMDataset(root_path, dtype, data_cfg.block_size, start= split)
-        #transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
-        return train, test
+            tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer)
+            tokenizer.tokenize(self.cfg.tokenizer)
+        dataset_info = DatasetInfo(name = self.cfg.name)
+        match split:
+            case 'train':
+                dataset_info.train = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
+                percentage_eval = round(self.dataset_sizes.eval * 100)
+                eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
+                dataset_info.eval = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+            case 'bench':
+                dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.test)
+            case 'test':
+                #for now, use last percent of dataset for testing
+                dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
+        return dataset_info
+    
+    def shuffle():
+        raise NotImplementedError()
 
 #TODO: implement download=True option
 class _FileSystemLLMDataset(Dataset):
     
     def __init__(self, token_file: str, dtype: np.dtype, block_size: int, start: float=0.0, end: float = 1.0):
         """
-            The seperation of a dataset in training and validation splits is done with the start and end parameter
+            The seperation of a dataset in different splits is done with the start and end parameter
 
             start: offset in dataset by <start> bytes (start counting after the first start percent items)
             end: end memmap by <end> entries of dtype
@@ -52,13 +68,18 @@ class _FileSystemLLMDataset(Dataset):
             and end being a slice of the memmap
         """
         super().__init__()
+        if not isinstance(start, float) or start < 0.0 or start >= 1.0:
+            log.error(f'Invalid starting range for dataset ({start})')
+            raise KeyError()
+        if not isinstance(end, float) or end <= 0.0 or end > 1.0:
+            log.error(f'Invalid ending range for dataset ({end})')
+            raise KeyError()
         log.info(f"Attempting to retrieve tokenized dataset under \"{token_file}\"")
         self.token_file = token_file
         self.dtype = dtype
-        self.datatype = dtype
         #the method of retrieving the byte size is somewhat inspired from the stackoverflow article
         #https://stackoverflow.com/questions/19599864/easy-way-of-getting-number-of-bits-from-a-numpy-type
-        self.bytes = self.datatype.itemsize
+        self.bytes = self.dtype.itemsize
         amnt_tokens = os.path.getsize(self.token_file) / self.bytes
         if amnt_tokens % 1 != 0.0:
             log.error(f'The amount of tokens is supposed to be a whole number, but it is {amnt_tokens}. Maybe due to a wrong datatype?')
@@ -66,10 +87,11 @@ class _FileSystemLLMDataset(Dataset):
         offset = int(amnt_tokens * start)
         #rounding to the nearest multiplicative of datatype to make sure not to read half a token too much
         offset -= offset % self.bytes
+        log.debug(f'Offset is {offset}, start is {start}, end is {end}')
         #skip the first start * amnt_tokens and the last amnt_tokens * end items
         log.debug(f'Tokenized file has {amnt_tokens} tokens of datatype: {dtype}. Attempting to start at token: {offset}')
         #torch.nn.Embedding only takes inputs of type int (32b, 64b) -> cast np array to 64 signed int
-        self.data = np.memmap(self.token_file, dtype=self.datatype, mode='r', offset=offset)[:int(amnt_tokens * end)].astype(np.int64)
+        self.data = np.memmap(self.token_file, dtype=self.dtype, mode='r', offset=offset)[:int(amnt_tokens * end)].astype(np.int64)
         #log.debug(f'all unique tokens in dataset: {set(self.data)}, length: {len(set(self.data))}')
         self.length = len(self.data)
         self.block_size = block_size
@@ -85,6 +107,10 @@ class _FileSystemLLMDataset(Dataset):
     
     #the dataloader works with batch sizes, dataset only works with indices
     def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+            Returns inputs and labels. Called when iterating through a dataloader.
+        """
+        #assert index >= 0
         #make sure that block_size elements are always retrieved
         index = min(self.length - self.block_size - 2, index + self.block_size)
         offset = index + self.block_size
@@ -92,17 +118,7 @@ class _FileSystemLLMDataset(Dataset):
         #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. 
         #The returned tensor is not resizable.
         #therefore, copy part of np array or use torch.stack()
-        data: torch.Tensor = torch.from_numpy(np.copy(self.data[index:offset]))
-        #label_offset = offset + self.block_size
+        inputs: torch.Tensor = torch.from_numpy(np.copy(self.data[index:offset]))
+        #labels are always the following word for each word within the context
         labels : torch.Tensor = torch.from_numpy(np.copy(self.data[index +1:offset+1]))
-        #maybe in custom test suite
-        #assert labels.size(dim=0) == self.block_size
-        #assert data.size(dim=0) == self.block_size
-        return data, labels
-
-    def _gather_files(self, file_path: str):
-        self.file_path = file_path
-        file_list = glob.glob(self.file_path + "*")
-        for file in file_list:
-            pass        
-        pass
+        return inputs, labels

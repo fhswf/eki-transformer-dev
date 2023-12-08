@@ -23,7 +23,6 @@ def run(cfg: DictConfig):
     log.info("================")
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
-    
     #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
     ## note: float16 data type will automatically use a GradScaler
     #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
@@ -41,21 +40,17 @@ def run(cfg: DictConfig):
     model = get_model(cfg.model)
     model.train()
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not Tensors
-    #this is a problem if a layer uses a Tensor during the forward pass that is not moved to the device inside of the class
-    model.to(device)
+    #this is a problem if a layer uses a Tensor during the forward pass as the Tensor is not moved to the device with model.to(device)
+    model.to(device=device)
 
-    from qtransform.dataset import get_data, get_loader
-    data_lodaer_maybe_tuple = get_data(cfg.dataset)
-    if isinstance(data_lodaer_maybe_tuple, tuple):
-        train_datalaoder, eval_dataoader = data_lodaer_maybe_tuple
-    else:
-        train_datalaoder = data_lodaer_maybe_tuple
-        eval_dataoader = None
-    
-    if not isinstance(train_datalaoder, data.DataLoader):
-        train_datalaoder = get_loader(data=train_datalaoder, dataloader_cfg=cfg.dataset.dataloader)
-    if eval_dataoader is not None and not isinstance(eval_dataoader, data.DataLoader):
-        eval_dataoader   = get_loader(data=eval_dataoader, dataloader_cfg=cfg.dataset.dataloader)
+    if cfg.dataset.sizes.train >= 1.0:
+        log.warning(f'Training on the entirety of the dataset.')
+
+    from qtransform.dataset import get_data, get_loader, DatasetWrapper
+    data_wrapper: DatasetWrapper = get_data(cfg.dataset)
+    dataset_info = data_wrapper.load_dataset('train')
+    train_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_info.train)
+    eval_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_info.eval)
 
     from qtransform.optim import get_optim#, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
@@ -79,7 +74,7 @@ def run(cfg: DictConfig):
         # TODO make this a decorator so it can return stuff
         model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
     else:
-        last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
+        last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
     # maybe subsequent jobs can be managed by hydra in the future?
     # when this paradigm comes up more frequently we have to make this a thing ....
@@ -153,7 +148,6 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     last_loss = 0
     running_loss = 0
     #cfg is entire hydra config
-
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
         inputs, labels = data
@@ -167,7 +161,7 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
         loss.backward()
         #clip gradients to prevent vanishing/exploding gradient problem
         # (https://neptune.ai/blog/understanding-gradient-clipping-and-how-it-can-fix-exploding-gradients-problem)
-        if isinstance(cfg.run.get("grad_clip"), float):
+        if isinstance(cfg.run.get("grad_clip"), float) and cfg.run.grad_clip > 0.0:
             nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg.run.grad_clip)
         optimizer.step()
 

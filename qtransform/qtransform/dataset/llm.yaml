@@ -1,17 +1,16 @@
-wrapper: FileSystemLLMDataset #name of class within torchvision.py
+wrapper: FileSystemLLMDatasetWrapper #name of class within torchvision.py
 #either has to match an entry from links, a dataset from torchvision or a filename (excluding encoding) within dataset directory
 name: ???
-dtype: ${data.dtype} #dtype has to exist in numpy and pytorch
-block_size: ${model.args.block_size}
 module: llm
-#are args being used currently?
+sizes: #sizes of dataset splits. if omited, assume 0.8 for train, 0.2 for test, 0.1 for eval, 1.0 for bench
+  train: 0.7
+  eval: 0.1
+  test: 0.3
+  bench: 1.0
 args:
-  split: 0.2
+  dtype: ${data.dtype} #dtype has to exist in numpy and pytorch
+  block_size: ${model.args.block_size}
 
 defaults:
   - dataloader/default
   - tokenizer: tiktoken
-    
-
-links:
-  - shakespeare: "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
