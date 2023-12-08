@@ -1,5 +1,5 @@
 from typing import Any, Union, Dict
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 import logging
 from torch.utils.data import Dataset, DataLoader
 from qtransform.utils.introspection import _get_module, get_classes
@@ -19,10 +19,10 @@ class DatasetSizes:
     """
         Remember the size of datasets in order to keep the size when shuffling.
     """
-    train: float = 0.8 #train on 80 percent of data
-    eval: float = 0.1 #percentage of training dataset to be used for evaluation. default: 10 percent
-    test: float = 0.2 #save 20 percent of dataset for inference
-    bench: float = 1.0
+    train: float = 0.0 #train on 80 percent of data
+    eval: float = 0.0 #percentage of training dataset to be used for evaluation. default: 10 percent
+    test: float = 0.0 #save 20 percent of dataset for inference
+    bench: float = 0.0
 
     def __post_init__(self):
         for field in fields(self):
@@ -30,9 +30,13 @@ class DatasetSizes:
             if not isinstance(attr, float):
                 log.error(f'{field.name} is not a floating point number.')
                 raise KeyError()
-            if attr < 0.0:
-                log.error(f'Cannot create {field.name} dataset of negative size')
+            if attr < 0.0 or attr > 1.0:
+                log.error(f'Data split {field.name} has to be within range 0.0 and 1.0, not {attr}')
                 raise ValueError()
+        if self.eval > 0.0 and self.train == 0.0:
+            log.error(f'Cannot validate training if size of training data is empty')
+            raise ValueError()
+
 @dataclass
 class DatasetInfo:
     """
@@ -70,8 +74,12 @@ class DatasetWrapper(ABC):
             log.error(f'No dataset name specified.')
             raise KeyError()
         if self.cfg.get('sizes') is None:
-            log.error(f'No sizes for the datasets specified.')
+            log.warning(f'No sizes for the data splits specified.')
             raise KeyError()
+        #add empty args property to avoid None checking every time
+        if self.cfg.get('args') is None:
+            with open_dict(self.cfg):
+                self.cfg["args"] = {}
         self.dataset_sizes = DatasetSizes(**cfg.sizes)
 
     @classmethod
@@ -85,6 +93,12 @@ class DatasetWrapper(ABC):
                     types (train, test, eval, bench) is created at once
         """
         pass
+
+    def check_split(self, split: str):
+        splits = [x.name for x in fields(DatasetSizes)]
+        if split not in splits:
+            log.error(f'Datasets can only be split among {splits}, not {split}')
+            raise ValueError()
 
     @classmethod
     @abstractmethod

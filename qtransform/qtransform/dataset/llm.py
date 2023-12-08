@@ -29,9 +29,9 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
         self.root_path = concat_paths(paths) ## TODO replace all "~" in conf
 
     def load_dataset(self, split: str) -> DatasetInfo:
-        splits = [x.name for x in fields(self.dataset_sizes)]
-        if split not in splits:
-            log.error(f'Datasets can only be split among {splits}, not {split}')
+        self.check_split(split)
+        if getattr(self.dataset_sizes, split) == 0.0:
+            log.error(f'Cannot load dataset for split {split} since it was configured to be empty.')
             raise ValueError()
         log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
         if not os.path.exists(self.root_path):
@@ -39,12 +39,30 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
             tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer)
             tokenizer.tokenize(self.cfg.tokenizer)
         dataset_info = DatasetInfo(name = self.cfg.name)
+        #instead of specifying a split, create splits based on size
+        #if split is equal to 0.0 (default), leave split empty (None)
+        #TODO: find out if this could lead to storage/ memory issues if datasets are large
+        """ 
+        for split in [x.name for x in fields(self.dataset_sizes) if x.name not in ["train", "eval"]]:
+            split_size = getattr(self.dataset_sizes, split)
+            if split_size <= 0.0:
+                continue
+            setattr(dataset_info, split, _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=))
+        #train and eval splits are created seperately as eval needs to be within training split
+        if self.dataset_sizes.train > 0.0:
+            dataset_info.train = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
+            percentage_eval = round(self.dataset_sizes.eval * 100)
+        if self.dataset_sizes.eval > 0.0:
+            eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
+            dataset_info.eval = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+        """
         match split:
             case 'train':
                 dataset_info.train = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
-                percentage_eval = round(self.dataset_sizes.eval * 100)
-                eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
-                dataset_info.eval = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+                if self.dataset_sizes.eval > 0.0:
+                    percentage_eval = round(self.dataset_sizes.eval * 100)
+                    eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
+                    dataset_info.eval = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
             case 'bench':
                 dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.test)
             case 'test':

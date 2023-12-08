@@ -7,19 +7,6 @@ from numpy import array, dtype
 
 log = logging.getLogger(__name__)
 
-"""
-
-  tokenizer:
-    dataset_dir:
-    - ${dataset.root_path}
-    - data
-    - ${dataset.name}
-    name: ${dataset.name}
-    dtype: ${data.dtype}
-    wrapper: CharacterTokenizer
-    encoding: character
-"""
-
 class TikTokenizer(Tokenizer):
     """
         Uses tiktoken as the tokenizer of choice. It calls encode_ordinary with an object
@@ -50,6 +37,6 @@ class TikTokenizer(Tokenizer):
                     log.debug(f"Amount of tokens in dataset {file}: {len(data_ids)}")
                     tokens.extend(data_ids)
                 except PermissionError:
-                    pass
+                    log.warning(f'Could not read file "{file}" for tokenization.')
         ids = array(tokens, dtype=tokenizer_cfg.dtype)
         save_tokens(ids, tokenizer_cfg)
