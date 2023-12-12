@@ -42,6 +42,8 @@ class DatasetSizes:
         if self.eval > 0.0 and self.train == 0.0:
             log.error(f'Cannot validate training if size of training data is empty')
             raise ValueError()
+        elif self.eval == 1.0:
+            log.warning(f'Size of validation split is equal to training split (eval = 1.0)')
         #all fields are 0.0, no point in continuing process as no data can be loaded
         if count == empty_split:
             log.error(f'Sizes of specified splits are zero.')

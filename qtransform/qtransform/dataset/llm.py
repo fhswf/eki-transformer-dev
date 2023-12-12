@@ -31,11 +31,13 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
 
     def load_dataset(self):
         log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
+        #check if tokenized file exists. if not, create it
         if not os.path.exists(self.root_path):
             #no instance, only classname
             tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer)
             tokenizer.tokenize(self.cfg.tokenizer)
         #TODO: find out if this could lead to memory issues if datasets are too large
+        #currently, data is retrieved continuously instead of in segments for splits
         #train
         if self.dataset_sizes.train > 0.0:
             self.dataset_info.train = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)

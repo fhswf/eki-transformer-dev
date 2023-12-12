@@ -29,7 +29,7 @@ class Tokenizer(ABC):
         on the harddrive. The necessary configuration parameters are included in the tokenizer_config method parameter
     """
     @abstractclassmethod
-    def tokenize(tokenizer_cfg: DictConfig):
+    def tokenize(tokenizer_cfg: DictConfig) -> :
         "Tokenize an input from file under text_file and write the generated bin file in root_path/root_path-<encoding>.bin"
         pass
 
@@ -44,34 +44,25 @@ def get_tokenizer(tokenizer_cfg: DictConfig) -> Tokenizer:
     tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.wrapper, Tokenizer)
     return tokenizer
 
-def encode(tokenizer_cfg: DictConfig) -> None:
-    """
-        Basically does the same as get_tokenizer except that instead of returning an Object/ Class of Tokenizer, the tokenize method
-        is called
-    """
-    tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.wrapper, Tokenizer)
-    tokenizer.tokenize(tokenizer_cfg)
-
 def get_files(tokenizer_cfg: DictConfig) -> List:
     """
         Returns all readable files from a given directory. Currently, only files at root level are returned.
     """
-    root_path: list = tokenizer_cfg.dataset_dir #append directory seperator at the end of the path
-    raw_dir = os.path.join(root_path, "untokenized", "")
+    main_path = concat_paths([*tokenizer_cfg.dataset_dir, "untokenized", ""])
     # raw_dir = concat_paths(raw_dir)
-    if not exists(raw_dir):
-        log.debug(f'Creating directory {raw_dir}')
-        os.makedirs(raw_dir, exist_ok=True)
-    log.debug(f'Checking for files with name containing {tokenizer_cfg.name} under directory: {raw_dir}')
-    return [x for x in glob(raw_dir + tokenizer_cfg.name + '*') if not isdir(x)]
+    if not exists(main_path):
+        log.debug(f'Creating directory {main_path}')
+        os.makedirs(main_path, exist_ok=True)
+        return []
+    log.debug(f'Checking for files with name containing {tokenizer_cfg.name} under directory: {main_path}')
+    return [x for x in glob(main_path + tokenizer_cfg.name + '*') if not isdir(x)]
 
 def save_tokens(ids: ndarray,tokenizer_cfg: DictConfig, meta: Dict = None) -> None:
     """
         Saves the tokens from an ndarray into a binary file. If meta is passed, a file containing metadata about
         the tokens is created.
     """
-    root_path: list = tokenizer_cfg.dataset_dir
-    output_dir = os.path.join(root_path, "tokenized", "")
+    output_dir = concat_paths([*tokenizer_cfg.dataset_dir, "tokenized", ""])
     filename = tokenizer_cfg.name + "-" + tokenizer_cfg.encoding + "-" + tokenizer_cfg.dtype
     #directory seperator included in output_dir
     if not exists(output_dir):

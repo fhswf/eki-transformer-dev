@@ -20,43 +20,29 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
         HuggingfaceDataset.num_proc = os.cpu_count()/2
-        #only load splits which are not empty (size above 0.0)
-        for split in [x.name for x in fields(self.dataset_sizes)]:
-            split_size = getattr(self.dataset_sizes, split)
-            if split_size > 0.0:
-                pass
 
     #TODO: REFACTOR
     def load_dataset(self) -> DatasetInfo:
-        self.check_split(split)
+        #TODO:  1. check if data is in cache
+        #       1a. if it doesnt exist, tokenize data with configurable tokenizer
+        #       TODO: transformers tokenizer
+        #       1aa. 
+        #       2. each dataset might posssibly have a json file which contains its metadata. it can be instantiated wiht dataset.DatasetInfo 
+
+
+
         #https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes
+        #https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/loading_methods#datasets.load_dataset
         dataset_splits = load_dataset(self.cfg.name)
         #dataset = load_dataset("openwebtext") # takes 54GB in huggingface .cache dir, about 8M documents (8,013,769)
         from transformers import AutoTokenizer, GPT2TokenizerFast
         #tokenizer = AutoTokenizer.from_pretrained("gpt2",kwargs={"max_length": 1024})
         # TODO cfg this
         tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
-        """
-            t5: T5Tokenizer (T5 model)
-            distilbert: DistilBertTokenizer (DistilBert model)
-            albert: AlbertTokenizer (ALBERT model)
-            camembert: CamembertTokenizer (CamemBERT model)
-            xlm-roberta: XLMRobertaTokenizer (XLM-RoBERTa model)
-            longformer: LongformerTokenizer (AllenAI Longformer model)
-            roberta: RobertaTokenizer (RoBERTa model)
-            bert-base-japanese: BertJapaneseTokenizer (Bert model)
-            bert: BertTokenizer (Bert model)
-            openai-gpt: OpenAIGPTTokenizer (OpenAI GPT model)
-            gpt2: GPT2Tokenizer (OpenAI GPT-2 model)
-            transfo-xl: TransfoXLTokenizer (Transformer-XL model)
-            xlnet: XLNetTokenizer (XLNet model)
-            xlm: XLMTokenizer (XLM model)
-            ctrl: CTRLTokenizer (Salesforce CTRL model)
-            electra: ElectraTokenizer (Google ELECTRA model)
-        """
         def tokenization(example):
             # TODO cfg this
             #max_length is the length of the attention mask
+            #is attention mask necessary?
             return tokenizer(example["text"], max_length=1024, truncation=True)
         #of type DatasetDict, contains all splits (test, validation, train)
         dataset_splits = dataset_splits.map(tokenization, batched=True)
@@ -78,7 +64,6 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
                 bench_size = torch.randint(100 - round(self.self.dataset_sizes.bench * 100), (1,)) / 100
                 dataset_info.test = HuggingfaceDataset(dataset_splits["train"], self.cfg.args.block_size, start=bench_size, end=self.dataset_sizes.train + bench_size)
             case 'test':
-                test_size = torch.randint(100 - round(self.self.dataset_sizes.bench * 100), (1,)) / 100
                 dataset_info.test = HuggingfaceDataset(dataset_splits["test"], self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
         return dataset_info
 

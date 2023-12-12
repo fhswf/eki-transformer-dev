@@ -8,7 +8,12 @@ sizes:
   test: 0.05
   bench: 0.3
 args:
+  block_size: ${model.args.block_size}
+  cache_dir: #or path or empty string
+  #specify how many samples a row contains. tiny_shakespeare fits its entire training data into one row, rotten_tomatoes i.a. does not
+  row_type: singular #multiple
+  save_token_file: True
 
 defaults:
   - dataloader/default
-  - tokenizer: gpt2
+  - tokenizer: transformers
