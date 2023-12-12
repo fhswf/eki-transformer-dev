@@ -28,48 +28,30 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
         paths.extend(["tokenized", self.cfg.name + "-" + self.cfg.tokenizer.encoding + "-" + self.cfg.args.dtype + ".bin"])
         self.root_path = concat_paths(paths) ## TODO replace all "~" in conf
 
-    def load_dataset(self, split: str) -> DatasetInfo:
-        self.check_split(split)
-        if getattr(self.dataset_sizes, split) == 0.0:
-            log.error(f'Cannot load dataset for split {split} since it was configured to be empty.')
-            raise ValueError()
+
+    def load_dataset(self):
         log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
         if not os.path.exists(self.root_path):
             #no instance, only classname
             tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer)
             tokenizer.tokenize(self.cfg.tokenizer)
-        dataset_info = DatasetInfo(name = self.cfg.name)
-        #instead of specifying a split, create splits based on size
-        #if split is equal to 0.0 (default), leave split empty (None)
-        #TODO: find out if this could lead to storage/ memory issues if datasets are large
-        """ 
-        for split in [x.name for x in fields(self.dataset_sizes) if x.name not in ["train", "eval"]]:
-            split_size = getattr(self.dataset_sizes, split)
-            if split_size <= 0.0:
-                continue
-            setattr(dataset_info, split, _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=))
-        #train and eval splits are created seperately as eval needs to be within training split
+        #TODO: find out if this could lead to memory issues if datasets are too large
+        #train
         if self.dataset_sizes.train > 0.0:
-            dataset_info.train = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
-            percentage_eval = round(self.dataset_sizes.eval * 100)
+            self.dataset_info.train = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
+        #eval
         if self.dataset_sizes.eval > 0.0:
+            percentage_eval = round(self.dataset_sizes.eval * 100)
             eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
-            dataset_info.eval = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
-        """
-        match split:
-            case 'train':
-                dataset_info.train = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
-                if self.dataset_sizes.eval > 0.0:
-                    percentage_eval = round(self.dataset_sizes.eval * 100)
-                    eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
-                    dataset_info.eval = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
-            case 'bench':
-                dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.test)
-            case 'test':
-                #for now, use last percent of dataset for testing
-                dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
-        return dataset_info
-    
+            self.dataset_info.eval = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+        #bench
+        if self.dataset_sizes.bench > 0.0:
+            self.dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.test)
+        #test
+        if self.dataset_sizes.test > 0.0:
+            #for now, use last percent of dataset for testing
+            self.dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
+
     def shuffle(self):
         raise NotImplementedError()
 
@@ -79,12 +61,9 @@ class _FileSystemLLMDataset(Dataset):
     #TODO: is dtype necessary? since each file only contains the ids of tokens, not the actual embeddings
     def __init__(self, token_file: str, dtype: np.dtype, block_size: int, start: float=0.0, end: float = 1.0):
         """
-            The seperation of a dataset in different splits is done with the start and end parameter
-
-            start: offset in dataset by <start> bytes (start counting after the first start percent items)
-            end: end memmap by <end> entries of dtype
-            For now, np.memmap is used with offset being start 
-            and end being a slice of the memmap
+            Creates a dataset which loads a numpy array from a file. 
+            Slices of the dataset can be retrieved with the start and end parameters. 
+            They specify the starting and ending range of the dataset in percent.
         """
         super().__init__()
         if not isinstance(start, float) or start < 0.0 or start >= 1.0:
@@ -93,6 +72,10 @@ class _FileSystemLLMDataset(Dataset):
         if not isinstance(end, float) or end <= 0.0 or end > 1.0:
             log.error(f'Invalid ending range for dataset ({end})')
             raise KeyError()
+        self.block_size = block_size
+        if self.block_size <= 0:
+            log.error(f'Block size of 0 is invalid.')
+            raise ValueError()
         log.info(f"Attempting to retrieve tokenized dataset under \"{token_file}\"")
         self.token_file = token_file
         self.dtype = dtype
@@ -111,15 +94,12 @@ class _FileSystemLLMDataset(Dataset):
         log.debug(f'Tokenized file has {amnt_tokens} tokens of datatype: {dtype}. Attempting to start at token: {offset}')
         #torch.nn.Embedding only takes inputs of type int (32b, 64b) -> cast np array to 64 signed int
         self.data = np.memmap(self.token_file, dtype=self.dtype, mode='r', offset=offset)[:int(amnt_tokens * end)].astype(np.int64)
+        if len(self.data) < self.block_size:
+            log.error(f'Loaded data has less tokens than block size {self.block_size} for starting range {start} and ending range {end}. Maybe check size of splits?')
+            raise ValueError()
+        log.info(f'Loaded data has {len(self.data)} tokens.')
         #log.debug(f'all unique tokens in dataset: {set(self.data)}, length: {len(set(self.data))}')
         self.length = len(self.data)
-        self.block_size = block_size
-        if self.block_size == 0:
-            log.error(f'Block size of 0 is invalid.')
-            raise ValueError()
-        if self.length <= self.block_size - 2 :
-            log.warn(f'Data samples are always going to be the same as the block size ({self.block_size}) is greater or equal to the dataset length. Setting block_size to: {self.length - 2}')
-            self.block_size = self.length - 2
 
     def __len__(self):
         return self.length
@@ -127,10 +107,10 @@ class _FileSystemLLMDataset(Dataset):
     #the dataloader works with batch sizes, dataset only works with indices
     def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-            Returns inputs and labels. Called when iterating through a dataloader.
+            Returns inputs and labels. Called when iterating with e.g. a dataloader.
         """
         #assert index >= 0
-        #make sure that block_size elements are always retrieved
+        #lower index to make sure that block_size elements are always retrieved
         index = min(self.length - self.block_size - 2, index + self.block_size)
         offset = index + self.block_size
         #From https://pytorch.org/docs/stable/generated/torch.from_numpy.html:

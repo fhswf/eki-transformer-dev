@@ -40,6 +40,8 @@ dataset:
       #name of dataset
       name: ${dataset.name}
       dtype: ${data.dtype}
+  args:
+    block_size: ${model.args.block_size}
 seed: 1234567890
 
 # DDP settings

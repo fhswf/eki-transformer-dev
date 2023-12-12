@@ -2,6 +2,7 @@ from numpy import array
 from omegaconf import DictConfig
 from qtransform.dataset.tokenizer import Tokenizer, get_files, save_tokens
 import logging
+from typing import List
 
 log = logging.getLogger(__name__)
 
@@ -14,9 +15,9 @@ class CharacterTokenizer(Tokenizer):
         vocabulary size and the corresponding mapping of characters to ids.
         The tokenization part is heavily inspired by nanoGPT (https://github.com/karpathy/nanoGPT/blob/master/data/shakespeare_char/prepare.py)
     """
-    def encode(stoi, s):
+    def encode(stoi, s) -> List[int]:
         return [stoi[c] for c in s] # encoder: take a string, output a list of integers
-    def decode(itos, l):
+    def decode(itos, l) -> str:
         return ''.join([itos[i] for i in l]) # decoder: take a list of integers, output a string
 
     def tokenize(tokenizer_cfg: DictConfig):

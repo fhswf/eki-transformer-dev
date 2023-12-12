@@ -43,15 +43,25 @@ def run(cfg: DictConfig):
     #this is a problem if a layer uses a Tensor during the forward pass as the Tensor is not moved to the device with model.to(device)
     model.to(device=device)
 
-    if cfg.dataset.sizes.train >= 1.0:
-        log.warning(f'Training on the entirety of the dataset.')
-
     from qtransform.dataset import get_data, get_loader, DatasetWrapper
     data_wrapper: DatasetWrapper = get_data(cfg.dataset)
-    dataset_info = data_wrapper.load_dataset('train')
-    train_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_info.train)
-    if dataset_info.eval is not None:
-        eval_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_info.eval)
+    data_wrapper.load_dataset()
+    dataset_train = data_wrapper.dataset_info.train
+    dataset_eval = data_wrapper.dataset_info.eval
+    if cfg.dataset.sizes.train >= 1.0:
+        log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
+    #check if batch_size batches are going to be performed
+    from torch.utils.data import Dataset
+    def check_dataset_size(name: str, dataset: Dataset):
+        batch_size = cfg.dataset.dataloader.batch_size
+        block_size = cfg.dataset.args.block_size
+        if batch_size * block_size > len(dataset):
+            log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, causing the dataloader to skip batches. Maybe check the split size?')
+    check_dataset_size("train", dataset_train)
+    train_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_train)
+    if dataset_eval is not None:
+        check_dataset_size("eval", dataset_eval)
+        eval_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_eval)
     else:
         eval_dataloader = None
 
@@ -153,6 +163,7 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     #cfg is entire hydra config
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
+        #token tensor of length block_size (context length)
         inputs, labels = data
         inputs = inputs.to(device_singleton.device)
         labels = labels.to(device_singleton.device)

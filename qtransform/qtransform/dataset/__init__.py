@@ -17,14 +17,17 @@ class DatasetRunType(Enum):
 @dataclass
 class DatasetSizes:
     """
-        Remember the size of datasets in order to keep the size when shuffling.
+        Remember the size of datasets in percent to retain the size when shuffling and to 
+        do checks before data should be loaded. 
     """
-    train: float = 0.0 #train on 80 percent of data
-    eval: float = 0.0 #percentage of training dataset to be used for evaluation. default: 10 percent
-    test: float = 0.0 #save 20 percent of dataset for inference
-    bench: float = 0.0
+    train: float = 0.0 #size of training data
+    eval: float = 0.0 #size of the subset of training data to check if model is overfitting
+    test: float = 0.0
+    bench: float = 0.0 
 
     def __post_init__(self):
+        empty_split = 0 #check how many splits are not empty
+        count = 0
         for field in fields(self):
             attr = getattr(self, field.name)
             if not isinstance(attr, float):
@@ -33,8 +36,15 @@ class DatasetSizes:
             if attr < 0.0 or attr > 1.0:
                 log.error(f'Data split {field.name} has to be within range 0.0 and 1.0, not {attr}')
                 raise ValueError()
+            if attr == 0.0:
+                empty_split += 1
+            count += 1
         if self.eval > 0.0 and self.train == 0.0:
             log.error(f'Cannot validate training if size of training data is empty')
+            raise ValueError()
+        #all fields are 0.0, no point in continuing process as no data can be loaded
+        if count == empty_split:
+            log.error(f'Sizes of specified splits are zero.')
             raise ValueError()
 
 @dataclass
@@ -49,9 +59,19 @@ class DatasetInfo:
     test: Dataset = None
     bench: Dataset = None
 
+    """def __setattr__(self, __name, __value):
+        if __name not in self.fields.keys():
+            log.error(f'DatasetInfo should only contain fields: {self.fields.keys()}')
+            raise KeyError()
+        field = self.fields[__name]
+        current_attr = getattr(self, field.name)
+        if current_attr is not None and not isinstance(current_attr, field.type):
+                log.error(f'DatasetInfo field {field.name} expects field type {field.type}, not {type(current_attr)}')
+                raise TypeError()"""
+
     def __post_init__(self):
-        self.fields = fields(self)
-        for field in [x for x in self.fields]:
+        self.fields = {x.name:x for x in fields(self)}
+        for field in self.fields.values():
             current_attr = getattr(self, field.name)
             if current_attr is not None and not isinstance(current_attr, field.type):
                 log.error(f'DatasetInfo field {field.name} expects field type {field.type}, not {type(current_attr)}')
@@ -81,10 +101,11 @@ class DatasetWrapper(ABC):
             with open_dict(self.cfg):
                 self.cfg["args"] = {}
         self.dataset_sizes = DatasetSizes(**cfg.sizes)
+        self.dataset_info = DatasetInfo(name=self.cfg.name)
 
     @classmethod
     @abstractmethod
-    def load_dataset(self, split: str) -> DatasetInfo:
+    def load_dataset(self) -> DatasetInfo:
         """
             Loads a dataset from the config specified in the constructor. The split argument specifies
             the size of the returned dataset which have been stored in an instance of type DataSizes. 
@@ -95,6 +116,9 @@ class DatasetWrapper(ABC):
         pass
 
     def check_split(self, split: str):
+        """
+            Checks whether the DatasetSizes dataclass contains a field with name split.
+        """
         splits = [x.name for x in fields(DatasetSizes)]
         if split not in splits:
             log.error(f'Datasets can only be split among {splits}, not {split}')

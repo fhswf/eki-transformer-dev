@@ -8,6 +8,7 @@ import os
 from tqdm import tqdm
 import numpy as np
 import tiktoken
+from dataclasses import fields
 from omegaconf import DictConfig
 from datasets import load_dataset  # huggingface datasets
 from datasets import Dataset as HuggingfaceDataset # avoid naming conflict with Torch dataset
@@ -19,8 +20,14 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
         HuggingfaceDataset.num_proc = os.cpu_count()/2
+        #only load splits which are not empty (size above 0.0)
+        for split in [x.name for x in fields(self.dataset_sizes)]:
+            split_size = getattr(self.dataset_sizes, split)
+            if split_size > 0.0:
+                pass
 
-    def load_dataset(self, split: str) -> DatasetInfo:
+    #TODO: REFACTOR
+    def load_dataset(self) -> DatasetInfo:
         self.check_split(split)
         #https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes
         dataset_splits = load_dataset(self.cfg.name)
@@ -49,11 +56,14 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
         """
         def tokenization(example):
             # TODO cfg this
+            #max_length is the length of the attention mask
             return tokenizer(example["text"], max_length=1024, truncation=True)
         #of type DatasetDict, contains all splits (test, validation, train)
         dataset_splits = dataset_splits.map(tokenization, batched=True)
+        dataset_splits = dataset_splits.map()
         dataset_info = DatasetInfo(self.cfg.name)
         #TODO:  code is pretty similiar to FileSystemLLMDatasetWrapper, maybe modularise it
+        #TODO:  some datasets have one row, others have multiple -> ''.join()
 
         #since data splits are split already, no need to worry about overlapping
         match split:

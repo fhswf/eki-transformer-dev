@@ -13,22 +13,18 @@ log = logging.getLogger(__name__)
 class TorchvisionDatasetWrapper(DatasetWrapper):
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
-
-    def load_dataset(self, split: str) -> DatasetInfo:
-        self.check_split(split)
-        available_datasets = get_classes(datasets, Dataset)
-        if self.cfg.name not in available_datasets:
+        self.available_datasets = get_classes(datasets, Dataset)
+        if self.cfg.name not in self.available_datasets:
             log.error(f"Dataset {self.cfg.name} not found in {datasets.__package__}")
             raise KeyError
-        
+
+    def load_dataset(self):
         # TODO find good structure for all our data
         root_path = os.path.join(self.cfg.root_path, "torchvision", self.cfg.name)
         transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
         #TODO: implement eval
-        dataset_info = DatasetInfo(self.cfg.name)
-        dataset_info.train = available_datasets[self.cfg.name](root=root_path, train=True, download=True, transform=transform)
-        dataset_info.test = available_datasets[self.cfg.name](root=root_path, train=False, transform=transform)
-        return dataset_info
+        self.dataset_info.train = self.available_datasets[self.cfg.name](root=root_path, train=True, download=True, transform=transform)
+        self.dataset_info.test = self.available_datasets[self.cfg.name](root=root_path, train=False, transform=transform)
     
     def shuffle(self):
         raise NotImplementedError()

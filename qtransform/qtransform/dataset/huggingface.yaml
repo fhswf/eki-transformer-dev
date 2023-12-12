@@ -11,3 +11,4 @@ args:
 
 defaults:
   - dataloader/default
+  - tokenizer: gpt2
