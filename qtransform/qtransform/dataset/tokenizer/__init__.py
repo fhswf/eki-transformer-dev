@@ -29,7 +29,7 @@ class Tokenizer(ABC):
         on the harddrive. The necessary configuration parameters are included in the tokenizer_config method parameter
     """
     @abstractclassmethod
-    def tokenize(tokenizer_cfg: DictConfig) -> :
+    def tokenize(tokenizer_cfg: DictConfig):
         "Tokenize an input from file under text_file and write the generated bin file in root_path/root_path-<encoding>.bin"
         pass
 

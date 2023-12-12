@@ -26,13 +26,20 @@ debug: False
 
 dataset:
   wrapper: ??? #name of dataset wrapper to use which returns an instance of type Dataset
+  module: ??? #name of python file which declares wrapper class
   root_path: ~/.qtransform/datasets
   #points to the directory containing the dataset used for training/validation etc. 
   #the list is composed of subentries under root_path (root_path included) in hierarchical order
   #the filename of the dataset is not included as it could be split into multiple files (take MNIST for example)
-  dataset_dir: 
+  dataset_dir: #structure something along the lines of: ~/.qtransform/datasets/huggingface/tiny_shakespeare
     - ${dataset.root_path}
+    - ${dataset.module}
     - ${dataset.name}
+  sizes:
+    train: ???
+    eval: ???
+    test: ???
+    bench: ???
   tokenizer: 
       dataset_dir: 
         - ${dataset.root_path}
@@ -40,8 +47,6 @@ dataset:
       #name of dataset
       name: ${dataset.name}
       dtype: ${data.dtype}
-  args:
-    block_size: ${model.args.block_size}
 seed: 1234567890
 
 # DDP settings
