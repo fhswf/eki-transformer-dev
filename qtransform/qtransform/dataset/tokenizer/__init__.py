@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Dict, List, Tuple
 from omegaconf import DictConfig
 from qtransform.classloader import get_data
 import logging
@@ -9,7 +9,7 @@ from numpy import dtype
 from glob import glob
 from os.path import isdir, exists
 import os
-from numpy import ndarray
+import numpy as np
 import pickle
 #TODO: maybe implement pytorch.utils.get_tokenizer()
 
@@ -28,9 +28,26 @@ class Tokenizer(ABC):
         Each TokenizerWrapper has to contain a method to tokenize the data according to an encoding and store it in a numpy array of np.dtype
         on the harddrive. The necessary configuration parameters are included in the tokenizer_config method parameter
     """
+    max_token_value: int
+
     @abstractclassmethod
-    def tokenize(tokenizer_cfg: DictConfig):
-        "Tokenize an input from file under text_file and write the generated bin file in root_path/root_path-<encoding>.bin"
+    def tokenize(memmap: np.memmap, text: str, tokenizer_cfg: DictConfig):
+        """
+            Tokenize a text and write the result into a memmap to be retrieved later. 
+            To differentiate between datasets which contain multiple or single samples per row, 
+            the shape of the memmap is taken into consideration. 
+        """
+
+    def get_memmap_dimension(memmap: np.memmap) -> Tuple[int]:
+        num_items: int = memmap.shape[0]
+        if len(memmap.shape) == 1: #entire text is one large 1d array
+            num_rows: int = 1
+        else:
+            num_rows: int = memmap_shape[1]
+        return (num_items, num_rows)
+    
+    @abstractclassmethod
+    def save_metadata():
         pass
 
 
@@ -44,25 +61,12 @@ def get_tokenizer(tokenizer_cfg: DictConfig) -> Tokenizer:
     tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.wrapper, Tokenizer)
     return tokenizer
 
-def get_files(tokenizer_cfg: DictConfig) -> List:
-    """
-        Returns all readable files from a given directory. Currently, only files at root level are returned.
-    """
-    main_path = concat_paths([*tokenizer_cfg.dataset_dir, "untokenized", ""])
-    # raw_dir = concat_paths(raw_dir)
-    if not exists(main_path):
-        log.debug(f'Creating directory {main_path}')
-        os.makedirs(main_path, exist_ok=True)
-        return []
-    log.debug(f'Checking for files with name containing {tokenizer_cfg.name} under directory: {main_path}')
-    return [x for x in glob(main_path + tokenizer_cfg.name + '*') if not isdir(x)]
-
-def save_tokens(ids: ndarray,tokenizer_cfg: DictConfig, meta: Dict = None) -> None:
+def save_tokens(ids: np.ndarray, tokenizer_cfg: DictConfig, meta: Dict = None) -> None:
     """
         Saves the tokens from an ndarray into a binary file. If meta is passed, a file containing metadata about
         the tokens is created.
     """
-    output_dir = concat_paths([*tokenizer_cfg.dataset_dir, "tokenized", ""])
+    output_dir = concat_paths([*tokenizer_cfg.dataset_dir, "tokenized", tokenizer_cfg.encoding, ""])
     filename = tokenizer_cfg.name + "-" + tokenizer_cfg.encoding + "-" + tokenizer_cfg.dtype
     #directory seperator included in output_dir
     if not exists(output_dir):
@@ -72,4 +76,6 @@ def save_tokens(ids: ndarray,tokenizer_cfg: DictConfig, meta: Dict = None) -> No
         with open(output_dir + filename + '-meta.pkl', 'wb') as f:
             pickle.dump(meta, f)
     #write numpy array to a binary file
-    ids.tofile(output_dir + filename + ".bin")
+    #this is inefficient for larger datasets as the entire array has to be stored within memory to be saved
+    #instead, use memmap with write permissions
+    #ids.tofile(output_dir + filename + ".bin")

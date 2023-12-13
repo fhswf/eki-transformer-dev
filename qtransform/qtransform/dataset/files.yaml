@@ -1,7 +1,7 @@
 wrapper: FileSystemLLMDatasetWrapper #name of class within torchvision.py
 #either has to match an entry from links, a dataset from torchvision or a filename (excluding encoding) within dataset directory
 name: ???
-module: llm
+module: files
 sizes: #sizes of dataset splits. if omited, assume empty sizes for splits
   train: 0.7
   eval: 0.1

@@ -1,6 +1,6 @@
 from typing import List
 from tiktoken import get_encoding, Encoding
-from qtransform.dataset.tokenizer import Tokenizer, get_files, save_tokens
+from qtransform.dataset.tokenizer import Tokenizer
 from omegaconf import DictConfig
 import logging
 from numpy import array, dtype
@@ -25,6 +25,7 @@ class TikTokenizer(Tokenizer):
             raise ValueError()
         tokens: List[int] = list()
         #int64: 2^(8*8)
+        #TODO: move this into llm and pass dataset as argument
         highest_token_allowed = 2**(dtype(tokenizer_cfg.dtype).itemsize*8) - 1 
         for file in get_files(tokenizer_cfg):
             with open(file, 'r') as f:

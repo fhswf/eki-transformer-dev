@@ -1,4 +1,4 @@
-from typing import Any, Tuple
+from typing import Any, Tuple, List
 import torch
 import numpy as np
 from torch.utils.data import Dataset
@@ -7,7 +7,7 @@ from qtransform.utils.introspection import get_classes, concat_paths, get_dtype
 from qtransform.dataset import DatasetInfo, DatasetWrapper
 from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
 import os
-import glob
+from glob import glob
 import logging
 from dataclasses import fields
 
@@ -22,20 +22,29 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
         if self.cfg.args.get('dtype') is None:
             log.error(f'Missing dtype for "{self.cfg.name}" dataset.')
             raise KeyError()
+        #currently, dtype has to be set by user. maybe it could also be automatically infered by the max tokens property of Tokenizer
         self.dtype = get_dtype(self.cfg.args.dtype)
         # TODO find good structure for all our data
-        paths: list = self.cfg.dataset_dir
-        paths.extend(["tokenized", self.cfg.name + "-" + self.cfg.tokenizer.encoding + "-" + self.cfg.args.dtype + ".bin"])
-        self.root_path = concat_paths(paths) ## TODO replace all "~" in conf
-
+        self.root_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
+        self.root_path = os.path.join(self.root_dir, 'data.bin')
 
     def load_dataset(self):
         log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
         #check if tokenized file exists. if not, create it
         if not os.path.exists(self.root_path):
+            os.makedirs(self.root_dir, exist_ok = True)
             #no instance, only classname
+            files = self.get_untokenized_files()
             tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer)
-            tokenizer.tokenize(self.cfg.tokenizer)
+            #find fitting dtype for numpy memmap
+            max_token_value = tokenizer.max_token_value
+            #TODO: you have to specify shape as the length of the memmap, meaning that each file has to be loaded 
+            #-> only support loading one large file i guess
+            memmap = np.memmap(self.root_path, dtype=self.dtype, mode='w+', shape=(1,))
+            for file in files:
+                with open(file, 'r') as text_file: 
+                    text = text_file.read() #entire file is read at once
+                    tokenizer.tokenize(memmap, text, self.cfg.tokenizer)
         #TODO: find out if this could lead to memory issues if datasets are too large
         #currently, data is retrieved continuously instead of in segments for splits
         #train
@@ -53,6 +62,22 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
         if self.dataset_sizes.test > 0.0:
             #for now, use last percent of dataset for testing
             self.dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
+
+    def get_untokenized_files(self) -> List:
+        """
+            Returns all readable files from a given directory which are going to be used for tokenization. 
+            To do so, the field "dataset_dir" from the hydra config is evaluated. All files from the directory "untokenized"
+            within dataset_dir are returned. 
+            If the directory does not exist, it is created and an empty list is returned.
+            
+        """
+        main_path = concat_paths([*self.cfg.dataset_dir, "untokenized", ""])
+        if not os.path.exists(main_path):
+            log.debug(f'Creating directory {main_path}')
+            os.makedirs(main_path, exist_ok=True)
+            return []
+        log.debug(f'Checking for files with name containing {self.cfg.name} under directory: {main_path}')
+        return [x for x in glob(main_path + self.cfg.name + '*') if not os.path.isdir(x)]
 
     def shuffle(self):
         raise NotImplementedError()

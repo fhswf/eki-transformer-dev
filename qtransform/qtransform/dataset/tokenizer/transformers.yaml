@@ -1,5 +1,6 @@
 wrapper: TransformersTokenizer
 encoding: ???
+flavor: fast #full
 #available encoders: 
   #t5: T5Tokenizer (T5 model)
   #distilbert: DistilBertTokenizer (DistilBert model)

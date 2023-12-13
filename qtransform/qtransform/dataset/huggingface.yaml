@@ -10,8 +10,8 @@ sizes:
 args:
   block_size: ${model.args.block_size}
   cache_dir: #or path or empty string
-  #specify how many samples a row contains. tiny_shakespeare fits its entire training data into one row, rotten_tomatoes i.a. does not
-  row_type: singular #multiple
+  #specify how many samples a row contains. i.a. tiny_shakespeare fits its entire training data into one row, while rotten_tomatoes does not
+  samples_per_row: singular #multiple
   save_token_file: True
 
 defaults:

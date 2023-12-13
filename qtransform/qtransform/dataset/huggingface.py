@@ -15,15 +15,15 @@ from datasets import Dataset as HuggingfaceDataset # avoid naming conflict with 
 
 import logging
 log = logging.getLogger(__name__)
-
 class HuggingfaceDatasetWrapper(DatasetWrapper):
+    #inspired by: https://github.com/karpathy/nanoGPT/blob/master/data/openwebtext/prepare.py#L80
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
         HuggingfaceDataset.num_proc = os.cpu_count()/2
 
     #TODO: REFACTOR
     def load_dataset(self) -> DatasetInfo:
-        #TODO:  1. check if data is in cache
+        #TODO:  1. check if data has been tokenized. somehow remember the tokenization of the dataset -> problem how to save metadata within tokenized data
         #       1a. if it doesnt exist, tokenize data with configurable tokenizer
         #       TODO: transformers tokenizer
         #       1aa. 
@@ -39,14 +39,15 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
         #tokenizer = AutoTokenizer.from_pretrained("gpt2",kwargs={"max_length": 1024})
         # TODO cfg this
         tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
+        #parameter is dataset containing text and other properties. only text is important
         def tokenization(example):
             # TODO cfg this
             #max_length is the length of the attention mask
             #is attention mask necessary?
             return tokenizer(example["text"], max_length=1024, truncation=True)
         #of type DatasetDict, contains all splits (test, validation, train)
+        #TODO: check if dataset contains other splits. if not, create them from training data
         dataset_splits = dataset_splits.map(tokenization, batched=True)
-        dataset_splits = dataset_splits.map()
         dataset_info = DatasetInfo(self.cfg.name)
         #TODO:  code is pretty similiar to FileSystemLLMDatasetWrapper, maybe modularise it
         #TODO:  some datasets have one row, others have multiple -> ''.join()

@@ -1,6 +1,6 @@
-from numpy import array
+from numpy import array, memmap
 from omegaconf import DictConfig
-from qtransform.dataset.tokenizer import Tokenizer, get_files, save_tokens
+from qtransform.dataset.tokenizer import Tokenizer
 import logging
 from typing import List
 
@@ -15,46 +15,59 @@ class CharacterTokenizer(Tokenizer):
         vocabulary size and the corresponding mapping of characters to ids.
         The tokenization part is heavily inspired by nanoGPT (https://github.com/karpathy/nanoGPT/blob/master/data/shakespeare_char/prepare.py)
     """
-    def encode(stoi, s) -> List[int]:
-        return [stoi[c] for c in s] # encoder: take a string, output a list of integers
-    def decode(itos, l) -> str:
-        return ''.join([itos[i] for i in l]) # decoder: take a list of integers, output a string
+    max_token_value = 2**16 -1 #Number of characters (tokens) depends on encoding. Python can have up to 4B large chars. Usually, 16 bits suffices
+    stoi: dict = dict()
+    itos: dict = dict()
+    vocab_size: int = 0
+    index_2d: int = 0
+    vocab = list()
 
-    def tokenize(tokenizer_cfg: DictConfig):
+    def encode(s) -> List[int]:
+        return [CharacterTokenizer.stoi[c] for c in s] # encoder: take a string, output a list of integers
+    def decode(l) -> str:
+        return ''.join([CharacterTokenizer.itos[i] for i in l]) # decoder: take a list of integers, output a string
+    
+    def flush_vocab():
+        #maybe the tokenizers should have a constructor
+        CharacterTokenizer.stoi = dict()
+        CharacterTokenizer.itos = dict()
+        CharacterTokenizer.vocab_size = 0
+    
+    def tokenize(memmap: memmap, text: str, tokenizer_cfg: DictConfig):
         """
             The function the steps described in the class description (tokenization of files into one binary file). It is usually
             called by the tokenizer module in order to abstract the tokenization process.
         """
+        num_items, num_rows = Tokenizer.get_memmap_dimension(memmap)
+        log.critical("ALKJDHAKSJDHKJLASDH")
         log.debug(f'Tokenizing with parameters: {tokenizer_cfg}')
-        chars = list()
+        #python chars are 2B large, meaning that at the absolute most only
+        #2^16 tokens are created (65.000) if every single unicode character appears in dataset
+        CharacterTokenizer.vocab = list()
         #iterate through each file in the untokenized directory, only include files at top level for now
-        untokenized_files = get_files(tokenizer_cfg)
-        log.debug(f'Found files: {untokenized_files}')
-        for file in untokenized_files:
-            with open(file, 'r') as f:
-                try:
-                    data = f.read()
-                    log.debug(f"length of dataset {file} in characters: {len(data)}")
-                    # get all the unique characters that occur in this text
-                    chars.extend(sorted(list(set(data))))
-                except PermissionError:
-                    pass
-        # no files read?
-        if len(chars) == 0:
-            log.error(f'No readable files for tokenization found')
-            raise KeyError()
-        vocab_size = len(chars)
-        #log.debug("all the unique characters:", ''.join(chars))
-        #log.debug(f"vocab size: {vocab_size:,}")
-        # create a mapping from characters to integers
-        stoi = { ch:i for i,ch in enumerate(chars) }
-        itos = { i:ch for i,ch in enumerate(chars) }
+        #untokenized_files = get_files(tokenizer_cfg)
+        #only update vocab with new characters
+        new_tokens = set(text) - set(CharacterTokenizer.vocab) 
+        CharacterTokenizer.vocab.extend(new_tokens)
+        #remember the token of previous characters, start counting at vocab_size
+        CharacterTokenizer.stoi.update({ ch:i for i,ch in enumerate(new_tokens, CharacterTokenizer.vocab_size) })
+        CharacterTokenizer.itos.update({ i:ch for i,ch in enumerate(new_tokens, CharacterTokenizer.vocab_size) })
+        CharacterTokenizer.vocab_size += len(new_tokens)
+        if CharacterTokenizer.vocab_size > 2 ** memmap.dtype.itemsize * 8 -1:
+            log.error(f'Vocab size is larger than what the memmap can store ({memmap.dtype})')
+            raise TypeError() 
+        if num_rows == 1: #memmap is one large 1d array, simply append tokens
+            memmap[CharacterTokenizer.vocab_size -1 : CharacterTokenizer.vocab_size -1 + len(text)] = CharacterTokenizer.encode(text)
+        else:   #2d array, remember index to write into
+            memmap[index_2d] = CharacterTokenizer.encode(text)
+            index_2d += 1
+        #save changes
+        memmap.flush()
+
+    def save_metadata():
         # save the meta information as well, to help us encode/decode later
         meta = {
-            'vocab_size': vocab_size,
+            'vocab_size': CharacterTokenizer.vocab_size,
             'itos': itos,
             'stoi': stoi,
         }
-        ids = array(CharacterTokenizer.encode(stoi, data), dtype=tokenizer_cfg.dtype)
-        #ids: ndarray,tokenizer_cfg: DictConfig, meta: Dict = None
-        save_tokens(ids, tokenizer_cfg, meta)

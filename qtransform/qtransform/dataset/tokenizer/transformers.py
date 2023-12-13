@@ -1,17 +1,18 @@
 from typing import List
-from qtransform.dataset.tokenizer import Tokenizer, get_files, save_tokens
+from qtransform.dataset.tokenizer import Tokenizer
 from omegaconf import DictConfig
 import logging
-from numpy import array, dtype
 import transformers
-from datasets import Dataset
-
+from datasets import Dataset#, PreTrainedTokenizer, PreTrainedTokenizerFast
+from qtransform.classloader import get_data
 
 log = logging.getLogger(__name__)
 
 class TransformersTokenizer(Tokenizer):
     """
-        Uses transformer as the tokenizer of choice.
+        Uses transformers as the tokenizer of choice.
+        You can choose between the "full" version or the fast version. Differences can be read on 
+        https://huggingface.co/docs/transformers/main_classes/tokenizer#tokenizer (from 13.12.2023)
     """
     def tokenize(tokenizer_cfg: DictConfig, hf_dataset: Dataset):
         log.debug(f'Tokenizing with parameters: {tokenizer_cfg}')
