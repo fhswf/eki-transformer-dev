@@ -15,12 +15,14 @@ import pickle
 
 log = logging.getLogger(__name__)
 
-
 @dataclass
-class TokenizerInfo:
-    wrapper: str
+class Metadata():
+    """
+        Defines the structure of pickled metadata files.
+    """
+    vocab_size: int
     encoding: str
-    dtype: dtype
+    dtype: str
 
 class Tokenizer(ABC):
     """
@@ -29,53 +31,46 @@ class Tokenizer(ABC):
         on the harddrive. The necessary configuration parameters are included in the tokenizer_config method parameter
     """
     max_token_value: int
+    vocab_size: int
+    num_tokens: int
+
+    def __init__(self, memmap: np.memmap, tokenizer_cfg: DictConfig):
+        if not isinstance(memmap, np.memmap):
+            log.error(f'Wrong type for memmap during tokenization ({memmap}, {type(memmap)})')
+            raise TypeError()
+        if len(memmap.shape) > 1 and memmap.shape[1] != 1:
+            log.error(f'The memmap needs to be one dimensional during tokenization')
+            raise ValueError()
+        if memmap.mode != 'w+':
+            log.error(f'Mode of memmap needs to be "w+" for tokenization.')
+            raise AttributeError()
+        if not isinstance(tokenizer_cfg, DictConfig):
+            log.error(f'Tokenizer config is not a DictConfig ({tokenizer_cfg})')
+            raise TypeError()
+        self.memmap = memmap
+        self.tokenizer_cfg = tokenizer_cfg
+        self.vocab_size = 0
+        self.num_tokens = 0
 
     @abstractclassmethod
-    def tokenize(memmap: np.memmap, text: str, tokenizer_cfg: DictConfig):
+    def tokenize(self, text: str):
         """
             Tokenize a text and write the result into a memmap to be retrieved later. 
-            To differentiate between datasets which contain multiple or single samples per row, 
-            the shape of the memmap is taken into consideration. 
+            The memmap is expected to be a 1d array in which the tokenized text is written continuously.
+            If it is not one dimensional, an error will be thrown.
         """
 
-    def get_memmap_dimension(memmap: np.memmap) -> Tuple[int]:
-        num_items: int = memmap.shape[0]
-        if len(memmap.shape) == 1: #entire text is one large 1d array
-            num_rows: int = 1
-        else:
-            num_rows: int = memmap_shape[1]
-        return (num_items, num_rows)
-    
     @abstractclassmethod
-    def save_metadata():
+    def save_metadata(self, filepath: str):
         pass
 
 
 import qtransform.dataset.tokenizer as package_self
 
-def get_tokenizer(tokenizer_cfg: DictConfig) -> Tokenizer:
+def get_tokenizer(tokenizer_cfg: DictConfig, memmap: np.memmap) -> Tokenizer:
     """
         Tokenizes a text based on the hydra configuration. It encodes a text based on the encoding property and saves the output with 
         the datatype dtype in a numpy array binary file. For some tokenizers like character encoding, the encoding property is ignored.
     """
-    tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.wrapper, Tokenizer)
+    tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.wrapper, Tokenizer, args={"tokenizer_cfg": tokenizer_cfg, "memmap": memmap})
     return tokenizer
-
-def save_tokens(ids: np.ndarray, tokenizer_cfg: DictConfig, meta: Dict = None) -> None:
-    """
-        Saves the tokens from an ndarray into a binary file. If meta is passed, a file containing metadata about
-        the tokens is created.
-    """
-    output_dir = concat_paths([*tokenizer_cfg.dataset_dir, "tokenized", tokenizer_cfg.encoding, ""])
-    filename = tokenizer_cfg.name + "-" + tokenizer_cfg.encoding + "-" + tokenizer_cfg.dtype
-    #directory seperator included in output_dir
-    if not exists(output_dir):
-        log.debug(f'Creating directory {output_dir}')
-        os.makedirs(output_dir, exist_ok=True)
-    if meta != None:
-        with open(output_dir + filename + '-meta.pkl', 'wb') as f:
-            pickle.dump(meta, f)
-    #write numpy array to a binary file
-    #this is inefficient for larger datasets as the entire array has to be stored within memory to be saved
-    #instead, use memmap with write permissions
-    #ids.tofile(output_dir + filename + ".bin")

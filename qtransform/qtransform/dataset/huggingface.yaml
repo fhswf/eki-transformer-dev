@@ -10,8 +10,10 @@ sizes:
 args:
   block_size: ${model.args.block_size}
   cache_dir: #or path or empty string
-  #specify how many samples a row contains. i.a. tiny_shakespeare fits its entire training data into one row, while rotten_tomatoes does not
-  samples_per_row: singular #multiple
+  #specify how many samples a row contains. 
+  #i.a. tiny_shakespeare fits its entire training data into one row (multiple), while rotten_tomatoes does not (singular)
+  #when tokenizing a dataset, the tokens are saved into a 1d memmap file 
+  samples_per_row: singular #or: multiple
   save_token_file: True
 
 defaults:

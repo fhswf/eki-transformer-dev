@@ -54,6 +54,10 @@ def run(cfg: DictConfig):
     from torch.utils.data import Dataset
     def check_dataset_size(name: str, dataset: Dataset):
         batch_size = cfg.dataset.dataloader.batch_size
+        #model which is not an llm is loaded
+        if cfg.dataset.args.get('block_size') is None:
+            log.info(f'Model for dataset {name} presumably is not an LLM as the block size has not been specified')
+            return
         block_size = cfg.dataset.args.block_size
         if batch_size * block_size > len(dataset):
             log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, causing the dataloader to skip batches. Maybe check the split size?')

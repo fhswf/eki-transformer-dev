@@ -15,7 +15,7 @@ log = logging.getLogger(__name__)
 
 class FileSystemLLMDatasetWrapper(DatasetWrapper):
     """
-        DatasetWrapper used to load .bin files from root_path and return a Dataset storing a numpy memmap
+        DatasetWrapper used to load .bin files from a dataset file and return a Dataset storing a numpy memmap
     """
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
@@ -24,44 +24,57 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
             raise KeyError()
         #currently, dtype has to be set by user. maybe it could also be automatically infered by the max tokens property of Tokenizer
         self.dtype = get_dtype(self.cfg.args.dtype)
-        # TODO find good structure for all our data
-        self.root_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
-        self.root_path = os.path.join(self.root_dir, 'data.bin')
+        #directories for untokenized and tokenized files
+        self.untokenized_dir = concat_paths([*cfg.dataset_dir, "untokenized"])
+        self.tokenized_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
+        self.dataset_file = os.path.join(self.tokenized_dir, self.cfg.name+ '-' + self.cfg.tokenizer.dtype + '.bin')
 
     def load_dataset(self):
         log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
         #check if tokenized file exists. if not, create it
-        if not os.path.exists(self.root_path):
-            os.makedirs(self.root_dir, exist_ok = True)
+        if not os.path.exists(self.dataset_file):
+            os.makedirs(self.tokenized_dir, exist_ok = True)
             #no instance, only classname
             files = self.get_untokenized_files()
-            tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer)
-            #find fitting dtype for numpy memmap
-            max_token_value = tokenizer.max_token_value
-            #TODO: you have to specify shape as the length of the memmap, meaning that each file has to be loaded 
-            #-> only support loading one large file i guess
-            memmap = np.memmap(self.root_path, dtype=self.dtype, mode='w+', shape=(1,))
+            #get length of characters of each file in order to specify the shape of memmap
+            #to do that, each file has to be read twice which is pretty inefficient
+            #maybe consider: https://numpy.org/doc/stable/reference/generated/numpy.memmap.reshape.html
+            amount_characters = 0
             for file in files:
                 with open(file, 'r') as text_file: 
-                    text = text_file.read() #entire file is read at once
-                    tokenizer.tokenize(memmap, text, self.cfg.tokenizer)
-        #TODO: find out if this could lead to memory issues if datasets are too large
-        #currently, data is retrieved continuously instead of in segments for splits
+                    chars_file = 0
+                    #should newline seperators (\n) be removed from tokens?
+                    for line in text_file:
+                        chars_file += len(line)  
+                    amount_characters += chars_file
+                    log.debug(f'File {file} has {chars_file} characters.')
+                    
+            memmap = np.memmap(self.dataset_file, dtype=self.dtype, mode='w+', shape=(amount_characters))
+            tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer, memmap=memmap)
+            #actually tokenize files, line by line
+            for file in files:
+                log.debug(f'Tokenizing file: {file} with encoding: {self.cfg.tokenizer.encoding}')
+                with open(file, 'r') as text_file: 
+                    for line in text_file:
+                        tokenizer.tokenize(line)
+            log.debug(f'Vocab size: {tokenizer.vocab_size}. Number of tokens: ')
+            memmap.flush()
+            tokenizer.save_metadata(self.tokenized_dir)
         #train
         if self.dataset_sizes.train > 0.0:
-            self.dataset_info.train = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
+            self.dataset_info.train = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
         #eval
         if self.dataset_sizes.eval > 0.0:
             percentage_eval = round(self.dataset_sizes.eval * 100)
             eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
-            self.dataset_info.eval = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+            self.dataset_info.eval = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
         #bench
         if self.dataset_sizes.bench > 0.0:
-            self.dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.test)
+            self.dataset_info.test = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.test)
         #test
         if self.dataset_sizes.test > 0.0:
             #for now, use last percent of dataset for testing
-            self.dataset_info.test = _FileSystemLLMDataset(self.root_path, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
+            self.dataset_info.test = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
 
     def get_untokenized_files(self) -> List:
         """

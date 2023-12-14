@@ -27,6 +27,7 @@ debug: False
 dataset:
   wrapper: ??? #name of dataset wrapper to use which returns an instance of type Dataset
   module: ??? #name of python file which declares wrapper class
+  name: ???
   root_path: ~/.qtransform/datasets
   #points to the directory containing the dataset used for training/validation etc. 
   #the list is composed of subentries under root_path (root_path included) in hierarchical order
