@@ -31,8 +31,7 @@ class Tokenizer(ABC):
         on the harddrive. The necessary configuration parameters are included in the tokenizer_config method parameter
     """
     max_token_value: int
-    vocab_size: int
-    num_tokens: int
+    num_tokens: int #the amount of tokens which have been encoded
 
     def __init__(self, memmap: np.memmap, tokenizer_cfg: DictConfig):
         if not isinstance(memmap, np.memmap):
@@ -49,8 +48,9 @@ class Tokenizer(ABC):
             raise TypeError()
         self.memmap = memmap
         self.tokenizer_cfg = tokenizer_cfg
-        self.vocab_size = 0
+        self.max_token_value = 0
         self.num_tokens = 0
+        log.debug(f'Creating Tokenizer with parameters: {tokenizer_cfg}')
 
     @abstractclassmethod
     def tokenize(self, text: str):
@@ -59,11 +59,32 @@ class Tokenizer(ABC):
             The memmap is expected to be a 1d array in which the tokenized text is written continuously.
             If it is not one dimensional, an error will be thrown.
         """
+        if not isinstance(text, str):
+            log.error(f'Text to tokenize is not a string')
+            raise TypeError()
 
     @abstractclassmethod
     def save_metadata(self, filepath: str):
         pass
 
+    def _save_metadata(self, filepath, meta: Dict):
+
+        if os.path.isfile(filepath):
+            directory, file_name = os.path.split(filepath)
+        else:
+            directory = filepath
+            file_name = 'meta.pkl'
+        if not exists(directory):
+            log.debug(f'Creating directory {directory}')
+            os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, file_name)
+        with open(path, 'wb') as f:
+            pickle.dump(meta, f)
+
+    def check_dtype_overflow():
+        if len(self.max_token_value) > 2 ** self.memmap.dtype.itemsize * 8 -1:
+            log.error(f'Vocab size is larger than what the dtype can store ({self.memmap.dtype})')
+            raise TypeError() 
 
 import qtransform.dataset.tokenizer as package_self
 

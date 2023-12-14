@@ -36,29 +36,22 @@ class CharacterTokenizer(Tokenizer):
         #log.debug(f'Tokenizing text:\n"{text}"\nWith parameters: {self.tokenizer_cfg}')
         #only update vocab with new characters
         new_tokens = set(text) - set(self.vocab) 
-        #remember the token of previous characters, start counting at vocab_size
+        #remember the token of previous characters, start counting at max_token_value
         self.stoi.update({ ch:i for i,ch in enumerate(new_tokens, len(self.vocab)) })
         self.itos.update({ i:ch for i,ch in enumerate(new_tokens, len(self.vocab)) })
         self.vocab.extend(new_tokens)
-        self.vocab_size += len(self.vocab)
-        if len(self.vocab) > 2 ** self.memmap.dtype.itemsize * 8 -1:
-            log.error(f'Vocab size is larger than what the memmap can store ({self.memmap.dtype})')
-            raise TypeError() 
+        self.max_token_value += len(self.vocab)
+        #self.check_dtype_overflow()
         self.memmap[self.num_tokens : self.num_tokens + len(text)] = self.encode(text)
         self.num_tokens += len(text)
 
     def save_metadata(self, directory: str):
         # save the meta information as well, to help us encode/decode later
         meta = {
-            'vocab_size': self.vocab_size,
+            'max_token_value': self.max_token_value,
             'encoding': self.tokenizer_cfg.encoding,
             'dtype': self.tokenizer_cfg.dtype,
-            'itos': itos,
-            'stoi': stoi
+            'itos': self.itos,
+            'stoi': self.stoi
         }
-        if not exists(directory):
-            log.debug(f'Creating directory {directory}')
-            os.makedirs(directory, exist_ok=True)
-        directory = join(directory, 'meta.pkl')
-        with open(directory, 'wb') as f:
-            pickle.dump(meta, f)
+        self._save_metadata(filepath, meta)

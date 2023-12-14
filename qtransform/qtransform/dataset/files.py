@@ -33,6 +33,7 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
         log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
         #check if tokenized file exists. if not, create it
         if not os.path.exists(self.dataset_file):
+            log.info(f'Tokenizing data.')
             os.makedirs(self.tokenized_dir, exist_ok = True)
             #no instance, only classname
             files = self.get_untokenized_files()
@@ -50,16 +51,23 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
                     log.debug(f'File {file} has {chars_file} characters.')
                     
             memmap = np.memmap(self.dataset_file, dtype=self.dtype, mode='w+', shape=(amount_characters))
-            tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer, memmap=memmap)
-            #actually tokenize files, line by line
-            for file in files:
-                log.debug(f'Tokenizing file: {file} with encoding: {self.cfg.tokenizer.encoding}')
-                with open(file, 'r') as text_file: 
-                    for line in text_file:
-                        tokenizer.tokenize(line)
-            log.debug(f'Vocab size: {tokenizer.vocab_size}. Number of tokens: ')
-            memmap.flush()
-            tokenizer.save_metadata(self.tokenized_dir)
+            try:
+                tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer, memmap=memmap)
+                #actually tokenize files, line by line
+                for file in files:
+                    log.debug(f'Tokenizing file: {file} with encoding: {self.cfg.tokenizer.encoding}')
+                    with open(file, 'r') as text_file: 
+                        for line in text_file:
+                            tokenizer.tokenize(line)
+                log.debug(f'Vocab size: {tokenizer.max_token_value}. Number of tokens: {tokenizer.num_tokens}')
+                memmap.flush()
+                tokenizer.save_metadata(self.tokenized_dir)
+            except Exception as e:
+                #remove broken memmap file
+                log.error(f'Something went wrong while tokenizing the dataset. Reason: {e}.\nRemoving the broken memmap file under {self.dataset_file}')
+                os.remove(self.dataset_file)
+                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
+                
         #train
         if self.dataset_sizes.train > 0.0:
             self.dataset_info.train = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
