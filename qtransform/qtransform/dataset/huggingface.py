@@ -1,78 +1,103 @@
 from dataclasses import dataclass
 from typing import Callable, List, Tuple
 from qtransform.dataset import DatasetInfo, DatasetWrapper
+from qtransform.dataset.tokenizer import get_tokenizer
 from qtransform.utils.introspection import get_classes
 import torch
 from torch.utils.data import DataLoader, Dataset
 import os
 from tqdm import tqdm
 import numpy as np
-import tiktoken
-from dataclasses import fields
-from omegaconf import DictConfig
-from datasets import load_dataset  # huggingface datasets
-from datasets import Dataset as HuggingfaceDataset # avoid naming conflict with Torch dataset
+from omegaconf import DictConfig, open_dict
+from datasets import load_dataset, concatenate_datasets
+from datasets.dataset_dict import DatasetDict
+from datasets import Dataset as HuggingfaceDataset # avoid naming conflict with Torch datasets
+from qtransform.dataset.files import _FileSystemLLMDataset
 
 import logging
 log = logging.getLogger(__name__)
 class HuggingfaceDatasetWrapper(DatasetWrapper):
-    #inspired by: https://github.com/karpathy/nanoGPT/blob/master/data/openwebtext/prepare.py#L80
+    """
+        Retrieves a huggingface datasetand returns a DatasetInfo object. Under the hood, the datasets are tokenized and written
+        into a numpy memmap file on the local user's harddrive for performance reasons. It also avoids having to load and tokenize 
+        the same datasets multiple times.
+        The implementation was inspired by Karpathy's nanoGPT preparation script for tokenizing openwebtext
+        (https://github.com/karpathy/nanoGPT/blob/master/data/openwebtext/prepare.py#L80)
+    """
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
         HuggingfaceDataset.num_proc = os.cpu_count()/2
+        if self.cfg.args.get('data_column_name') is None:
+            log.warning(f'Field data_column_name omited. Assuming column "text" to contain training data.')
+            with open_dict(self.cfg):
+                self.cfg.args["data_column_name"] = "text"
 
-    #TODO: REFACTOR
     def load_dataset(self) -> DatasetInfo:
-        #TODO:  1. check if data has been tokenized. somehow remember the tokenization of the dataset -> problem how to save metadata within tokenized data
-        #       1a. if it doesnt exist, tokenize data with configurable tokenizer
-        #       TODO: transformers tokenizer
-        #       1aa. 
-        #       2. each dataset might posssibly have a json file which contains its metadata. it can be instantiated wiht dataset.DatasetInfo 
-
-
-
+        log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
+        if not os.path.exists(self.dataset_file):
+            os.makedirs(self.tokenized_dir, exist_ok = True)
         #https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes
         #https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/loading_methods#datasets.load_dataset
-        dataset_splits = load_dataset(self.cfg.name)
+        dataset_splits: DatasetDict = load_dataset(self.cfg.name)
         #dataset = load_dataset("openwebtext") # takes 54GB in huggingface .cache dir, about 8M documents (8,013,769)
-        from transformers import AutoTokenizer, GPT2TokenizerFast
-        #tokenizer = AutoTokenizer.from_pretrained("gpt2",kwargs={"max_length": 1024})
-        # TODO cfg this
-        tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
-        #parameter is dataset containing text and other properties. only text is important
-        def tokenization(example):
-            # TODO cfg this
-            #max_length is the length of the attention mask
-            #is attention mask necessary?
-            return tokenizer(example["text"], max_length=1024, truncation=True)
-        #of type DatasetDict, contains all splits (test, validation, train)
-        #TODO: check if dataset contains other splits. if not, create them from training data
-        dataset_splits = dataset_splits.map(tokenization, batched=True)
-        dataset_info = DatasetInfo(self.cfg.name)
-        #TODO:  code is pretty similiar to FileSystemLLMDatasetWrapper, maybe modularise it
-        #TODO:  some datasets have one row, others have multiple -> ''.join()
+        #TODO: each dataset has a json file containing metadata information. this could be useful within the meta.pkl file
+        tokenizer = get_tokenizer(self.cfg.tokenizer_cfg)
+        log.debug(f'Begin tokenizing dataset.')
+        def chunk_examples(examples):
+            #perform tokenization on a handful of characters at a time
+            #from: https://huggingface.co/docs/datasets/process#split-long-examples
+            chunks = []
+            for sentence in examples["sentence1"]:
+                chunks += [sentence[i:i + 50] for i in range(0, len(sentence), 50)]
+            return {"chunks": chunks}
+        #concatenate splits into one large split, only use text column
+        dataset_splits = concatenate_datasets([x.select_columns(self.cfg.args.data_column_name) for x in dataset_splits.values()])
+        def tokenize(split):
+            #TODO: not sure if batching flag in map function reduces text length
+            #      if not, shard datasets
+            return {"input_ids": tokenizer.tokenize(split["text"])}
+        #raw text not needed, only tokens and vocabulary
+        dataset_splits = dataset_splits.map(tokenizer.tokenize, batched=True, remove_columns = "text")
+        #after concatenation, length is the total amount of tokens in entire dataset
+        length_tokens = tokenizer.num_tokens
+        batch_size = self.cfg.args.get('batches')
+        if batch_size is None:
+            batch_size = length_tokens // 10
+            log.warning(f'No batch size for huggingface tokenization specified. Defaulting to {length_tokens // 10}')
+        #write tokens into memmap
+        memmap = np.memmap(self.dataset_file, mode='w+', dtype=self.dtype, shape=(length_tokens, ))
+        for batch_id in range(batch_size):
+            batch = dataset_splits.shard(num_shards=batch_size, index=batch_id)
+            tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
+            offset = batch_id * len(tokens)
+            memmap[offset:offset+len(tokens)] = tokens
+        memmap.flush()
 
-        #since data splits are split already, no need to worry about overlapping
-        match split:
-            #10.000 tokens, size is 0.7 -> start can be between 0.0 and 0.3
-            case 'train':
-                start_size = torch.randint(100 - round(self.self.dataset_sizes.train * 100), (1,)) / 100
-                dataset_info.train = HuggingfaceDataset(dataset_splits["train"], self.cfg.args.block_size, start = start_size, end=self.dataset_sizes.train + start_size)
-                if self.dataset_sizes.eval > 0.0:
-                    eval_size = torch.randint(100 - round(self.self.dataset_sizes.eval * 100), (1,)) / 100
-                    dataset_info.eval = HuggingfaceDataset(dataset_splits["validation"], self.cfg.args.block_size, start=eval_size, end=eval_size + self.dataset_sizes.eval)
-            case 'bench':
-                bench_size = torch.randint(100 - round(self.self.dataset_sizes.bench * 100), (1,)) / 100
-                dataset_info.test = HuggingfaceDataset(dataset_splits["train"], self.cfg.args.block_size, start=bench_size, end=self.dataset_sizes.train + bench_size)
-            case 'test':
-                dataset_info.test = HuggingfaceDataset(dataset_splits["test"], self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
+        #for now, exactly the same as FileSystemLLMDatasetWrapper. TODO: refactor
+        if self.dataset_sizes.train > 0.0:
+            self.dataset_info.train = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
+        #eval
+        if self.dataset_sizes.eval > 0.0:
+            percentage_eval = round(self.dataset_sizes.eval * 100)
+            eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
+            self.dataset_info.eval = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+        #bench
+        if self.dataset_sizes.bench > 0.0:
+            self.dataset_info.test = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.test)
+        #test
+        if self.dataset_sizes.test > 0.0:
+            #for now, use last percent of dataset for testing
+            self.dataset_info.test = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
         return dataset_info
 
     def shuffle(self):
         raise NotImplementedError()
 
+#@DeprecationWarning()
 class HuggingfaceDataset(Dataset):
-    
+    """
+        Huggingface uses FileSystemLLMDataset as the tokenized files are stored as a binary file and can be loaded with numpy.memmap
+    """
     def __init__(self, hf_dataset_raw: HuggingfaceDataset, block_size: int, start: float = 0.0, end: float = 0.0):
         """
             Dataset containing huggingface data which are usable for large language models. This class should not be 

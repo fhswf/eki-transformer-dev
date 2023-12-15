@@ -24,36 +24,50 @@ class Metadata():
     encoding: str
     dtype: str
 
+
+
 class Tokenizer(ABC):
     """
-        Capsule around different implementations of tokenizers, to unify their interfaces.
-        Each TokenizerWrapper has to contain a method to tokenize the data according to an encoding and store it in a numpy array of np.dtype
-        on the harddrive. The necessary configuration parameters are included in the tokenizer_config method parameter
+        Generic wrapper around different tokenizer implementations to unify their interfaces within the project. 
+        The tokenizer is stateful, storing the number of currently tokenized tokens as well as an optional memmap
+        object to be used to write the tokens onto the harddrive. Alternatively, one could use the tokenize()
+        method to retrieve a list of tokens from a text.
     """
     max_token_value: int
     num_tokens: int #the amount of tokens which have been encoded
+    _memmap: np.memmap
 
-    def __init__(self, memmap: np.memmap, tokenizer_cfg: DictConfig):
-        if not isinstance(memmap, np.memmap):
-            log.error(f'Wrong type for memmap during tokenization ({memmap}, {type(memmap)})')
-            raise TypeError()
-        if len(memmap.shape) > 1 and memmap.shape[1] != 1:
-            log.error(f'The memmap needs to be one dimensional during tokenization')
-            raise ValueError()
-        if memmap.mode != 'w+':
-            log.error(f'Mode of memmap needs to be "w+" for tokenization.')
-            raise AttributeError()
+    def __init__(self, tokenizer_cfg: DictConfig, memmap: np.memmap = None):
         if not isinstance(tokenizer_cfg, DictConfig):
             log.error(f'Tokenizer config is not a DictConfig ({tokenizer_cfg})')
             raise TypeError()
-        self.memmap = memmap
+        log.debug(f'Creating Tokenizer with parameters: {tokenizer_cfg}')
         self.tokenizer_cfg = tokenizer_cfg
         self.max_token_value = 0
         self.num_tokens = 0
-        log.debug(f'Creating Tokenizer with parameters: {tokenizer_cfg}')
+        #tokenization can use memmap directly or simply return a list of integers
+        if memmap is not None:
+            self.memmap = memmap
+
+    @property
+    def memmap(self):
+        return self._memmap
+
+    @memmap.setter
+    def memmap(self, value: np.memmap):
+        if not isinstance(value, np.memmap):
+            log.error(f'Wrong type for memmap during tokenization ({value}, {type(value)})')
+            raise TypeError()
+        if len(value.shape) > 1 and memmap.shape[1] != 1:
+            log.error(f'The memmap needs to be one dimensional during tokenization')
+            raise ValueError()
+        if value.mode != 'w+':
+            log.error(f'Mode of memmap needs to be "w+" for tokenization.')
+            raise AttributeError()
+        self._memmap = value
 
     @abstractclassmethod
-    def tokenize(self, text: str):
+    def tokenize_memmap(self, text: str):
         """
             Tokenize a text and write the result into a memmap to be retrieved later. 
             The memmap is expected to be a 1d array in which the tokenized text is written continuously.
@@ -62,13 +76,30 @@ class Tokenizer(ABC):
         if not isinstance(text, str):
             log.error(f'Text to tokenize is not a string')
             raise TypeError()
+        if self.memmap is None:
+            log.error(f'Memmap was not set')
+            raise TypeError()
+
+    @abstractclassmethod
+    def tokenize(self, text: str) -> List[int]:
+        """
+            Tokenize a text and return the tokens in form of a list of integers.
+            Unlike tokenize_memmap, the tokens are not written into a memmap file. 
+        """
+        if not isinstance(text, str):
+            log.error(f'Text to tokenize is not a string')
+            raise TypeError()
+
 
     @abstractclassmethod
     def save_metadata(self, filepath: str):
         pass
 
     def _save_metadata(self, filepath, meta: Dict):
-
+        """
+            Saves metadata of a tokenized file from a meta object into filepath. This should include the encoding and information 
+            about the vocabulary.
+        """
         if os.path.isfile(filepath):
             directory, file_name = os.path.split(filepath)
         else:

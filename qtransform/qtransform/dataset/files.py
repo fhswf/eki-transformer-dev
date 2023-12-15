@@ -15,31 +15,33 @@ log = logging.getLogger(__name__)
 
 class FileSystemLLMDatasetWrapper(DatasetWrapper):
     """
-        DatasetWrapper used to load .bin files from a dataset file and return a Dataset storing a numpy memmap
+        DatasetWrapper used to load .bin files from a dataset file and return a DatasetInfo object containing torch.utils.Dataset instances.
+        They can be iterated over with a Dataloader, making the process of retrieving data abstract.
     """
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
         if self.cfg.args.get('dtype') is None:
             log.error(f'Missing dtype for "{self.cfg.name}" dataset.')
             raise KeyError()
-        #currently, dtype has to be set by user. maybe it could also be automatically infered by the max tokens property of Tokenizer
-        self.dtype = get_dtype(self.cfg.args.dtype)
         #directories for untokenized and tokenized files
-        self.untokenized_dir = concat_paths([*cfg.dataset_dir, "untokenized"])
-        self.tokenized_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
-        self.dataset_file = os.path.join(self.tokenized_dir, self.cfg.name+ '-' + self.cfg.tokenizer.dtype + '.bin')
+        self.untokenized_dir = concat_paths([*cfg.dataset_dir, "untokenized", ""])
 
     def load_dataset(self):
         log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
         #check if tokenized file exists. if not, create it
         if not os.path.exists(self.dataset_file):
-            log.info(f'Tokenizing data.')
             os.makedirs(self.tokenized_dir, exist_ok = True)
             #no instance, only classname
             files = self.get_untokenized_files()
+            if len(files) == 0:
+                log.error(f'No files for tokenization found under {self.untokenized_dir}')
+                raise FileNotFoundError()
+            log.debug(f'Files found: {files}')
             #get length of characters of each file in order to specify the shape of memmap
             #to do that, each file has to be read twice which is pretty inefficient
-            #maybe consider: https://numpy.org/doc/stable/reference/generated/numpy.memmap.reshape.html
+            #also, file is read with only one worker
+            #TODO: maybe use apache arrow tables as huggingface uses them for their dataset class
+            #(https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes#datasets.Dataset)
             amount_characters = 0
             for file in files:
                 with open(file, 'r') as text_file: 
@@ -48,17 +50,17 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
                     for line in text_file:
                         chars_file += len(line)  
                     amount_characters += chars_file
-                    log.debug(f'File {file} has {chars_file} characters.')
-                    
-            memmap = np.memmap(self.dataset_file, dtype=self.dtype, mode='w+', shape=(amount_characters))
+                    log.debug(f'File {file} has {amount_characters} characters.')
             try:
+                memmap = np.memmap(self.dataset_file, dtype=self.dtype, mode='w+', shape=(amount_characters))
                 tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer, memmap=memmap)
                 #actually tokenize files, line by line
                 for file in files:
                     log.debug(f'Tokenizing file: {file} with encoding: {self.cfg.tokenizer.encoding}')
                     with open(file, 'r') as text_file: 
                         for line in text_file:
-                            tokenizer.tokenize(line)
+                            #write tokens directly into memmap, do not return them
+                            tokenizer.tokenize_memmap(line)
                 log.debug(f'Vocab size: {tokenizer.max_token_value}. Number of tokens: {tokenizer.num_tokens}')
                 memmap.flush()
                 tokenizer.save_metadata(self.tokenized_dir)
@@ -90,15 +92,13 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
             To do so, the field "dataset_dir" from the hydra config is evaluated. All files from the directory "untokenized"
             within dataset_dir are returned. 
             If the directory does not exist, it is created and an empty list is returned.
-            
         """
-        main_path = concat_paths([*self.cfg.dataset_dir, "untokenized", ""])
-        if not os.path.exists(main_path):
-            log.debug(f'Creating directory {main_path}')
-            os.makedirs(main_path, exist_ok=True)
+        if not os.path.exists(self.untokenized_dir):
+            log.debug(f'Creating directory {self.untokenized_dir}')
+            os.makedirs(self.untokenized_dir, exist_ok=True)
             return []
-        log.debug(f'Checking for files with name containing {self.cfg.name} under directory: {main_path}')
-        return [x for x in glob(main_path + self.cfg.name + '*') if not os.path.isdir(x)]
+        log.debug(f'Checking for files with name containing {self.cfg.name} under directory: {self.untokenized_dir}')
+        return [x for x in glob(self.untokenized_dir + self.cfg.name + '*') if not os.path.isdir(x)]
 
     def shuffle(self):
         raise NotImplementedError()

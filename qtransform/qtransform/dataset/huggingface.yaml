@@ -9,12 +9,9 @@ sizes:
   bench: 0.3
 args:
   block_size: ${model.args.block_size}
-  cache_dir: #or path or empty string
-  #specify how many samples a row contains. 
-  #i.a. tiny_shakespeare fits its entire training data into one row (multiple), while rotten_tomatoes does not (singular)
-  #when tokenizing a dataset, the tokens are saved into a 1d memmap file 
-  samples_per_row: singular #or: multiple
-  save_token_file: True
+  cache_dir: #directorry where cached datasets are stored. default: ~/.cache/huggingface
+  data_column_name: text #name of the column that contains the training data. usually "text"
+  batches: 1000 #split dataset into shards to perform tokenization more efficiently
 
 defaults:
   - dataloader/default

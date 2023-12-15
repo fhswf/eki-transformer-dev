@@ -21,15 +21,15 @@ class TikTokenizer(Tokenizer):
             raise ValueError()
         self.max_token_value = self.encoder.max_token_value
 
-    def tokenize(self, text: str):
-        """
-            Tokenize an input from file under text_file and write the generated bin file in root_path/root_path-<encoding>.bin. 
-            Since BPE is used, it is possible that the value of tokens cannot be supported by the datatype due to insufficient amount of bits.
-        """
-        tokens = self.encoder.encode_ordinary(text)
+    def tokenize_memmap(self, text: str):
+        tokens: List[int] = self.tokenize(text)
         #self.check_dtype_overflow()
         self.memmap[self.num_tokens: self.num_tokens + len(tokens)] = tokens
+
+    def tokenize(self, text) -> List[int]:
+        tokens = self.encoder.encode_ordinary(text)
         self.num_tokens += len(tokens)
+        return tokens
 
     def save_metadata(self, filepath):
         meta = {
