@@ -39,8 +39,6 @@ class FileSystemLLMDataset(DatasetInfo, DatasetWrapper):
         #transform = transforms.Compose([ transforms.ToTensor(), transforms.Normalize((0.1307,),(0.3081,)) ])
         return train, test
 
-    
-#TODO: implement using datasets from huggingface or pytorch
 #TODO: implement download=True option
 class _FileSystemLLMDataset(Dataset):
     
@@ -70,38 +68,36 @@ class _FileSystemLLMDataset(Dataset):
         offset -= offset % self.bytes
         #skip the first start * amnt_tokens and the last amnt_tokens * end items
         log.debug(f'Tokenized file has {amnt_tokens} tokens of datatype: {dtype}. Attempting to start at token: {offset}')
-        #torch.nn.Embedding only takes inputs of type int (32b, 64b)
+        #torch.nn.Embedding only takes inputs of type int (32b, 64b) -> cast np array to 64 signed int
         self.data = np.memmap(self.token_file, dtype=self.datatype, mode='r', offset=offset)[:int(amnt_tokens * end)].astype(np.int64)
         #log.debug(f'all unique tokens in dataset: {set(self.data)}, length: {len(set(self.data))}')
         self.length = len(self.data)
         self.block_size = block_size
-        if self.length < self.block_size:
-            log.warn(f'Block size {self.block_size} is larger than the amount of tokens in dataset {self.length}')
-        
+        if self.block_size == 0:
+            log.error(f'Block size of 0 is invalid.')
+            raise ValueError()
+        if self.length <= self.block_size - 2 :
+            log.warn(f'Data samples are always going to be the same as the block size ({self.block_size}) is greater or equal to the dataset length. Setting block_size to: {self.length - 2}')
+            self.block_size = self.length - 2
+
     def __len__(self):
         return self.length
     
     #the dataloader works with batch sizes, dataset only works with indices
     def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
-        #From https://pytorch.org/docs/stable/generated/torch.from_numpy.html:
-        #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. The returned tensor is not resizable.
-        #therefore, copy part of np array or use torch.stack()
+        #make sure that block_size elements are always retrieved
+        index = min(self.length - self.block_size - 2, index + self.block_size)
         offset = index + self.block_size
-        data: torch.Tensor = torch.from_numpy(np.copy(self.data[index:offset])).to(device=device_singleton.device)
-        """
-        if offset > self.length:
-            #data Tensor currently has less than self.block_size items
-            remaining = offset - self.length
-            tensor = torch.from_numpy(np.copy(self.data[:remaining]))
-            data = torch.cat((data, tensor), 1)
-            offset = remaining
-        """
-        label_offset = offset + self.block_size       
-        if label_offset > self.length:
-            #grab a random index lower than the value of argument index
-            offset = torch.randint(index-self.block_size, (1,))
-            label_offset = offset + self.block_size
-        labels : torch.Tensor = torch.from_numpy(np.copy(self.data[offset:label_offset])).to(device=device_singleton.device)
+        #From https://pytorch.org/docs/stable/generated/torch.from_numpy.html:
+        #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. 
+        #The returned tensor is not resizable.
+        #therefore, copy part of np array or use torch.stack()
+        data: torch.Tensor = torch.from_numpy(np.copy(self.data[index:offset]))
+        #label_offset = offset + self.block_size
+        labels : torch.Tensor = torch.from_numpy(np.copy(self.data[index +1:offset+1]))
+        #maybe in custom test suite
+        #assert labels.size(dim=0) == self.block_size
+        #assert data.size(dim=0) == self.block_size
         return data, labels
 
     def _gather_files(self, file_path: str):

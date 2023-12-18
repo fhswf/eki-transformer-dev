@@ -2,9 +2,10 @@ from abc import ABC, abstractclassmethod, abstractmethod
 import logging
 import json
 from torch.nn import Module
+from torch.nn.modules import __all__ as supported_torch_layers #all layer names of torch
 from omegaconf import DictConfig, OmegaConf
 import pprint 
-from typing import List, Optional, Dict, Tuple, Union, get_args, get_origin #get_args: get raw type of wrapper -> Optional[str] is (), Dict[str, str] = (str, str)...
+from typing import Any, List, Optional, Dict, Tuple, Union, get_args, get_origin #get_args: get raw type of wrapper -> Optional[str] is (), Dict[str, str] = (str, str)...
 from dataclasses import dataclass, fields
 from qtransform.classloader import get_data
 from qtransform.utils.introspection import get_optional_type, concat_strings
@@ -13,6 +14,7 @@ from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType,
 from brevitas.jit import ScriptModule
 import yaml
 from brevitas.core import zero_point
+from qtransform.quantization.model_regex_filter import search_layers_from_module
 
 @dataclass 
 class QuantArgs:
@@ -37,7 +39,13 @@ class QuantArgs:
 
     #if scaling_impl_type = ScalingImplType.PARAMETER_FROM_STATS and scaling_stats_op = StatsOp.PERCENTILE is used:
     high_percentile_q: Optional[float] = None #
+    low_percentile_q: Optional[float] = None
     collect_stats_steps: Optional[int] = None #define the amount of steps needed to be taken to collect data for calculating scale qparam
+
+    #scaling_stats_momentum: None = None #In brevitas, only None is specified
+    
+    affine_shift_scale: Optional[bool] = None
+    scaling_stats_permute_dims: Optional[Tuple[int]] = None
 
     scaling_per_output_channel : Optional[bool] = None #per tensor or per channel quantization
     restrict_scaling_type : Optional[RestrictValueType] = None #restrict range of values that scale qparam can have
@@ -46,7 +54,16 @@ class QuantArgs:
 
     def __post_init__(self):
         self.clean_types()
-    
+
+    #def __setattr__(self, __name: str, __value: Any) -> None:
+        #IDEA: control values of dataclass with __setattr__ intsead of cleaning up types
+        #field self.fields = {x.name:x for x in fields(self)} has to be defined
+        #if __name == 'zero_point_impl':
+        #    pass
+        #else:
+        #    #TODO: cleanup, then self.__dict__[__name] = cleaned_value
+        #    pass
+
     def clean_types(self):
         """
             Clean up the data types its attributes and turn the string values into its enum representations found in brevitas.
@@ -63,15 +80,24 @@ class QuantArgs:
                 setattr(self, field.name, origin_type(current_value_for_field))
             except:
                 supported_values = list(origin_type.__members__.keys()) if isinstance(origin_type, EnumMeta) else str(origin_type)
-                log.warning(f'Quantization argument {field.name} can only take these values: {supported_values}, not \'{current_value_for_field}\' Skipping argument.')
-                setattr(self, field.name, None)
+                raise ValueError(f'Quantization argument {field.name} can only take these values: {supported_values}, not \'{current_value_for_field}\' Skipping argument.')
+                #setattr(self, field.name, None)
         #cleanup zero_point_impl field
-        if self.zero_point_impl is not None:
+        if isinstance(self.zero_point_impl, str):
             if self.zero_point_impl not in zero_point.__all__:
-                log.warning(f'Quantization argument zero_point_impl can only take these values: {zero_point.__all__}, not \'{self.zero_point_impl}\' Skipping argument.')
-                self.zero_point_impl = None
-            else: 
-                self.zero_point_impl = getattr(zero_point, self.zero_point_impl, None)
+                raise ValueError(f'Quantization argument zero_point_impl can only take these values: {zero_point.__all__}, not \'{self.zero_point_impl}\'.')
+            self.zero_point_impl = getattr(zero_point, self.zero_point_impl, None)
+        #zero_point_impl is a class
+        elif isinstance(self.zero_point_impl, type):
+            #self.zero_point_impl not in ScriptModule.__subclasses__() #ScriptModule currently is hte parent class of all zero point implementations
+            if self.zero_point_impl not in zero_point.__dict__.values():
+                raise ValueError(f'When setting zero_point in {self.__class__.__name__} to a class, it has to be within the {zero_point.__name__} module, not \'{self.zero_point_impl}\'.')
+        elif self.zero_point_impl is None:
+            #No custom zero point implementation set, use default value from quantizer specified in layer
+            pass
+        else:
+            raise ValueError(f'Quantization argument zero_point_impl can only take these values: {zero_point.__all__}, not \'{self.zero_point_impl}\'.')
+
 """
     Below are Quantizer parameters which encapsulate qparams for the different kinds of quantizers.
 """
@@ -136,6 +162,9 @@ SUPPORTED_QUANTIZERS: Dict[str, List[str]] = {
 
 from os.path import join, exists
 
+#IDEA: during post init, get default quantizer / quantizer of layer and inject quantargs with corresponding values
+#      not entirely necessary as each layer has at least default quantizer that can be subclassed from
+
 @dataclass
 class BaseQuant():
     default_quantizer: str
@@ -150,8 +179,9 @@ class BaseQuant():
         #remember how often the supplied default quantizer is not within supported modules
         failed_lookup: int = 0
         #user supplied module in which quantizer appears in, not necessary though
+        #as it is dynamically found 
         if self.quantizer_module and self.quantizer_module not in SUPPORTED_QUANTIZERS.keys():
-            log.warning(f'User specified that Quantizer \"{self.default_quantizer}\" appears in module \"{self.quantizer_module}\". This module is not supported.')
+            log.warning(f'User specified that Quantizer \"{self.default_quantizer}\" appears in module \"{self.quantizer_module}\". However it does not. Skipping value for quantizer_module.')
         for quantizer_module, quantizer_classes in SUPPORTED_QUANTIZERS.items():
             if self.default_quantizer not in quantizer_classes:
                 failed_lookup += 1
@@ -160,32 +190,67 @@ class BaseQuant():
                 self.quantizer_module = quantizer_module
                 log.debug(f'Default quantizer for {self.default_quantizer} appeared in {self.quantizer_module}')
                 break
+        #default quantizer not found within brevitas -> not supported
         if failed_lookup == len(list(SUPPORTED_QUANTIZERS.keys())):
             raise ValueError(f'Quantizer class \"{self.default_quantizer}\" did not appear in modules: {list(SUPPORTED_QUANTIZERS.keys())}')
+        #TODO: find out why unsigned values are problematic
+        elif self.default_quantizer[0].capitalize() == "U":
+            raise ValueError(f'Quantizers for unsigned values are not supported.')
         #cleanup quantargs, if present
-        if not isinstance(self.args, QuantArgs) and self.args is not None:
-            self.args = QuantArgs(**self.args)
+        if not isinstance(self.args, QuantArgs):
+            if self.args is not None:
+                self.args = QuantArgs(**self.args)
+            else:
+                self.args = QuantArgs()
         #load template config
         if self.template:
-            path_of_init = join('/'.join(__file__.split('/')[:-1]), 'model', 'templates', self.template + '.yaml')
-            #TODO: should path of template directory be configurable?
-            if not exists(path_of_init):
-                raise FileNotFoundError(f'Quantization template \"{path_of_init}\" does not exist.')
-            with open(path_of_init, 'r') as yaml_file:
-                template_yaml: Dict[str, str] = yaml.safe_load(yaml_file)
+            loaded_yaml_template = self.load_yaml_template(self.template + '.yaml', relative=True)
+            self.set_args_from_template(self.args, loaded_yaml_template)
+    
+    @staticmethod
+    def load_yaml_template(filepath: str, relative: bool = False) -> Dict:
+        """
+            Loads a template containing quantization arguments from filepath. The filepath can be relative or absolute.
+            If the filepath is relative, yaml files within the directory where the module is defined will be loaded.
+        """
+        #for now, templates are within quantization/model/templates
+        path_of_init = join('/'.join(__file__.split('/')[:-1]), 'model', 'templates', filepath) if relative else filepath
+        #append file extension just in case
+        if not match(r'.+\.yaml$', path_of_init):
+            path_of_init += '.yaml'
+        if not exists(path_of_init):
+            raise FileNotFoundError(f'Quantization template \"{path_of_init}\" does not exist.')
+        with open(path_of_init, 'r') as yaml_file:
+            template_yaml: Dict[str, str] = yaml.safe_load(yaml_file)
+        return template_yaml
+    
+    @staticmethod
+    def set_args_from_template(args: QuantArgs, loaded_yaml_template: Union[Dict, DictConfig]):
+        """
+            Sets the fields of a QuantArgs instance args with the values from a loaded template containing qparams.
+            Only arguments which have not been set within args will be set in order to prioritize qparams which have been set within
+            the model configuration. 
+        """
+        if loaded_yaml_template is None:
+            raise KeyError(f'Cannot load yaml qparameters if no loaded yaml config is given')
+        template_args = loaded_yaml_template.get('args')
+        if template_args is None:
+            raise KeyError(f'Template {filepath} is missing property \"args\" which contains the quant parameters.')
+        #all possible config options in self.args which are not set in config
+        empty_qparams = set([x.name for x in fields(args) if getattr(args, x.name, None) is None])
+        not_supported_fields = set(template_args.keys()) - set([x.name for x in fields(args)])
+        if len(not_supported_fields) > 0:
+            log.warning(f'Specified fields {not_supported_fields} in yaml template are not supported.')
+        log.debug(f'Setting args from yaml file for QuantArgs: {args}')
+        if not isinstance(args, QuantArgs):
+            raise ValueError(f'Cannot set values of type {type(args)} when loading yaml quantizer config.')
+        #only apply values from template which are not currently set and which are also supported
+        for field in set(template_args.keys()) & empty_qparams :
             #currently, arguments from model yaml file are loaded in self.args
             #the existing values should override values from template
             #therefore, only values not set in self.args attribute are looked at
-            template_args = template_yaml.get('args')
-            if not template_args:
-                log.warning(f'Template {self.template} is missing property \"args\" which contains the quant parameters. Skipping template configuration.')
-                return
-            #all possible config options in self.args which are not set in config
-            empty_qparams = set([x.name for x in fields(self.args) if getattr(self.args, x.name, None) is None])
-            #only apply values from template which are not currently set and which are also supported
-            for field in set(template_args.keys()) & empty_qparams :
-                setattr(self.args, field, template_args[field])
-        
+            setattr(args, field, template_args[field])
+        args.clean_types()
         
         
 #creating explicit classes in order to avoid future type collisions with Union[WeightQuantArgs, BiasQuantArgs, ActQuantArgs]
@@ -204,16 +269,17 @@ class ActQuant(BaseQuant):
 
 from importlib import import_module
 from types import ModuleType
-
-from re import search, subn, compile, findall, match
 import qtransform.quantization as package_self
+from re import search, subn, match
 
 @dataclass
 class LayerQuantConfig:
+    #if a field is not wrapped within Optional[], it should be set
+    #the check for existence is done within __post_init__()
     layer: Module
     quantize: bool = True #if layer is specified in config, assume that it should be quantized
     layer_type: Optional[str] = None #Linear, Embedding, MHA, ReLU ...
-    quantized_layer_class: type = None
+    #quantized_layer_type: type = None #quantized class of layer_type (QuantLinear for Linear, QuantMultiheadAttention for MultiheadAttention ...)
     name: str = None #necessary to iterate through layers in model. set by ModelQuantArgs __post_init__
     #after using a default Quantizer, it is necessary to do the injection part ourselves
     #which means creating a custom Class deriving of the base brevitas quantizer class and overriding qparams
@@ -229,17 +295,21 @@ class LayerQuantConfig:
         if self.quantize and self.layer_type == None:
             log.error(f'Layer {self.name} has to contain a property \"layer_type\" which describes its type, e.g. \"Linear\" for linear layers.')
             raise TypeError
+        #check if layer_type is the name of a torch module
+        elif self.layer_type not in supported_torch_layers:
+            log.error(f'Layer {self.layer_type} is not a valid torch.nn Module')
+            raise ValueError
         if not isinstance(self.name, str):
             try:
                 self.name = str(self.name)
             except TypeError:
                 log.error(f'Name for layer \"{self.name}\" should be of type string, not {type(self.name)}')
                 raise TypeError
-        if not self.layer:
+        if self.layer is None:
             log.error(f'Layer quantization config for {self.name} can not be applied for an empty layer')
             raise KeyError
         #cleanup layer config for non-quantizer specific properties
-        for field in (x for x in fields(self) if x.name not in ['quantized_layer_class', 'quantizers', 'layer']):
+        for field in (x for x in fields(self) if x.name not in ['quantized_layer_type', 'quantizers', 'layer']):
             if hasattr(log,"trace"): log.trace(f"Cleaning up field:  {field.name:10s}\t within layer: {self.name}")
             attr = getattr(self, field.name)
             if attr == None:
@@ -274,8 +344,8 @@ class LayerQuantConfig:
             if not isinstance(quantizer_cfg, Union[Dict, DictConfig]):
                 log.error(f'Quantizer {quantizer_name:10s}\t within layer: {self.name} is not nested.')
             #get type of quantizer in order to construct specific quantargs instance
-            assumed_quantizer_type = quantizer_cfg.get('type', default_value="")
-            if assumed_quantizer_type == "": #property not specified
+            assumed_quantizer_type = quantizer_cfg.get('type')
+            if assumed_quantizer_type is None: #property not specified
                 log.debug(f'Field "type" for quantizer {quantizer_name} of layer {self.name} not specified. Assuming type from quantizer name.')
                 assumed_quantizer_type = search(r'(weight|act|bias|input|output)', quantizer_name)
                 assumed_quantizer_type = assumed_quantizer_type.group(0) if assumed_quantizer_type else ""
@@ -290,7 +360,7 @@ class LayerQuantConfig:
                 self.quantizers[quantizer_name] = quantizer_class(**{"type": assumed_quantizer_type, **quantizer_cfg})
             except Exception as e:
                 log.error(f'Quantizer cleanup for quantizer {quantizer_name} of layer {self.name} failed due to: {e}')
-                raise TypeError
+                raise ValueError
 
     def get_layers(self) -> Tuple[str]:
         """
@@ -326,6 +396,7 @@ class LayerQuantConfig:
             #type constructor needs dict for args, not (data)class
             for field in fields(quantizer_cfg.args) if quantizer_cfg.args is not None else []:
                 quant_value = getattr(quantizer_cfg.args, field.name)
+                #only overwrite values of quantizer if it was set in config file
                 if quant_value:
                     quantizer_args[field.name] = quant_value
             #property access of class from module
@@ -343,7 +414,6 @@ class LayerQuantConfig:
                 )
         return quantizers
 
-REGEX_SEARCH_PATTERN = r'(r\'[^\']+\'|[^\.]+)' #regular expressions within config should be notated as a python raw string
 
 @dataclass
 class ModelQuantConfig:
@@ -359,7 +429,8 @@ class ModelQuantConfig:
     dtype: str
     device: str
     model: Module
-    quantized: bool = False #is self.model already quantized?
+    quantized: bool = False #does self.model contain a quantized model?
+    throw_errors_on_duplicate: bool = False #if duplicates for layers exist within config, throw error based on this field
 
     def __post_init__(self):
         """
@@ -390,9 +461,14 @@ class ModelQuantConfig:
                 continue
             #use last config of layer that is mentioned multiple times in yaml file
             elif submodules_list_string in self.layers.keys():
-                log.warning(f"""Config for layer {submodules_list_string} already exists with properties \n{self.layers[submodules_list_string]}\n. Replacing them with {pprint.PrettyPrinter(indent=1).pformat(layer_cfg)}""")
+                DUPLICATE_MSG = f"""Config for layer {submodules_list_string} already exists with properties: \n{pprint.PrettyPrinter(indent=1).pformat(self.layers[submodules_list_string])}."""
+                if self.throw_errors_on_duplicate:
+                    log.error(DUPLICATE_MSG)
+                    raise ValueError()
+                else:
+                    log.warning(DUPLICATE_MSG + f'\n\n Replacing them with:\n {pprint.PrettyPrinter(indent=1).pformat(layer_cfg)}')
             #find all layers that fit the config name
-            found_layers = ModelQuantConfig.search_layers(submodules_list_string, self.model)
+            found_layers = search_layers_from_module(submodules_list_string, self.model)
             if hasattr(log, "trace"): log.trace(f'Found layers for config {submodules_list_string}: {found_layers}')
             if len(found_layers) == 0:
                 log.error(f'No layers could be found with config: {submodules_list_string}')
@@ -404,52 +480,6 @@ class ModelQuantConfig:
             except TypeError as e:
                 log.error(f'Layer configs only support these properties: {[x.name + " (required)" if get_origin(x.type) is not Union else x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
                 raise TypeError
-    
-    @staticmethod
-    def search_layers(layer_dotted: str, model: Module) -> Dict[str, Module]:
-        """
-            Returns the name of all layers that appear inside of a model which have the pattern layer_dotted. 
-            layer_dotted is the format a layer is returned by torch.nn.Module.named_modules(), meaning:
-            sublayer.sublayer2.sublayer3.final_layer with each layer being seperated by a dot. Each sublayer can also
-            be a regex term encapsulated in python raw string notation (r'<regex-to-be-applied>'). If layer_dotted ends with a 
-            dot (sublayer.sublayer2.), the last dot is ignored and all layers of a model under sublayer.sublayer2 are found.
-        """
-        #IDEA: create list of re.match objects and filter corresponding layers of model by iterating through each match object
-        #if result is zero, log an error that no layer could be found and stop iteration
-        #after iteration, add all found layers as layerquantargs
-        #'deeply_nested_layer.deeply_nested_layer3.3'
-        all_layers_within_model = list(dict(model.named_modules()).keys())
-        #model itself is included in named_modules as ''
-        #model config currently only works for sublayers, not the entire model
-        all_layers_within_model.pop(0)
-        #split name of a layer config (layer1.layer2.quantize_layer) into its respective sublayers to check for regex
-        sublayers = findall(REGEX_SEARCH_PATTERN, layer_dotted)
-        #if len(sublayers) == 0:
-        #    print(f'Layer config {layers} is an empty string.')
-        #    raise ValueError
-        #the string which is going to be used to filter the model's layers
-        filtered_layer_string = ""
-        for sublayer in sublayers:
-            log.debug(f'going through layer: {sublayer}')
-            is_regex = match(r'r\'([^\']+)\'', sublayer)
-            if is_regex:
-                #extract actual_regex from r'actual_regex' as search is going to be done with previously iterated layers
-                #end of regex ($) cannot be used, otherwise checking stops from that regex
-                filtered_layer_string = concat_strings([filtered_layer_string, is_regex.groups()[0].replace("$", ""), "\."])
-            #problem when model for some reason has characters that variable names usually canno have, for example when
-            #creating layer names from a string
-            elif not sublayer.replace('_', '').isalnum():
-                log.error(f'Sublayer {sublayer} for layer {layer_dotted} contains special characters without being encapsulated in a regex term.')
-                raise KeyError
-            else:
-                filtered_layer_string = concat_strings([filtered_layer_string, sublayer, "\."])
-        #iteration has added one layer seperator (\.) too much
-        filtered_layer_string = filtered_layer_string[:-2]
-        search_filter = compile(filtered_layer_string + "$")
-        if hasattr(log, "trace"): log.trace(f'Pattern to be compiled: {filtered_layer_string}. Compiled: {search_filter}')
-        #search all layers for pattern
-        found_layers= list(filter(lambda string: search(search_filter, string), all_layers_within_model))
-        return {x: model.get_submodule(x) for x in found_layers}
 
 """
     Supported torch.nn modules for quantization by Brevitas:
@@ -491,10 +521,10 @@ class Quantizer(ABC):
 log = logging.getLogger(__name__)
 
 def get_quantizer(_quant_cfg: DictConfig, model: Module) -> Tuple[Quantizer, ModelQuantConfig]:
-    if not model:
+    if model is None:
         log.error(f'In order to perform quantization, the model needs to be passed.')
         raise KeyError
-    elif not _quant_cfg:
+    elif _quant_cfg is None:
         log.error(f'Error: Missing hydra quantization config for model.')
         raise KeyError
     if hasattr(log,"trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(_quant_cfg), indent=2))

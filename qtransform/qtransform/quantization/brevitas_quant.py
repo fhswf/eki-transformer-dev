@@ -47,13 +47,13 @@ class BrevitasQuantizer(Quantizer):
                 log.trace(f'Quantizing layer : {PrettyPrinter(indent=1).pformat(layer_cfg.name)}') 
             else: 
                 log.debug(f'Quantizing layer {layer_cfg.name}')
-            submodule: Module = quantized_model
+            layer_to_be_quantized: Module = quantized_model
             sublayer_names = layer_cfg.get_layers()
             #let the user know which layers specifically are not found within model
             existing_sublayer_names = str()
             for sublayer_name in sublayer_names:
                 try:
-                    submodule = submodule.get_submodule(sublayer_name)
+                    layer_to_be_quantized = layer_to_be_quantized.get_submodule(sublayer_name)
                     existing_sublayer_names += sublayer_name + '.'
                 except AttributeError:
                     error = f'Check layer \"{existing_sublayer_names}\"' if len(existing_sublayer_names) > 0 else f'The top layer {sublayer_names[0]} does not exist'
@@ -62,9 +62,9 @@ class BrevitasQuantizer(Quantizer):
             #sublayer should now contain the layer to be quantized
             quantizers = layer_cfg.get_custom_quantizers()
             if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
-            quantized_layer: Module = BrevitasQuantizer.get_quantized_layer(layer=submodule, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
+            quantized_layer: Module = BrevitasQuantizer.get_quantized_layer(layer=layer_to_be_quantized, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
             #replace current non-quantized layer with quantized layer
-            submodule.add_module(sublayer_names[-1], quantized_layer)
+            quantized_model.get_submodule('.'.join(sublayer_names[:-1])).add_module(sublayer_names[-1], quantized_layer)
         #remember that model within config is quantized
         quant_cfg.quantized = True if inplace else False
         return quantized_model
@@ -118,8 +118,7 @@ class BrevitasQuantizer(Quantizer):
         try:
             quantized_layer = quantized_layer_class(**args)
         except Exception as e:
-            #TODO: should layers be skipped or the entire quantization process fail?
-            log.error(f'Quantization for layer \"{layer_name}\" unsuccessful. Reason:\n{e}')
+            log.error(f'Quantization for layer \"{layer_name}\" unsuccessful. Reason:\n{e}. Maybe the specified quantizer needs more config args to be set?')
             raise ValueError
             #TODO: find good path for error messages
         return quantized_layer.to(device=device_singleton.device)

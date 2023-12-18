@@ -9,7 +9,7 @@ def get_model(model_cfg: DictConfig) -> nn.Module:
     log.debug(f"get_model config: {model_cfg}")
     from qtransform import model as _model
     args = model_cfg.get("args")
-    model = get_data(log, package_name = _model, class_name = model_cfg.cls, parent_class = nn.Module, args=args)
+    model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module, args=args)
     #construct model if no args have been given
     if not args:
         model = model()

@@ -1,6 +1,6 @@
 import logging
 from typing import Any
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 import os
 import torch
 from torch import nn
@@ -12,6 +12,7 @@ from datetime import datetime
 import torch.nn.functional as F
 from qtransform.utils import load_checkpoint, save_checkpoint
 from pprint import PrettyPrinter
+from qtransform import device_singleton
 
 log = logging.getLogger(__name__)
 
@@ -26,18 +27,21 @@ def run(cfg: DictConfig):
     #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
     ## note: float16 data type will automatically use a GradScaler
     #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-    from qtransform import device_singleton
     device_singleton.device = cfg.device
     device = device_singleton.device
-    if device == 'cuda':
+    if device.type == 'cuda':
         cuda_kwargs = {'pin_memory': True,}
-        cfg.dataset.dataloader.update(cuda_kwargs)
+        #struct flag of dictconf prevents additional keys to be added (https://omegaconf.readthedocs.io/en/latest/usage.html#struct-flag)
+        with open_dict(cfg.dataset.dataloader):
+            cfg.dataset.dataloader.update(cuda_kwargs)
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
     from qtransform.model import get_model
     model = get_model(cfg.model)
     model.train()
+    #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not Tensors
+    #this is a problem if a layer uses a Tensor during the forward pass that is not moved to the device inside of the class
     model.to(device)
 
     from qtransform.dataset import get_data, get_loader
@@ -59,12 +63,13 @@ def run(cfg: DictConfig):
         train_datalaoder = get_loader(data=train_datalaoder, dataloader_cfg=cfg.dataset.dataloader)
     if eval_dataoader is not None and not isinstance(eval_dataoader, data.DataLoader):
         eval_dataoader   = get_loader(data=eval_dataoader, dataloader_cfg=cfg.dataset.dataloader)
-        
 
-    # TODO dynamic optim
-    # from qtransform.optim import get_optim, get_scheduler
+    from qtransform.optim import get_optim#, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
-    optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
+    #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
+    optimizer = get_optim(model=model, optim_cfg=cfg.optim)
+    log.debug(f'Configured optimizer ({type(optimizer)}): {optimizer}')
+    # TODO dynamic scheduler
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1)
 
     last_checkpoint = None
@@ -78,7 +83,7 @@ def run(cfg: DictConfig):
         #add qat qparams (scale and zero)
         model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         #calibrate the scales for each weight and activation
-        # TODO make this a decorater so it can return stuff
+        # TODO make this a decorator so it can return stuff
         model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
     else:
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_datalaoder, eval_data_loader=eval_dataoader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
@@ -89,7 +94,7 @@ def run(cfg: DictConfig):
         from qtransform.run import export
         OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
         export.run(cfg)
-
+        
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
@@ -151,29 +156,26 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
 def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.DataLoader,
            optimizer: optim.Optimizer, mini_run: bool=False) -> Any:
     """ training loop over steps/batches """
+    model.train() #if it was quantized, it could have been set to eval
     last_loss = 0
     running_loss = 0
-    print(train_data)
-    print(next(iter(train_data)))
+    #cfg is entire hydra config
+
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
-
-        # TODO 
-        #data.to(device)
         inputs, labels = data
-        print(inputs, labels)
-        #if model.quant:
-            #fake quantize inputs
-        #    inputs = model.quant(inputs)
+        inputs = inputs.to(device_singleton.device)
+        labels = labels.to(device_singleton.device)
         if cfg.model.calc_loss_in_model:
             outputs, loss = model(inputs, labels)
         else:
             outputs = model(inputs)
             loss = F.nll_loss(outputs, labels)
-        """TODO: pytorch support maybe"""
-        #if model.dequant:
-        #    outputs = model.dequant(outputs)
         loss.backward()
+        #clip gradients to prevent vanishing/exploding gradient problem
+        # (https://neptune.ai/blog/understanding-gradient-clipping-and-how-it-can-fix-exploding-gradients-problem)
+        if isinstance(cfg.run.get("grad_clip"), float):
+            nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg.run.grad_clip)
         optimizer.step()
 
         running_loss += loss.item()
@@ -183,6 +185,9 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
         if mini_run and i>=200: # run for more than one data point
+            break
+        #dataloaders for custom implemented datasets iterate endlessly
+        elif i>= cfg.run.max_iters:
             break
     return last_loss    
 

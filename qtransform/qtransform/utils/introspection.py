@@ -88,7 +88,7 @@ def get_dtype(dtype_alias: str) -> np_dtype:
         raise KeyError()
     return dtype
 
-from typing import Union, get_origin, get_args, List
+from typing import Union, get_origin, get_args, List, Dict
 def get_optional_type(_type):
     """
         Unwraps a type which might be encapsulated in type "Optional" from the typing package.
@@ -110,3 +110,42 @@ def concat_strings(strings: List[str]) -> str:
         Concats a list of immutable strings by joining them together. 
     """
     return ''.join(strings)
+
+from torch.nn import Module
+def get_devices(model: Module) -> Dict[str, List[int]]:
+    """
+        Returns a dictionary containing the layers of a model along with the devices of each tensor within each layer.
+        The devices are represented as an integer, -1 means that the tensor is located on the cpu. Tensor.get_device() is used
+        for that. The name of a layer can be nested (transformer.layer.1.mha).
+        Example: 
+        {
+            "linear": [-1, -1]
+        } 
+        for a simple model containing one layer with two tensors located on the cpu.
+
+        Keep in mind that only the devices of instances of nn.Module and nn.parameter.Parameter are returned, regular Tensors are not.
+        Example: 
+
+            class foo(nn.Module):
+                def __init__(self, dim: tuple):
+                    super().__init__()
+                    self.attn_mask = torch.tril(torch.ones(dim))
+                def forward(self, input):
+                    pass
+        
+        The parameter dictionary of an instance of class foo is empty, as attn_mask is a Tensor which does not appear in parameters().
+        A simple fix for that is to make the attn_mask attribute of type torch.nn.parameter.Parameter with by doing:
+            self.attn_mask = torch.nn.parameter.Parameter(torch.tril(torch.ones(dim)))
+        Doing that will make device of attn_mask appear within the dictionary.
+    """
+    devices = dict()
+    #go through all parameters of model
+    
+    #go through all sublayers
+    for module_name, module in model.named_modules():
+        device_module = list()
+        for parameter in module.parameters():
+            device_module.append(parameter.get_device())
+        devices[module_name] = device_module
+    
+    return devices
