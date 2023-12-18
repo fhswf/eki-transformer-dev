@@ -47,11 +47,19 @@ def run(cfg: DictConfig):
     else:
         train_datalaoder = data_lodaer_maybe_tuple
         eval_dataoader = None
-    
+
+    if 'train' in train_datalaoder:
+        train_datalaoder = train_datalaoder['train']
+    if eval_dataoader and 'test' in eval_dataoader:
+        eval_dataoader = eval_dataoader['test']
+    if eval_dataoader and 'test' in eval_dataoader:
+        eval_dataoader = eval_dataoader['test']
+
     if not isinstance(train_datalaoder, data.DataLoader):
         train_datalaoder = get_loader(data=train_datalaoder, dataloader_cfg=cfg.dataset.dataloader)
     if eval_dataoader is not None and not isinstance(eval_dataoader, data.DataLoader):
         eval_dataoader   = get_loader(data=eval_dataoader, dataloader_cfg=cfg.dataset.dataloader)
+        
 
     # TODO dynamic optim
     # from qtransform.optim import get_optim, get_scheduler
@@ -145,13 +153,15 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     """ training loop over steps/batches """
     last_loss = 0
     running_loss = 0
-    
+    print(train_data)
+    print(next(iter(train_data)))
     for i, data in enumerate(train_data):
         optimizer.zero_grad()  # Zero your gradients for every batch
 
         # TODO 
         #data.to(device)
         inputs, labels = data
+        print(inputs, labels)
         #if model.quant:
             #fake quantize inputs
         #    inputs = model.quant(inputs)

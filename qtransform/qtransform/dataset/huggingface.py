@@ -21,11 +21,14 @@ class HuggingfaceDataset(DatasetInfo, DatasetWrapper):
 
     @classmethod
     def load_dataset(cls, cfg: DictConfig) -> Dataset:
+        log.info(f"Fetching Huggingface Dataset Info for ... {cfg.name}")
         dataset = load_dataset(cfg.name)
+        log.info(f"Dataset {cfg.name} loaded")
         #dataset = load_dataset("openwebtext") # takes 54GB in huggingface .cache dir, about 8M documents (8,013,769)
         from transformers import AutoTokenizer, GPT2TokenizerFast
         #tokenizer = AutoTokenizer.from_pretrained("gpt2",kwargs={"max_length": 1024})
         # TODO cfg this
+        log.info(f"Loading Tokenizer")
         tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
         """
             t5: T5Tokenizer (T5 model)
@@ -47,8 +50,23 @@ class HuggingfaceDataset(DatasetInfo, DatasetWrapper):
         """
         def tokenization(example):
             # TODO cfg this
+            #return tokenizer(example["text"], max_length=1024, truncation=True, padding='max_length')
             return tokenizer(example["text"], max_length=1024, truncation=True)
+        
 
+        #def collate_tokenize(data):
+        #    text_batch = [element["text"] for element in data]
+        #    tokenized = tokenizer(text_batch, padding='longest', truncation=True, return_tensors='pt')
+        #    return tokenized
+#
+        #dataloader = torch.utils.data.DataLoader(
+        #    dataset=dataset,
+        #    batch_size=batch_size,
+        #    shuffle=True,
+        #    collate_fn=collate_tokenize
+        #    )
+            
         dataset = dataset.map(tokenization, batched=True)
+
         return dataset
     

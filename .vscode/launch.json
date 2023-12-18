@@ -10,7 +10,9 @@
             "request": "launch",
             "module": "qtransform",
             "justMyCode": true,
-            "args": ["run=train", "debug=True", "model=gpt_2_small", "dataset=huggingface", "dataset.name=openwebtext"]
+            "args": ["run=train", "debug=True", "model=gpt_2_small", "dataset=huggingface", "dataset.name=openwebtext"],
+            "console": "integratedTerminal",
+            "python": "python"
         }
     ]
 }

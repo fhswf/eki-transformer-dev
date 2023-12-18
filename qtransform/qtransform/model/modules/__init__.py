@@ -60,7 +60,7 @@ class CausalSelfAttention(nn.Module):
         self.dropout = config.dropout
         self.block_size = config.block_size
         self.mha = nn.MultiheadAttention(config.n_embd, config.n_head, dropout=self.dropout, batch_first=True)
-        # self.attn_mask = torch.tril(torch.ones((config.block_size,config.block_size))) # limit to left in the input sequence
+        #self.attn_mask = torch.tril(torch.ones((config.block_size,config.block_size))) # limit to left in the input sequence
 
     def forward(self, x):
         #y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None) # Q, K, V, attn_mask y
