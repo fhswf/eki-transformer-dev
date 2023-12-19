@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from qtransform.classloader import get_data
 import logging
 from qtransform.utils.introspection import concat_paths
@@ -11,6 +11,7 @@ from os.path import isdir, exists
 import os
 import numpy as np
 import pickle
+from pprint import PrettyPrinter
 #TODO: maybe implement pytorch.utils.get_tokenizer()
 
 log = logging.getLogger(__name__)
@@ -38,7 +39,10 @@ class Tokenizer(ABC):
     _memmap: np.memmap
 
     def __init__(self, tokenizer_cfg: DictConfig, memmap: np.memmap = None):
-        if not isinstance(tokenizer_cfg, DictConfig):
+        if isinstance(tokenizer_cfg, Dict):
+            log.debug(f'Tokenizer config is of type dict. Creating DictConfig object.')
+            self.tokenizer_cfg = OmegaConf.create(tokenizer_cfg)
+        elif not isinstance(tokenizer_cfg, DictConfig):
             log.error(f'Tokenizer config is not a DictConfig ({tokenizer_cfg})')
             raise TypeError()
         log.debug(f'Creating Tokenizer with parameters: {tokenizer_cfg}')
@@ -119,10 +123,11 @@ class Tokenizer(ABC):
 
 import qtransform.dataset.tokenizer as package_self
 
-def get_tokenizer(tokenizer_cfg: DictConfig, memmap: np.memmap) -> Tokenizer:
+def get_tokenizer(tokenizer_cfg: DictConfig, memmap: np.memmap = None) -> Tokenizer:
     """
         Tokenizes a text based on the hydra configuration. It encodes a text based on the encoding property and saves the output with 
         the datatype dtype in a numpy array binary file. For some tokenizers like character encoding, the encoding property is ignored.
     """
+    log.debug(f'Attempting to retrieve tokenizer with cfg: {PrettyPrinter(indent=1).pformat(tokenizer_cfg)}')
     tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.wrapper, Tokenizer, args={"tokenizer_cfg": tokenizer_cfg, "memmap": memmap})
     return tokenizer

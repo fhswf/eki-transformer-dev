@@ -8,7 +8,6 @@ sizes: #sizes of dataset splits. if omited, assume empty sizes for splits
   test: 0.3
   bench: 1.0
 args:
-  dtype: ${data.dtype} #dtype has to exist in numpy and pytorch
   block_size: ${model.args.block_size}
 
 defaults:

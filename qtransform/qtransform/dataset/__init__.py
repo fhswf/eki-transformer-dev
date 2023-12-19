@@ -2,7 +2,7 @@ from typing import Any, Union, Dict
 from omegaconf import DictConfig, open_dict
 import logging
 from torch.utils.data import Dataset, DataLoader
-from qtransform.utils.introspection import _get_module, get_classes, concat_paths
+from qtransform.utils.introspection import _get_module, get_classes, concat_paths, get_dtype
 import qtransform.classloader
 from dataclasses import dataclass, fields
 from enum import Enum
@@ -108,7 +108,7 @@ class DatasetWrapper(ABC):
         self.tokenized_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
         self.dataset_file = join(self.tokenized_dir, self.cfg.name+ '-' + self.cfg.tokenizer.dtype + '.bin')
         #currently, dtype has to be set by user. maybe it could also be automatically infered by the max tokens property of Tokenizer
-        self.dtype = get_dtype(self.cfg.args.dtype)
+        self.dtype = get_dtype(self.cfg.tokenizer.dtype)
 
     @classmethod
     @abstractmethod

@@ -16,6 +16,7 @@ from qtransform.dataset.files import _FileSystemLLMDataset
 
 import logging
 log = logging.getLogger(__name__)
+#https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes
 class HuggingfaceDatasetWrapper(DatasetWrapper):
     """
         Retrieves a huggingface datasetand returns a DatasetInfo object. Under the hood, the datasets are tokenized and written
@@ -32,46 +33,76 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
             with open_dict(self.cfg):
                 self.cfg.args["data_column_name"] = "text"
 
+    #TODO: each dataset has a json file containing metadata information. this could be useful within the meta.pkl file
+    #https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/loading_methods#datasets.load_dataset
     def load_dataset(self) -> DatasetInfo:
         log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
         if not os.path.exists(self.dataset_file):
+            log.info(f'Begin tokenizing dataset as file: {self.dataset_file}')
             os.makedirs(self.tokenized_dir, exist_ok = True)
-        #https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes
-        #https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/loading_methods#datasets.load_dataset
-        dataset_splits: DatasetDict = load_dataset(self.cfg.name)
-        #dataset = load_dataset("openwebtext") # takes 54GB in huggingface .cache dir, about 8M documents (8,013,769)
-        #TODO: each dataset has a json file containing metadata information. this could be useful within the meta.pkl file
-        tokenizer = get_tokenizer(self.cfg.tokenizer_cfg)
-        log.debug(f'Begin tokenizing dataset.')
-        def chunk_examples(examples):
-            #perform tokenization on a handful of characters at a time
-            #from: https://huggingface.co/docs/datasets/process#split-long-examples
-            chunks = []
-            for sentence in examples["sentence1"]:
-                chunks += [sentence[i:i + 50] for i in range(0, len(sentence), 50)]
-            return {"chunks": chunks}
-        #concatenate splits into one large split, only use text column
-        dataset_splits = concatenate_datasets([x.select_columns(self.cfg.args.data_column_name) for x in dataset_splits.values()])
-        def tokenize(split):
-            #TODO: not sure if batching flag in map function reduces text length
-            #      if not, shard datasets
-            return {"input_ids": tokenizer.tokenize(split["text"])}
-        #raw text not needed, only tokens and vocabulary
-        dataset_splits = dataset_splits.map(tokenizer.tokenize, batched=True, remove_columns = "text")
-        #after concatenation, length is the total amount of tokens in entire dataset
-        length_tokens = tokenizer.num_tokens
-        batch_size = self.cfg.args.get('batches')
-        if batch_size is None:
-            batch_size = length_tokens // 10
-            log.warning(f'No batch size for huggingface tokenization specified. Defaulting to {length_tokens // 10}')
-        #write tokens into memmap
-        memmap = np.memmap(self.dataset_file, mode='w+', dtype=self.dtype, shape=(length_tokens, ))
-        for batch_id in range(batch_size):
-            batch = dataset_splits.shard(num_shards=batch_size, index=batch_id)
-            tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
-            offset = batch_id * len(tokens)
-            memmap[offset:offset+len(tokens)] = tokens
-        memmap.flush()
+            data_column_name = self.cfg.args.data_column_name
+            dataset_splits: DatasetDict = load_dataset(self.cfg.name)
+            #some datasets (tiny_shakespeare) cram their dataset in one row which makes batch processing redundant
+            for split_name in dataset_splits.keys():
+                if len(dataset_splits[split_name]) == 1:
+                    log.warning(f'Sample length of {split_name} makes batch processing redundant as data is crammed into one row')
+            log.debug(f'Begin tokenizing dataset.')
+            def chunk_examples(examples):
+                #splits the text of each row into chunks of length chunk_length. currently it is only used
+                #for character tokenization to avoid feeding large samples to the tokenizer
+                chunk_length = 100
+                #perform tokenization on a handful of characters at a time
+                #from: https://huggingface.co/docs/datasets/process#split-long-examples
+                chunks = []
+                for sentence in examples[data_column_name]:
+                    chunks += [sentence[i:i + chunk_length] for i in range(0, len(sentence), chunk_length)]
+                return {"chunks": chunks}
+
+            #concatenate splits into one large split, only use text column
+            dataset_splits = concatenate_datasets([x.select_columns(self.cfg.args.data_column_name) for x in dataset_splits.values()])
+            log.debug(f'Dataset has {len(dataset_splits)} rows.')
+            tokenizer = get_tokenizer(self.cfg.tokenizer)
+            if self.cfg.tokenizer.encoding == 'character':
+                log.debug(f'Begin chunking dataset into sentences of length 100')
+                #split individual rows into blocks of 100 characters
+                dataset_splits = dataset_splits.map(chunk_examples, batched=True, remove_columns = data_column_name)
+                log.debug(f'Dataset after chunking: {dataset_splits}')
+                log.debug(f'Example of the first chunk: "{dataset_splits["chunks"][0]}"')
+                dataset_splits = dataset_splits.map(
+                    #map function expects dictionary or dataset object, tokenize function returns list of tokens (integers)
+                    lambda batch: {"input_ids": [tokenizer.tokenize(x) for x in batch["chunks"]]}, 
+                    batched=True, 
+                    remove_columns = "chunks",
+                    desc="tokenizing the dataset from chunks")
+            else:
+                dataset_splits = dataset_splits.map(
+                    #map function expects dictionary or dataset object, tokenize function returns list of tokens (integers)
+                    lambda batch: {"input_ids": [tokenizer.tokenize(x) for x in batch[data_column_name]]},
+                    batched=True, 
+                    remove_columns = data_column_name,
+                    desc = "tokenizing the dataset")
+            if hasattr(log, "trace"): log.trace(f'Dataset split after tokenization: {dataset_splits}')
+            log.debug(f'First example: {dataset_splits["input_ids"][0]}...')
+            #after concatenation, length is the total amount of tokens in entire dataset
+            length_tokens = tokenizer.num_tokens
+            log.debug(f'Dataset has {length_tokens} tokens.')
+            batch_size = self.cfg.args.get('batches')
+            if batch_size is None or batch_size > len(dataset_splits):
+                batch_size = max(len(dataset_splits), len(dataset_splits) // 10)
+                log.info(f'Using batch size {batch_size} for memmap processing')
+            log.debug(f'Begin writing into memmap')
+            #write tokens into memmap
+            memmap = np.memmap(self.dataset_file, mode='w+', dtype=self.dtype, shape=(length_tokens, ))
+            for batch_id in range(batch_size):
+                batch = dataset_splits.shard(num_shards=batch_size, index=batch_id)
+                log.debug(f'Batch: {batch_id}/{batch_size}. Length of batch: {len(batch)}')
+                if len(batch) == 0:
+                    break
+                tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
+                offset = batch_id * len(tokens)
+                memmap[offset:offset+len(tokens)] = tokens
+            memmap.flush()
+            log.debug(f'Tokenization done.')
 
         #for now, exactly the same as FileSystemLLMDatasetWrapper. TODO: refactor
         if self.dataset_sizes.train > 0.0:
@@ -88,7 +119,6 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
         if self.dataset_sizes.test > 0.0:
             #for now, use last percent of dataset for testing
             self.dataset_info.test = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
-        return dataset_info
 
     def shuffle(self):
         raise NotImplementedError()

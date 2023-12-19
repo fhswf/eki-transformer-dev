@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset
 from omegaconf import DictConfig
-from qtransform.utils.introspection import get_classes, concat_paths, get_dtype
+from qtransform.utils.introspection import get_classes, concat_paths
 from qtransform.dataset import DatasetInfo, DatasetWrapper
 from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
 import os

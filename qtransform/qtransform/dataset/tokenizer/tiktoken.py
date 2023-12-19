@@ -12,8 +12,8 @@ class TikTokenizer(Tokenizer):
         Uses tiktoken as the tokenizer of choice. It calls encode_ordinary with an object
         containing the specified encoding, e.g. gpt2.
     """
-    def __init__(self, memmap, tokenizer_cfg):
-        super().__init__(memmap, tokenizer_cfg)
+    def __init__(self, tokenizer_cfg, memmap = None):
+        super().__init__(tokenizer_cfg = tokenizer_cfg, memmap=memmap)
         try:
             self.encoder: Encoding = get_encoding(tokenizer_cfg.encoding)
         except ValueError as e:

@@ -6,7 +6,7 @@ hydra-core
 setuptools_rust
 tiktoken
 tensorboard
-brevitas
+git+https://github.com/fhswf/brevitas@fhswf-dev
 torchvision
 typing_inspect
 qonnx
