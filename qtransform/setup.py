@@ -29,6 +29,8 @@ with open('requirements.txt') as f:
         req = line.strip()
         if not req or req.startswith(('-e', '#')):
             continue
+        if req.startswith('git+'):
+            req = str(req.split('/')[4].split('.')[0]) + " @ " + str(req)
         install_requires.append(req)
 
 if __name__ == '__main__':
