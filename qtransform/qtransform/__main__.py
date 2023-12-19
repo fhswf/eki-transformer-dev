@@ -44,6 +44,9 @@ def main(cfg: DictConfig):
         case "infer":
             from qtransform.run import infer
             return  infer.run(cfg)
+        case "inferonnx":
+            from qtransform.run import inferonnx
+            return  inferonnx.run(cfg)
         case "export":
             from qtransform.run import export
             return  export.run(cfg)

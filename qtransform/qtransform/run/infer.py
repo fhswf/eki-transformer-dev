@@ -6,6 +6,8 @@ from torch import nn
 import torch
 import tiktoken
 from torch import functional as F
+
+
 def run(cfg : DictConfig):
     """ Inference """
     log.info("=================")

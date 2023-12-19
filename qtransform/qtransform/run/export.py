@@ -36,7 +36,10 @@ def run(cfg: DictConfig):
 
     log.trace(f"Model structure: {model}")
     log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
-    sample_tensor = torch.randint(0, checkpoint['model_cfg']['args']['vocab_size'], (1, checkpoint['model_cfg']['args']['block_size']), dtype=int)
+
+    input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
+    max_token_id = checkpoint['model_cfg']['args']['vocab_size']
+    sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
 
     filename = cfg.run.from_checkpoint.split("/")[-1] + ".onnx"
     if cfg.run.get("output"):
@@ -56,19 +59,28 @@ def run(cfg: DictConfig):
         dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
                     'output' : {0 : 'batch_size'}})
     """
-    try:
-        export_qonnx(model, torch.tensor(sample_tensor), export_path="export_qonnx_" + filename, opset_version=16)
-    except Exception:
-        log.error(f"Export via {export_qonnx.__module__}.{export_qonnx.__name__} failed, reason", exc_info=True)
-    #try:
-    #    export_brevitas_onnx(model, torch.tensor(sample_tensor), export_path="export_brevitas_onnx_" + filename, opset_version=16)
-    #except:
-    #    log.error(f"Export via {export_brevitas_onnx.__module__}.{export_brevitas_onnx.__name__} failed, reason", exc_info=True)
-    try:
-        export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path="export_onnx_qcdq_onnx_" + filename, opset_version=16)
-    except:
-        log.error(f"Export via {export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__} failed, reason", exc_info=True)
-    try:
-        export(model, torch.tensor(sample_tensor), "export_torch_onnx_" + filename, opset_version=16)
-    except:
-        log.error(f"Export via {export.__module__}.{export.__name__} failed, reason", exc_info=True)
+    kwargs = {
+        "input_names" :['input', 'offsets'],   # the model's input names
+        "output_names" : ['output'],         # the model's output names
+        "dynamic_axes" :{'input' : {0 : 'batch_size'},    # variable length axes
+                        'output' : {0 : 'batch_size'}},
+        "opset_version": cfg.run.opset_version,  
+        "export_params": True,  
+    }
+    if cfg.run.export_fn == "export_qonnx":
+        try:
+            export_qonnx(model, torch.tensor(sample_tensor), export_path=f"qonnx_{str(input_dim)}_" + filename, **kwargs)
+        except Exception:
+            log.error(f"Export via {export_qonnx.__module__}.{export_qonnx.__name__} failed, reason", exc_info=True)
+   
+    if cfg.run.export_fn == "export_onnx_qcdq":             
+        try:
+            export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=f"onnx_qcdq_{str(input_dim)}_" + filename, **kwargs)
+        except:
+            log.error(f"Export via {export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__} failed, reason", exc_info=True)
+
+    if cfg.run.export_fn == "export":           
+        try:
+            export(model, torch.tensor(sample_tensor), f"onnx_{str(input_dim)}-" + filename, opset_version=opset_version,  export_params=True, **kwargs)
+        except:
+            log.error(f"Export via {export.__module__}.{export.__name__} failed, reason", exc_info=True)
