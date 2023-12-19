@@ -1,7 +1,10 @@
-from numpy import array
+from numpy import array, memmap
 from omegaconf import DictConfig
-from qtransform.dataset.tokenizer import Tokenizer, get_files, save_tokens
+from qtransform.dataset.tokenizer import Tokenizer
 import logging
+from typing import List
+import pickle
+from os.path import join, exists
 
 log = logging.getLogger(__name__)
 
@@ -14,46 +17,46 @@ class CharacterTokenizer(Tokenizer):
         vocabulary size and the corresponding mapping of characters to ids.
         The tokenization part is heavily inspired by nanoGPT (https://github.com/karpathy/nanoGPT/blob/master/data/shakespeare_char/prepare.py)
     """
-    def encode(stoi, s):
-        return [stoi[c] for c in s] # encoder: take a string, output a list of integers
-    def decode(itos, l):
-        return ''.join([itos[i] for i in l]) # decoder: take a list of integers, output a string
 
-    def tokenize(tokenizer_cfg: DictConfig):
-        """
-            The function the steps described in the class description (tokenization of files into one binary file). It is usually
-            called by the tokenizer module in order to abstract the tokenization process.
-        """
-        log.debug(f'Tokenizing with parameters: {tokenizer_cfg}')
-        chars = list()
-        #iterate through each file in the untokenized directory, only include files at top level for now
-        untokenized_files = get_files(tokenizer_cfg)
-        log.debug(f'Found files: {untokenized_files}')
-        for file in untokenized_files:
-            with open(file, 'r') as f:
-                try:
-                    data = f.read()
-                    log.debug(f"length of dataset {file} in characters: {len(data)}")
-                    # get all the unique characters that occur in this text
-                    chars.extend(sorted(list(set(data))))
-                except PermissionError:
-                    pass
-        # no files read?
-        if len(chars) == 0:
-            log.error(f'No readable files for tokenization found')
-            raise KeyError()
-        vocab_size = len(chars)
-        #log.debug("all the unique characters:", ''.join(chars))
-        #log.debug(f"vocab size: {vocab_size:,}")
-        # create a mapping from characters to integers
-        stoi = { ch:i for i,ch in enumerate(chars) }
-        itos = { i:ch for i,ch in enumerate(chars) }
+    def __init__(self, tokenizer_cfg, memmap: memmap = None):
+        super().__init__(tokenizer_cfg, memmap)
+        #python chars are at max 4B large, meaning that at the absolute most the vocab size is 2^32 (4 million)
+        #that never happens as every single unicode character would need to appear within dataset
+        self.max_token_value = 2**16 -1
+        self.stoi: dict = dict()
+        self.itos: dict = dict()
+        self.vocab = list()
+
+    def encode(self, s) -> List[int]:
+        return [self.stoi[c] for c in s] # encoder: take a string, output a list of integers
+    def decode(self, l) -> str:
+        return ''.join([self.itos[i] for i in l]) # decoder: take a list of integers, output a string
+    
+    def tokenize_memmap(self, text: str):
+        #log.debug(f'Tokenizing text:\n"{text}"\nWith parameters: {self.tokenizer_cfg}')
+        super().tokenize_memmap(text) #arg checking
+        #self.check_dtype_overflow()
+        self.memmap[self.num_tokens : self.num_tokens + len(text)] = self.tokenize(text)
+
+    def tokenize(self, text: str) -> List[int]:
+        #only update vocab with new characters
+        new_tokens = set(text) - set(self.vocab) 
+        #remember the token of previous characters, start counting at max_token_value
+        self.stoi.update({ ch:i for i,ch in enumerate(new_tokens, len(self.vocab)) })
+        self.itos.update({ i:ch for i,ch in enumerate(new_tokens, len(self.vocab)) })
+        self.vocab.extend(new_tokens)
+        self.max_token_value += len(self.vocab)
+        self.num_tokens += len(text)
+        log.debug(f'Tokenizing: {text}. num_tokens: {self.num_tokens}')
+        return self.encode(text)
+
+    def save_metadata(self, filepath: str):
         # save the meta information as well, to help us encode/decode later
         meta = {
-            'vocab_size': vocab_size,
-            'itos': itos,
-            'stoi': stoi,
+            'max_token_value': self.max_token_value,
+            'encoding': self.tokenizer_cfg.encoding,
+            'dtype': self.tokenizer_cfg.dtype,
+            'itos': self.itos,
+            'stoi': self.stoi
         }
-        ids = array(CharacterTokenizer.encode(stoi, data), dtype=tokenizer_cfg.dtype)
-        #ids: ndarray,tokenizer_cfg: DictConfig, meta: Dict = None
-        save_tokens(ids, tokenizer_cfg, meta)
+        self._save_metadata(filepath, meta)

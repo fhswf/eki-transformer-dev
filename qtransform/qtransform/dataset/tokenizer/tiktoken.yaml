@@ -1,2 +1,6 @@
 wrapper: TikTokenizer
 encoding: ???
+#if encoding is in defaults, fail run immediately 
+#problem: hydra lists configs for encoding, each of them having to be a yaml file -> more boilerplate for user friendliness
+#defaults: 
+#  - encoding: ???

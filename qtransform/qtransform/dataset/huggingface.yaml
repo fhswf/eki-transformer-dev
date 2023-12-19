@@ -1,8 +1,18 @@
-wrapper: HuggingfaceDataset #name of class within torchvision.py
+wrapper: HuggingfaceDatasetWrapper #name of class within torchvision.py
 module: huggingface
 name: ???
 type: huggingface
+sizes: 
+  train: 0.3
+  eval: 0.05
+  test: 0.05
+  bench: 0.3
 args:
+  block_size: ${model.args.block_size}
+  cache_dir: #directorry where cached datasets are stored. default: ~/.cache/huggingface
+  data_column_name: text #name of the column that contains the training data. usually "text"
+  batches: 1000 #split dataset into shards to perform tokenization more efficiently
 
 defaults:
   - dataloader/default
+  - tokenizer: transformers

@@ -24,7 +24,7 @@ def main(cfg: DictConfig):
     log = logging.getLogger(f"{__package__}.{__name__}")   
     if "trace" in cfg and cfg.trace:
         root_log.setLevel(logging.TRACE)
-        log.warn("TRACE ENABLED")
+        log.warning("TRACE ENABLED")
     elif "debug" in cfg and cfg.debug:
         root_log.setLevel(logging.DEBUG)
         log.debug("DEBUG ENABLED")
