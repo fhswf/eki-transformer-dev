@@ -1,12 +1,12 @@
 colorlog
 tzdata
-datasets~=2.14
+datasets==2.14.*
 torch 
 hydra-core
 setuptools_rust
 tiktoken
 tensorboard
-brevitas
+git+https://github.com/fhswf/brevitas.git@fhswf-dev
 torchvision
 typing_inspect
 qonnx
