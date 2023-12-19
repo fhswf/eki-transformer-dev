@@ -82,7 +82,9 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
                     remove_columns = data_column_name,
                     desc = "tokenizing the dataset")
             if hasattr(log, "trace"): log.trace(f'Dataset split after tokenization: {dataset_splits}')
-            log.debug(f'First example: {dataset_splits["input_ids"][0]}...')
+            first_example = dataset_splits["input_ids"][0] #for logging purposes
+            first_example = first_example if len(first_example) < 50 else first_example[:50]
+            log.debug(f'First example: {first_example}')
             #after concatenation, length is the total amount of tokens in entire dataset
             length_tokens = tokenizer.num_tokens
             log.debug(f'Dataset has {length_tokens} tokens.')
@@ -93,14 +95,16 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
             log.debug(f'Begin writing into memmap')
             #write tokens into memmap
             memmap = np.memmap(self.dataset_file, mode='w+', dtype=self.dtype, shape=(length_tokens, ))
+            offset = 0
             for batch_id in range(batch_size):
                 batch = dataset_splits.shard(num_shards=batch_size, index=batch_id)
                 log.debug(f'Batch: {batch_id}/{batch_size}. Length of batch: {len(batch)}')
                 if len(batch) == 0:
                     break
                 tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
-                offset = batch_id * len(tokens)
+                if hasattr(log, trace): log.debug(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
                 memmap[offset:offset+len(tokens)] = tokens
+                offset += len(tokens)
             memmap.flush()
             log.debug(f'Tokenization done.')
 
