@@ -10,6 +10,7 @@ git+https://github.com/fhswf/brevitas.git@fhswf-dev
 torchvision
 typing_inspect
 qonnx
+onnxoptimizer
 python-dateutil
 aiohttp
 pyyaml
