@@ -89,7 +89,7 @@ def run(cfg: DictConfig):
         model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         #calibrate the scales for each weight and activation
         # TODO make this a decorator so it can return stuff
-        model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
+        model = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
     else:
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
