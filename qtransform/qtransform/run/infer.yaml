@@ -1,0 +1,3 @@
+command: infer
+
+onnx_model:

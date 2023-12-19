@@ -1,0 +1,12 @@
+name: openwebtext
+type: huggingface.dataset
+sizes:
+  train: 0.20
+  test: 0.05
+  eval: 0.05
+args:
+  num_proc: 8
+  samples_per_row: singular
+defaults:
+  - tokenizer: tiktoken
+  - _self_

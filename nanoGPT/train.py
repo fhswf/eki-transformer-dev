@@ -63,16 +63,27 @@ beta2 = 0.95
 grad_clip = 1.0 # clip gradients at this value, or disable if == 0.0
 # learning rate decay settings
 decay_lr = True # whether to decay the learning rate
-warmup_iters = 2000 # how many steps to warm up for
 quantize = True # whether to quantize the model
-lr_decay_iters = 600000 # should be ~= max_iters per Chinchilla
-min_lr = 6e-5 # minimum learning rate, should be ~= learning_rate/10 per Chinchilla
-# DDP settings
-backend = 'nccl' # 'nccl', 'gloo', etc.
+grad_clip = 0.7 # clip gradients at this value, or disable if == 0.0
+# learning rate decay settings
+decay_lr = True # whether to decay the learning rate
 # system
 device = 'cuda' # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or try 'mps' on macbooks
 dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
 compile = True # use PyTorch 2.0 to compile the model to be faster
+dtype = 'bfloat16' # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler, bfloat16 was nanoGPT default?
+compile = True # use PyTorch 2.0 to compile the model to be faster
+# model components
+_transformer_active_funcs = {
+    'LeakyReLU': torch.nn.LeakyReLU,
+    'Hardswish' : torch.nn.Hardswish,
+    'ReLU6': torch.nn.ReLU6,
+    'ELU': torch.nn.ELU,
+    'CELU': torch.nn.CELU,
+    'GELU': torch.nn.CELU
+}
+transformer_active_func = 'GELU' # all valid torch.nn functions  getattr(torch.nn, transformer_active_func)
+
 # -----------------------------------------------------------------------------
 config_keys = [k for k,v in globals().items() if not k.startswith('_') and isinstance(v, (int, float, bool, str))]
 exec(open('configurator.py').read()) # overrides from command line or config file
@@ -132,7 +143,7 @@ def get_batch(split):
     return x, y
 
 # init these up here, can override if init_from='resume' (i.e. from a checkpoint)
-iter_num = 0
+iter_num = 1
 best_val_loss = 1e9
 
 # attempt to derive vocab_size from the dataset

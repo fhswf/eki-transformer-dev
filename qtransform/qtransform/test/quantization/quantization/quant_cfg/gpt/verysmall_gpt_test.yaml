@@ -1,0 +1,35 @@
+cls: gpt
+throw_errors_on_duplicate: False
+layers:
+  #word token and word position embedding
+  transformer.r'w[tp]e':
+    layer_type: Embedding
+    quantizers: 
+      weight: 
+        default_quantizer: Int8WeightPerTensorFloat
+        template: weight_round_minmax  #config in yaml files under ./templates
+        args:
+          bit_width_impl_type : CONST #is the bit width backpropagated and optimised
+          float_to_int_impl_type : ROUND #how should the quantized values be clipped to fit into the quantized datatype
+          narrow_range : TRUE #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
+          signed : True #can quantized values take on negative values
+          zero_point_impl : ZeroZeroPoint #how is zero point infered
+
+          scaling_impl_type : STATS #how the scale qparam should be calculated, for now: from statistics (weight tensors of layer)
+
+          #attributes only applied when scaling_impl_type is statistics
+          scaling_stats_op : MIN_MAX #max value, minmax etc.
+          scaling_min_val : 1e-10 #minimum value that the scale is going to have during calibration
+
+          scaling_per_output_channel : True #per tensor or per channel quantization
+          restrict_scaling_type : FP #restrict range of values that scale qparam can have
+
+          #test if args from template are really applied
+          #bit_width : 6 #bit width of quantized values
+  transformer.layer.r'[0-9]+'.mlp.r'c_.+':
+    quantize: True
+    layer_type: Linear
+    quantizers:
+      weight: 
+        default_quantizer: Int8WeightPerTensorFloat
+        template: weight_round_minmax  #config in yaml files under ./templates

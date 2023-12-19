@@ -1,4 +1,19 @@
 *.bin
 */data/*/input.txt
-.ipython*/**
-**/__pycache__
+**/data/MNIST/**
+**/.ipynb*/**
+**/__pycache__/**
+**/out/**
+**/outputs/**
+**/output/**	
+**/in/**
+**/inputs/**
+**/input/**
+**.egg-info*
+qtransform/conf/conf.json
+build/
+dist/
+*.onnx
+**/*_epoch*
+#python virtual environment
+qtransform/eki

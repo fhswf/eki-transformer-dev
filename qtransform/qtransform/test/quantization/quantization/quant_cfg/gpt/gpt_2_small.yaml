@@ -1,0 +1,119 @@
+#test config to verify correctness of quantization
+cls: gpt
+throw_errors_on_duplicate: False
+layers:
+  #word token and word position embedding
+  transformer.r'w[tp]e':
+    layer_type: Embedding
+    quantizers: 
+      weight: 
+        default_quantizer: Int8WeightPerTensorFloat
+        template: weight_round_minmax  #config in yaml files under ./templates
+        args:
+          quant_type : INT #Integer, binary, ternary, fixed point integer
+          bit_width_impl_type : CONST #is the bit width backpropagated and optimised
+          float_to_int_impl_type : ROUND #how should the quantized values be clipped to fit into the quantized datatype
+          narrow_range : TRUE #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
+          signed : True #can quantized values take on negative values
+          zero_point_impl : ZeroZeroPoint #how is zero point infered
+
+          scaling_impl_type : STATS #how the scale qparam should be calculated, for now: from statistics (weight tensors of layer)
+
+          #attributes only applied when scaling_impl_type is statistics
+          scaling_stats_op : MIN_MAX #max value, minmax etc.
+          scaling_min_val : 1e-10 #minimum value that the scale is going to have during calibration
+
+          scaling_per_output_channel : True #per tensor or per channel quantization
+          restrict_scaling_type : FP #restrict range of values that scale qparam can have
+
+          #test if args from template are really applied
+          #bit_width : 6 #bit width of quantized values
+  #check if config are applied by regex already
+  #should throw warning
+  transformer.wte:
+    layer_type: Embedding
+    quantizers: 
+      weight: 
+        default_quantizer: Int8WeightPerTensorFloat
+        template: ""  #config in yaml files under ./templates
+        args:
+          quant_type : INT #Integer, binary, ternary, fixed point integer
+          bit_width_impl_type : CONST #is the bit width backpropagated and optimised
+          float_to_int_impl_type : ROUND #how should the quantized values be clipped to fit into the quantized datatype
+          narrow_range : TRUE #clip max value of data type (e.g. for 8 bits: -128:127 instead of -127:127)
+          signed : True #can quantized values take on negative values
+          zero_point_impl : ZeroZeroPoint #how is zero point infered
+
+          scaling_impl_type : PARAMETER_FROM_STATS #how the scale qparam should be calculated, for now: from statistics (weight tensors of layer)
+
+          #attributes only applied when scaling_impl_type is statistics
+          scaling_stats_op : MAX #max value, minmax etc.
+          scaling_min_val : 1e-3 #minimum value that the scale is going to have during calibration
+
+          scaling_per_output_channel : False #per tensor or per channel quantization
+          restrict_scaling_type : POWER_OF_TWO #restrict range of values that scale qparam can have
+
+          #test if args from template are really applied
+          #bit_width : 6 #bit width of quantized values
+
+  transformer.wpe:
+    layer_type: Embedding
+    quantizers:
+      weight:
+        default_quantizer: Int8ActPerTensorFloatMSE
+
+  transformer.dropout:
+    layer_type: Dropout
+  #layernorm does not exist within brevitas
+  #transformer.ln_out:
+  #  layer_type: LayerNorm
+  #another config for the same layer exists in form of a regex string -> last one should be applied
+  transformer.layer.1.attn.mha:
+    quantize: True
+    layer_type: MultiheadAttention
+    quantizers: 
+      weight:
+        type: weight #if unspecified, infer type from name 
+        default_quantizer: Int8WeightPerTensorFloat
+        template: ""
+        args:
+      in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+        type: weight
+        default_quantizer: Int8WeightPerTensorFloat
+        template: ""
+        args:
+  transformer.layer.1.mlp.c_fc:
+    quantize: True
+    layer_type: Linear
+  transformer.layer.1.mlp.c_proj:
+    quantize: True
+    layer_type: Linear
+  transformer.layer.1.mlp.active:
+    quantize: True
+    layer_type: ReLU
+
+  #regex test
+  #transformer.layer.r'[2-4]'.attn.mha currently fails if the model does not have more than 2 layers -> ignore regex or just exit with an error?
+  transformer.layer.r'[0-4]'.attn.mha:
+    quantize: True
+    layer_type: MultiheadAttention  
+    quantizers:
+      in_proj_weight_quant: #mha has multiple weight quantizers, each having a different name (in_proj_weight_quant, out_proc_weight_quant)
+        type: weight
+        default_quantizer: Int8WeightPerChannelFloat
+        template: ""
+        args:
+          bit_width: 5
+      out_proj_weight_quant:
+        type: weight
+        default_quantizer: Int8WeightPerChannelFloat
+        template: ""
+        args:
+          bit_width: 7
+  transformer.layer.r'[0-9]+'.mlp.r'c_.+':
+    quantize: True
+    layer_type: Linear
+    quantizers:
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
+        template: weight_round_minmax

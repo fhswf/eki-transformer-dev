@@ -1,0 +1,28 @@
+command: train
+
+always_save_checkpoint : True # if True, always save a checkpoint after each eval
+init_from : 'scratch' # 'scratch' or 'resume' or 'gpt2*'
+# model_chkpt_dir: ${oc.env:HOME}
+model_dir: models
+epochs: 10
+gradient_accumulation_steps : 5 * 8 # used to simulate larger batch sizes, leave empty for no accumulation
+flash: False
+export: True ## perform an export after #epochs are done
+max_iters : 600000 # total number of training iterations
+save_epoch_interval: 1
+log_steps_interval : 10
+grad_clip : 0.7 # clip gradients at this value, or disable if :: 0.0
+
+## old stuff:
+
+validation_epoch_interval : 1000
+validation_iters : 200
+
+#moved optimizer stuff (lr, optimizer class, lr decay) to qtransform.optim
+
+# run params for export, if export =True
+# TODO make this better aka not t duplicate
+export_fn: export_qonnx  # brevitas export ot troch onnx.export #  can be export, export_brevitas_onnx, export_qonnx, export_onnx_qcdq
+opset_version: 16
+
+do_constant_folding: True ### found in the onnx docs, not sure what this does, param for opnnx.export func, currently unsused

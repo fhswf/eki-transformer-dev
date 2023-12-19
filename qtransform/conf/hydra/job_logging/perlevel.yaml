@@ -1,0 +1,44 @@
+version: 1
+formatters:
+  simple:
+    format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+  color:
+    (): colorlog.LevelFormatter
+    fmt: 
+      DEBUG: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
+      INFO: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
+      WARNING: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
+      ERROR: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s %(pathname)s:%(lineno)d] - %(message_log_color)s%(message)s%(reset)s'
+      CRITICAL: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s %(pathname)s:%(lineno)d] - %(message_log_color)s%(message)s%(reset)s'
+      TRACE: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s, %(filename)s:%(lineno)d%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
+    reset: True
+    log_colors:
+      TRACE:    'purple'
+      DEBUG:    'blue'
+      INFO:     'green'
+      WARNING:  'yellow'
+      ERROR:    'red'
+      CRITICAL: 'red,bg_white'
+    secondary_log_colors:
+      message: 
+        TRACE:   'purple'
+        DEBUG:    'blue'
+        INFO:     'green'
+        WARNING:  'yellow'
+        ERROR:    'red'
+        CRITICAL: 'bold_red'
+
+handlers:
+  #https://docs.python.org/3/library/logging.handlers.html
+  console:
+    class: logging.StreamHandler
+    formatter: color
+    stream: ext://sys.stdout
+  jobfile:
+    class: logging.handlers.WatchedFileHandler #RotatingFileHandler,TimedRotatingFileHandler
+    formatter: simple
+    filename: "${hydra.runtime.output_dir}/log.txt"
+root:
+  handlers: [console, jobfile]
+
+disable_existing_loggers: false
