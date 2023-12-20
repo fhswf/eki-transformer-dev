@@ -1,0 +1,5 @@
+#in this directory, you can define templates for quantization of weights, biases and activations in order to use the same config
+#for multiple layers without repeating yourself.
+kind: weight
+args:
+  bit_width: 4
