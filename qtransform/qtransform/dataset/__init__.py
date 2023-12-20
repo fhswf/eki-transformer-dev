@@ -3,7 +3,8 @@ from omegaconf import DictConfig, open_dict
 import logging
 from torch.utils.data import Dataset, DataLoader
 from qtransform.utils.introspection import _get_module, get_classes, concat_paths, get_dtype
-import qtransform.classloader
+import qtransform
+from qtransform import classloader
 from dataclasses import dataclass, fields
 from enum import Enum
 from os.path import join
@@ -145,7 +146,7 @@ class DatasetWrapper(ABC):
 
 def get_data(dataset_cfg: DictConfig) -> DatasetWrapper:
     import qtransform.dataset as package_self
-    dataset_wrapper: DatasetWrapper = qtransform.classloader.get_data(log, package_self, dataset_cfg.wrapper, DatasetWrapper, args={"cfg": dataset_cfg})
+    dataset_wrapper: DatasetWrapper = classloader.get_data(log, package_self, dataset_cfg.wrapper, DatasetWrapper, args={"cfg": dataset_cfg})
     return dataset_wrapper
 
 def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:

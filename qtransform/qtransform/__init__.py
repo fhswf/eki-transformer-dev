@@ -6,6 +6,21 @@ log = getLogger(__name__)
 def get_module_config_path():
     return os.path.join('/'.join(__file__.split('/')[:-2]), 'qtransform' , 'conf')
 
+def main(cfg):
+    """Run this app like amodule, Note: cfg is a Hydra config (OmegaConf Object)"""
+    from qtransform import  __main__ as mn
+    mn.main(cfg)
+
+def notebook_run(args):
+    from hydra import initialize, initialize_config_module, initialize_config_dir, compose
+    from omegaconf import OmegaConf
+    import qtransform 
+    with initialize_config_dir(version_base=None, config_dir=qtransform.get_module_config_path()):
+        cfg = compose(config_name="config.yaml", overrides=args)
+        print(cfg)
+        main(cfg)
+
+
 class DeviceSingleton:
     """
         Boilerplate class which contains the device used for the entire process. The reason why a class is created is in order to monitor when changes
