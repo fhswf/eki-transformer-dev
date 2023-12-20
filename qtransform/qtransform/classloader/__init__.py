@@ -19,5 +19,6 @@ def get_data(log: Logger, package_name: ModuleType, class_name: str, parent_clas
     #construct an object with given parameters
     #TODO: consider if this is a good idea
     if args:
+        log.debug(f'Passing arguments {args} to class: {data_wrapper}')
         return data_wrapper(**args)    
     return data_wrapper

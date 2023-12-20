@@ -47,7 +47,7 @@ class CharacterTokenizer(Tokenizer):
         self.vocab.extend(new_tokens)
         self.max_token_value += len(self.vocab)
         self.num_tokens += len(text)
-        log.debug(f'Tokenizing: {text}. num_tokens: {self.num_tokens}')
+        #log.debug(f'Tokenizing: {text}. num_tokens: {self.num_tokens}')
         return self.encode(text)
 
     def save_metadata(self, filepath: str):

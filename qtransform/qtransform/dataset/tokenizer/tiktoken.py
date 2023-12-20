@@ -24,7 +24,8 @@ class TikTokenizer(Tokenizer):
     def tokenize_memmap(self, text: str):
         tokens: List[int] = self.tokenize(text)
         #self.check_dtype_overflow()
-        self.memmap[self.num_tokens: self.num_tokens + len(tokens)] = tokens
+        offset = self.num_tokens
+        self.memmap[offset: offset + len(tokens)] = tokens
 
     def tokenize(self, text) -> List[int]:
         tokens = self.encoder.encode_ordinary(text)

@@ -42,11 +42,6 @@ dataset:
     test: ???
     bench: ???
   tokenizer: 
-      dataset_dir: 
-        - ${dataset.root_path}
-        - ${dataset.name}
-      #name of dataset
-      name: ${dataset.name}
       dtype: ${data.dtype}
 seed: 1234567890
 

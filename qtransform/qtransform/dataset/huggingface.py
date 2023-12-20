@@ -84,7 +84,7 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
             if hasattr(log, "trace"): log.trace(f'Dataset split after tokenization: {dataset_splits}')
             first_example = dataset_splits["input_ids"][0] #for logging purposes
             first_example = first_example if len(first_example) < 50 else first_example[:50]
-            log.debug(f'First example: {first_example}')
+            #log.debug(f'First example: {first_example}')
             #after concatenation, length is the total amount of tokens in entire dataset
             length_tokens = tokenizer.num_tokens
             log.debug(f'Dataset has {length_tokens} tokens.')
@@ -96,16 +96,22 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
             #write tokens into memmap
             memmap = np.memmap(self.dataset_file, mode='w+', dtype=self.dtype, shape=(length_tokens, ))
             offset = 0
-            for batch_id in range(batch_size):
-                batch = dataset_splits.shard(num_shards=batch_size, index=batch_id)
-                log.debug(f'Batch: {batch_id}/{batch_size}. Length of batch: {len(batch)}')
-                if len(batch) == 0:
-                    break
-                tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
-                if hasattr(log, trace): log.debug(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
-                memmap[offset:offset+len(tokens)] = tokens
-                offset += len(tokens)
-            memmap.flush()
+            try:
+                for batch_id in range(batch_size):
+                    batch = dataset_splits.shard(num_shards=batch_size, index=batch_id)
+                    log.debug(f'Batch: {batch_id}/{batch_size}. Length of batch: {len(batch)}')
+                    if len(batch) == 0:
+                        break
+                    tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
+                    if hasattr(log, "trace"): log.debug(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
+                    memmap[offset:offset+len(tokens)] = tokens
+                    offset += len(tokens)
+                memmap.flush()
+            except Exception as e:
+                #remove broken memmap file
+                log.error(f'Something went wrong while tokenizing the dataset. Reason: {e}.\nRemoving the broken memmap file under {self.dataset_file}')
+                os.remove(self.dataset_file)
+                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
             log.debug(f'Tokenization done.')
 
         #for now, exactly the same as FileSystemLLMDatasetWrapper. TODO: refactor

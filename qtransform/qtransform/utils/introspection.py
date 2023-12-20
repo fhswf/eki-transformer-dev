@@ -24,7 +24,7 @@ def get_classes(module: ModuleType, parent_class: type):
     
     classes = {}
     for p in pkgutil.iter_modules(paths):
-        m = importlib.import_module(package + "." + p[1])
+        m = importlib.import_module(package + "." + p[1]) #p[1] is the module name
         for name, obj in inspect.getmembers(m):
             if parent_class is not None: 
                 if inspect.isclass(obj) and issubclass(obj, parent_class):
