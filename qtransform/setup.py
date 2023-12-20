@@ -14,7 +14,7 @@ setup_args = dict(
     author_email="kuhmichel.max@fh-swf.de",
     url="https://github.com/eki-project/transformers",
     license="MIT",
-    python_requires=">=3.10",
+    python_requires=">=3.8",
     include_package_data=True,
     entry_points={
      'console_scripts': [
