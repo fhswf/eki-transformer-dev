@@ -14,7 +14,7 @@ setup_args = dict(
     author_email="kuhmichel.max@fh-swf.de",
     url="https://github.com/eki-project/transformers",
     license="MIT",
-    python_requires=">=3.10",
+    python_requires=">=3.8",
     include_package_data=True,
     entry_points={
      'console_scripts': [
@@ -29,6 +29,8 @@ with open('requirements.txt') as f:
         req = line.strip()
         if not req or req.startswith(('-e', '#')):
             continue
+        if req.startswith('git+'):
+            req = str(req.split('/')[4].split('.')[0]) + " @ " + str(req)
         install_requires.append(req)
 
 if __name__ == '__main__':

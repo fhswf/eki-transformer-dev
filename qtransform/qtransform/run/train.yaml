@@ -19,3 +19,10 @@ validation_epoch_interval : 1000
 validation_iters : 200
 
 #moved optimizer stuff (lr, optimizer class, lr decay) to qtransform.optim
+
+# run params for export, if export =True
+# TODO make this better aka not t duplicate
+export_fn: export_qonnx  # brevitas export ot troch onnx.export #  can be export, export_brevitas_onnx, export_qonnx, export_onnx_qcdq
+opset_version: 16
+
+do_constant_folding: True ### found in the onnx docs, not sure what this does, param for opnnx.export func, currently unsused

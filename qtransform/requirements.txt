@@ -3,6 +3,7 @@ tzdata
 datasets==2.14.*
 torch 
 hydra-core
+setuptools>=62.4
 setuptools_rust
 tiktoken
 tensorboard
@@ -10,6 +11,7 @@ git+https://github.com/fhswf/brevitas.git@fhswf-dev
 torchvision
 typing_inspect
 qonnx
+onnxoptimizer
 python-dateutil
 aiohttp
 pyyaml
