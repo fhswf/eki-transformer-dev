@@ -1,6 +1,10 @@
 from logging import getLogger
+import os
 from torch import device, cuda, backends
 log = getLogger(__name__)
+
+def get_module_config_path():
+    return os.path.join('/'.join(__file__.split('/')[:-2]), 'conf')
 
 class DeviceSingleton:
     """

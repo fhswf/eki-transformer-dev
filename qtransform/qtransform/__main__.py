@@ -2,11 +2,11 @@ import os
 import hydra
 from omegaconf import DictConfig, OmegaConf
 import logging
+import qtransform
 from qtransform.utils import addLoggingLevel
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 
-_p = os.path.join('/'.join(__file__.split('/')[:-2]), 'conf')
-@hydra.main(version_base=None, config_path=_p, config_name="config.yaml")
+@hydra.main(version_base=None, config_path=qtransform.get_module_config_path(), config_name="config.yaml")
 def cli_wrapper(cfg: DictConfig):
     """ 
     this function exsists so that one can call qtransform from cli with prepending "python -m ".
