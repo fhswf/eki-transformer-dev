@@ -23,7 +23,10 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
                 log.error(f"Checkpoint {checkpoint_path} is not a file")
                 raise FileNotFoundError
         elif not os.path.isabs(cfg.run.model_dir) and not os.path.isabs(cfg.run.from_checkpoint):
-            chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
+            try:
+                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
+            except:
+                chkpt_folder = os.getcwd()
             checkpoint_path = os.path.join(chkpt_folder, cfg.run.from_checkpoint)
 
     log.info(f"Loading checkpoint from {checkpoint_path}")
@@ -48,7 +51,10 @@ def save_checkpoint(cfg: DictConfig, model: nn.Module, optimizer, timestamp:date
         if os.path.isabs(cfg.run.model_dir):
             chkpt_folder = cfg.run.model_dir
         else:
-            chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
+            try:
+                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
+            except:
+                chkpt_folder = os.getcwd()
     os.makedirs(chkpt_folder, exist_ok=True)
     if epoch % cfg.run.save_epoch_interval == 0:
         checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{timestamp}__epoch:{epoch}')

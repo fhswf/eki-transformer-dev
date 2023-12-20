@@ -29,9 +29,9 @@ handlers:
     formatter: color
     stream: ext://sys.stdout
   jobfile:
-    class: logging.handlers.WatchedFileHandler #RotatingFileHandler,TimedRotatingFileHandler
+    class: logging.handlers.RotatingFileHandler #RotatingFileHandler,TimedRotatingFileHandler
     formatter: simple
-    filename: "${hydra.runtime.output_dir}/log.txt"
+    filename: "log.txt"
 root:
   handlers: [console, jobfile]
 
