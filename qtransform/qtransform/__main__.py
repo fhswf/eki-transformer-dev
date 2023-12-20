@@ -14,7 +14,7 @@ def cli_wrapper(cfg: DictConfig):
     """
     main(cfg)
 
-@hydra.main(version_base=None, config_path="../conf", config_name="config.yaml")
+@hydra.main(version_base=None, config_path="conf", config_name="config.yaml")
 def module_wrapper(cfg: DictConfig):
     main(cfg)
 
