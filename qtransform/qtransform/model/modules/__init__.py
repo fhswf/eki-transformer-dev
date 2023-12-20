@@ -77,7 +77,7 @@ class CausalSelfAttention(nn.Module):
 
     def forward(self, x):
         # this if block is needed for toprch <2.21 where flash attention onnx export does not work
-        if not type(self.mha).__name__ == "QuantMultiheadAttention" or (not self.flash) or torch.__version__[3] < 2:
+        if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash) or torch.__version__[3] < 2:
 
             #log.warn("Using slower self attention for non quantized execution if torch does not support it or if flash == False")
             B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
