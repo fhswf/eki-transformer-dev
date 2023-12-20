@@ -3,6 +3,7 @@ tzdata
 datasets==2.14.*
 torch 
 hydra-core
+setuptools>=62.4
 setuptools_rust
 tiktoken
 tensorboard
