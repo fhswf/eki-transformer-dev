@@ -1,6 +1,7 @@
 import torch
 from torch import nn 
 from torch.nn import functional as F
+from qtransform.model import modules as custom_nn
 import math
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
 def new_gelu(x):
@@ -9,17 +10,27 @@ def new_gelu(x):
     Reference: Gaussian Error Linear Units (GELU) paper: https://arxiv.org/abs/1606.08415
     """
     return 0.5 * x * (1.0 + torch.tanh(math.sqrt(2.0 / math.pi) * (x + 0.044715 * torch.pow(x, 3.0))))
-    
+
 class LayerNorm(nn.Module):
     """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
-    def __init__(self, ndim, bias):
+    def __init__(self, bias, ndim):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(ndim))
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
 
     def forward(self, input):
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
+class BatchNorm(nn.BatchNorm1d):
+    """ BatchNorm but with an optional bias. PyTorch doesn't support simply bias=False """
+
+    def __init__(self, ndim, bias,  *args, **kwargs):
+        super().__init__(ndim, *args, **kwargs)
+        #self.weight = nn.Parameter(torch.ones(ndim))
+        self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
+
+    def forward(self, input, *args, **kwargs):
+        return super().forward(input, *args, **kwargs)
     
 from typing import Optional
 from brevitas.inject.defaults import Uint8ActPerTensorFloat
@@ -130,9 +141,18 @@ class TransformerBlock(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        self.ln_1 = LayerNorm(config.n_embd, bias=config.bias)
+        norm_size = None
+        if config.norm_layer == "LayerNorm":
+            norm_size = config.n_embd
+        elif config.norm_layer == "BatchNorm":
+            norm_size = config.block_size
+        else:
+            raise AttributeError("can determine model for norm layer: " + config.norm_layer)
+        ln_1 = getattr(custom_nn, config.norm_layer, None)
+        ln_2 = getattr(custom_nn, config.norm_layer, None)
+        self.ln_1 = ln_1(norm_size, bias=config.bias)
         self.attn = CausalSelfAttention(config)
-        self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
+        self.ln_2 = ln_2(norm_size, bias=config.bias)
         self.mlp = MLP(config)
 
     def forward(self, x):

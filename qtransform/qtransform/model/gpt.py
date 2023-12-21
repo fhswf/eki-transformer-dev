@@ -6,7 +6,8 @@ from typing import Optional
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
-from qtransform.model.modules import LayerNorm, TransformerBlock 
+from qtransform.model.modules import LayerNorm, TransformerBlock
+from qtransform.model import modules as custom_nn
 from brevitas import nn as qnn
 import logging
 log = logging.getLogger(__name__)
@@ -41,6 +42,7 @@ class GPTConfig:
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
     flash: bool = False # cuda flas hattention
     transformer_active_func: str = 'ReLU' #specify which activation function to use in MLP (feed forwad neural network)
+    norm_layer: str = 'BatchNorm' # note that this is a name for a adapter module in this repository und model.modules
 
 from dataclasses import fields
 class GPT(nn.Module):
@@ -53,12 +55,23 @@ class GPT(nn.Module):
         assert config.vocab_size is not None
         assert config.block_size is not None
         log.info(f"Model config: {self.config}")
+
+        norm_size = None
+        if config.norm_layer == "LayerNorm":
+            norm_size = config.n_embd
+        elif config.norm_layer == "BatchNorm":
+            norm_size = config.block_size
+        else:
+            raise AttributeError("can determine model for norm layer: " + config.norm_layer)
+        
+        ln_out = getattr(custom_nn, config.norm_layer, None)
+
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
             wpe = nn.Embedding(config.block_size, config.n_embd),
             dropout = nn.Dropout(config.dropout),
             layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
-            ln_out = LayerNorm(config.n_embd, bias=config.bias),
+            ln_out = ln_out(norm_size, bias=config.bias),
         ))
         self.linear_out = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
