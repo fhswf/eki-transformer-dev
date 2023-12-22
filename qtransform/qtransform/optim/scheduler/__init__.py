@@ -2,6 +2,7 @@ from torch import optim
 from torch.optim import lr_scheduler
 from omegaconf import DictConfig
 from logging import getLogger
+from pprint import PrettyPrinter
 
 log = getLogger(__name__)
 
@@ -17,13 +18,13 @@ def get_scheduler(optimizer: optim.Optimizer, scheduler_cfg: DictConfig) -> lr_s
         log.error(f'Specified optimizer ({optimizer}) is not of type optim.Optimizer')
         raise KeyError()
     if not isinstance(scheduler_cfg, DictConfig):
-        log.error(f'Specified scheduler ({scheduler_cfg}) is not of type omegaconf.DictConfig')
+        log.error(f'Specified scheduler config ({pprint.PrettyPrinter(indent=1).pformat(scheduler_cfg)}) is not of type omegaconf.DictConfig')
         raise KeyError()
     if not scheduler_cfg.decay_lr:
         return None
     if not scheduler_cfg.warmup_iters:
         log.warning(f'No warmup iters specified')
     warmup_scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
-
+    #TODO: config this
     scheduler = SequentialLR(optimizer, [warmup_scheduler, train_scheduler], [number_warmup_epochs])
     return scheduler

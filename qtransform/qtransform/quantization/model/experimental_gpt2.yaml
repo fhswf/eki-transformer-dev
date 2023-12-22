@@ -14,9 +14,9 @@ layers:
     transformer.dropout: 
       quantize: True
       layer_type: Dropout #no quantizers for dropout possible, what is the default behavior then?
-    transformer.ln_out:
-      quantize: True
-      layer_type: BatchNorm2d #avoid LayerNorm
+    #transformer.ln_out:
+    #  quantize: True
+    #  layer_type: BatchNorm1d #avoid LayerNorm
     linear_out:
       quantize: True
       layer_type: Linear
@@ -30,9 +30,9 @@ layers:
           args:
             bit_width: 4
     #transformer heads
-    transformer.layer.r'[0-9]+'.r'ln_[0-9]':
-      quantize: True
-      layer_type: BatchNorm2d #avoid LayerNorm
+    #transformer.layer.r'[0-9]+'.r'ln_[0-9]':
+    #  quantize: True
+    #  layer_type: BatchNorm1d #avoid LayerNorm
     #Feed forward neural network
     transformer.layer.r'[0-9]+'.mlp.r'c_.+':
       quantize: True
@@ -42,10 +42,11 @@ layers:
           default_quantizer: Int8WeightPerTensorFloat
           args:
             bit_width: 4
-        bias:
-          default_quantizer: Int8Bias
-          args:
-            bit_width: 4
+        #error: input scale required. kind of weird as the quant config is the same as the linear_out layer
+        #bias:
+        #  default_quantizer: Int8Bias
+        #  args:
+        #    bit_width: 4
 
     transformer.layer.r'[0-9]+'.mlp.active:
       quantize: True

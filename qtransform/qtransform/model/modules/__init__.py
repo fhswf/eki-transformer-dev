@@ -24,12 +24,13 @@ class LayerNorm(nn.Module):
 class BatchNorm(nn.BatchNorm1d):
     """ BatchNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
-    def __init__(self, ndim, bias,  *args, **kwargs):
-        super().__init__(ndim, *args, **kwargs)
+    def __init__(self, num_features, bias,  *args, **kwargs): #arg names need to be identical to torch argnames for quantization support
+        super().__init__(num_features, *args, **kwargs)
         #self.weight = nn.Parameter(torch.ones(ndim))
-        self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
+        self.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
 
     def forward(self, input, *args, **kwargs):
+        #bias is not used currently, fix?
         return super().forward(input, *args, **kwargs)
     
 from typing import Optional
@@ -88,7 +89,7 @@ class CausalSelfAttention(nn.Module):
 
     def forward(self, x):
         # this if block is needed for toprch <2.21 where flash attention onnx export does not work
-        if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash) or torch.__version__[3] < 2:
+        if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash) or torch.__version__ < (2,21):
 
             #log.warn("Using slower self attention for non quantized execution if torch does not support it or if flash == False")
             B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
@@ -147,7 +148,7 @@ class TransformerBlock(nn.Module):
         elif config.norm_layer == "BatchNorm":
             norm_size = config.block_size
         else:
-            raise AttributeError("can determine model for norm layer: " + config.norm_layer)
+            raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
         ln_1 = getattr(custom_nn, config.norm_layer, None)
         ln_2 = getattr(custom_nn, config.norm_layer, None)
         self.ln_1 = ln_1(norm_size, bias=config.bias)

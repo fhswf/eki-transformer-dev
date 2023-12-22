@@ -32,6 +32,9 @@ class TikTokenizer(Tokenizer):
         self.num_tokens += len(tokens)
         return tokens
 
+    def decode(self, idx: List[int]) -> str:
+        return self.tokenizer.decode(idx)
+        
     def save_metadata(self, filepath):
         meta = {
             'max_token_value': self.max_token_value,

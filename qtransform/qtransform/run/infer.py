@@ -47,7 +47,7 @@ def run(cfg : DictConfig):
 
 def infer(cfg: DictConfig, model: nn.Module, device: Any):
     """
-    Sample from a trained model
+    Sample from a trained model. It prints the predicted words onto stdout
     """
     # -----------------------------------------------------------------------------
     start = "\n" # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
@@ -59,14 +59,14 @@ def infer(cfg: DictConfig, model: nn.Module, device: Any):
 
     from qtransform.utils import load_checkpoint
     load_checkpoint(cfg=cfg)
-    if torch.__version__ >= 2.0:
+    if torch.__version__ >= (2,0):
         model = torch.compile(model) # requires PyTorch 2.0 (optional)
 
-    # ok let's assume gpt-2 encodings by default
-    log.warn("assuming GPT-2 encodings...")
-    enc = tiktoken.get_encoding("gpt2")
-    encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
-    decode = lambda l: enc.decode(l)
+    # load tokenizer to decode tokens properly
+    from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
+    tokenizer: Tokenizer = get_tokenizer(cfg.tokenizer)
+    encode = tokenizer.tokenize
+    decode = tokenizer.decode
 
     # encode the beginning of the prompt
     if start.startswith('FILE:'):
@@ -92,6 +92,7 @@ def generate(model, idx, max_new_tokens, temperature=1.0, top_k=None):
         # if the sequence context is growing too long we must crop it at block_size
         idx_cond = idx if idx.size(1) <= model.config.block_size else idx[:, -model.config.block_size:]
         # forward the model to get the logits for the index in the sequence
+        # therefore, the forward call of each model should return the ids 
         logits, _ = model(idx_cond)
         # pluck the logits at the final step and scale by desired temperature
         logits = logits[:, -1, :] / temperature

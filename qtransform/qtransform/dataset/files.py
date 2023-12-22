@@ -163,9 +163,11 @@ class _FileSystemLLMDataset(Dataset):
         """
             Returns inputs and labels. Called when iterating with e.g. a dataloader.
         """
-        #assert index >= 0
+        if index < 0:
+            index += len(self)
         #lower index to make sure that block_size elements are always retrieved
-        index = min(self.length - self.block_size - 2, index + self.block_size)
+        if index + self.block_size > len(self) - 1:
+            index = self.length - self.block_size - 2
         offset = index + self.block_size
         #From https://pytorch.org/docs/stable/generated/torch.from_numpy.html:
         #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. 

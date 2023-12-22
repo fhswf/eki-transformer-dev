@@ -133,7 +133,6 @@ class GPT(nn.Module):
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.linear_out(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
             loss = None
-
         return logits, loss
 
     def crop_block_size(self, block_size):

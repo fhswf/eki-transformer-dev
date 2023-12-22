@@ -94,6 +94,12 @@ class Tokenizer(ABC):
             log.error(f'Text to tokenize is not a string')
             raise TypeError()
 
+    @abstractclassmethod
+    def decode(self, idx: List[int]) -> str:
+        """
+            Decodes a list of tokens into a sentence.
+        """
+        pass
 
     @abstractclassmethod
     def save_metadata(self, filepath: str):

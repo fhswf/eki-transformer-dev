@@ -30,6 +30,7 @@ class CharacterTokenizer(Tokenizer):
     def encode(self, s) -> List[int]:
         return [self.stoi[c] for c in s] # encoder: take a string, output a list of integers
     def decode(self, l) -> str:
+        #TODO: load vocab
         return ''.join([self.itos[i] for i in l]) # decoder: take a list of integers, output a string
     
     def tokenize_memmap(self, text: str):

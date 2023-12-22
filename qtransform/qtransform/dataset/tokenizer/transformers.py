@@ -49,6 +49,9 @@ class TransformersTokenizer(Tokenizer):
         self.num_tokens += len(tokens)
         return tokens
 
+    def decode(self, idx: List[int]) -> str:
+        return self.tokenizer.decode(idx)
+
     def save_metadata(self, filepath: str):
         # save the meta information as well, to help us encode/decode later
         meta = {
