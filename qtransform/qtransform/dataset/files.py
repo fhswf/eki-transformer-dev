@@ -120,6 +120,12 @@ class _FileSystemLLMDataset(Dataset):
         if not isinstance(end, float) or end <= 0.0 or end > 1.0:
             log.error(f'Invalid ending range for dataset ({end})')
             raise KeyError()
+        if not isinstance(dtype, np.dtype): #np.dtype("dtype") or np.<dtype> e.g.: np.dtype("float32") or np.float32
+            try:
+                dtype = np.dtype(dtype) #not an instance (np.float32)
+            except TypeError as e:
+                log.error(e)
+                raise TypeError
         self.block_size = block_size
         if self.block_size <= 0:
             log.error(f'Block size of 0 is invalid.')
