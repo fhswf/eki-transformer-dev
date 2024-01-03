@@ -127,6 +127,19 @@ class Tokenizer(ABC):
             log.error(f'Vocab size is larger than what the dtype can store ({self.memmap.dtype})')
             raise TypeError() 
 
+    def save_vocab(filepath: str) -> None:
+        """
+            Saves the vocabulary of a tokenized dataset under filepath.
+        """
+        pass
+
+    def load_vocab(filepath: str) -> None:
+        """
+            Loads the vocabulary of a file. Currently only used for character tokenizers, not for
+            pretrained ones such as gpt2.
+        """    
+        pass
+
 import qtransform.dataset.tokenizer as package_self
 
 def get_tokenizer(tokenizer_cfg: DictConfig, memmap: np.memmap = None) -> Tokenizer:

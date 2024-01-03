@@ -1,3 +1,12 @@
 command: infer
 
+model_dir: models
+from_checkpoint: ??? #filename of checkpoint to load
+
+num_samples: 10 #generate num_samples 
+max_new_tokens: 500
+temperature: 0.8
+top_k: 200
+start: "\n" #generates text starting with #start (\n, "<|endoftext|>" or etc.) Can also specify a file, use as: "FILE:prompt.txt"
+
 onnx_model:

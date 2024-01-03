@@ -14,23 +14,29 @@ def new_gelu(x):
 class LayerNorm(nn.Module):
     """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
-    def __init__(self, bias, ndim):
+    def __init__(self, ndim, bias):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(ndim))
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
 
     def forward(self, input):
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
+
 class BatchNorm(nn.BatchNorm1d):
     """ BatchNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
     def __init__(self, num_features, bias,  *args, **kwargs): #arg names need to be identical to torch argnames for quantization support
+        self.num_features = num_features
         super().__init__(num_features, *args, **kwargs)
         #self.weight = nn.Parameter(torch.ones(ndim))
         self.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
 
     def forward(self, input, *args, **kwargs):
-        #bias is not used currently, fix?
+        #dirty workaround to avoid runtimeerrors by adding a padding if the input is smaller than the feature length
+        #TODO: add masking to avoid artificially lowering mean
+        """if input.size(1) < self.num_features:
+            #input tensor should always be three dimensional
+            input = torch.cat((input, torch.zeros(input.size(0), self.num_features - input.size(1), input.size(-1))), dim=1)"""
         return super().forward(input, *args, **kwargs)
     
 from typing import Optional

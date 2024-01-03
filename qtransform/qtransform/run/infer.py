@@ -5,8 +5,24 @@ from omegaconf import DictConfig
 from torch import nn
 import torch
 import tiktoken
-from torch import functional as F
+from torch.nn import functional as F
+from qtransform import device_singleton
+from dataclasses import dataclass
 
+@dataclass
+class InferConfig():
+    command: str =  "infer"
+
+    start: str = "\n"
+    model_dir: str = "models"
+    from_checkpoint: str = None #filename of checkpoint to load
+
+    num_samples: int = 10 #generate num_samples 
+    max_new_tokens: int = 500
+    temperature: float = 0.8
+    top_k: int = 200
+
+    onnx_model: str = None
 
 def run(cfg : DictConfig):
     """ Inference """
@@ -14,27 +30,15 @@ def run(cfg : DictConfig):
     log.info("Running Inference")
     log.info("=================")
     
-    cuda = None
-    device = None
-    if "cuda" in cfg:
-        cuda = cfg.cuda and torch.cuda.is_available()
-    else:
-        cuda = torch.cuda.is_available()
-    mps = None
-    if "mps" in cfg:
-        mps = cfg.mps and torch.backends.mps.is_available()
-    else:
-        mps = torch.backends.mps.is_available()
+    device_singleton.device = cfg.device
+    device = device_singleton.device
 
     torch.manual_seed(cfg.seed)    
-    if cuda:
-        device = torch.device("cuda")
+    if device.type == "cuda":
         cuda_kwargs = {'pin_memory': True,}
-        cfg.dataset.dataloader.update(cuda_kwargs)
-    elif mps:
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
+        #struct flag of dictconf prevents additional keys to be added (https://omegaconf.readthedocs.io/en/latest/usage.html#struct-flag)
+        with open_dict(cfg.dataset.dataloader):
+            cfg.dataset.dataloader.update(cuda_kwargs)
     log.info(f"using device: {str(device)}")
 
     from qtransform.model import get_model
@@ -42,29 +46,33 @@ def run(cfg : DictConfig):
     model.eval()
     model.to(device)
 
-    return infer(cfg, model)
-
+    return infer(cfg, model, device)
 
 def infer(cfg: DictConfig, model: nn.Module, device: Any):
     """
     Sample from a trained model. It prints the predicted words onto stdout
     """
     # -----------------------------------------------------------------------------
-    start = "\n" # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
-    num_samples = 10 # number of samples to draw
-    max_new_tokens = 500 # number of tokens generated in each sample
-    temperature = 0.8 # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
-    top_k = 200 # retain only the top_k most likely tokens, clamp others to have 0 probability
+    infer_cfg: InferConfig = InferConfig(**cfg.run)
+    start = infer_cfg.start
+    num_samples = infer_cfg.num_samples # number of samples to draw
+    max_new_tokens = infer_cfg.max_new_tokens # number of tokens generated in each sample
+    temperature = infer_cfg.temperature # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
+    top_k = infer_cfg.top_k # retain only the top_k most likely tokens, clamp others to have 0 probability
     # -----------------------------------------------------------------------------
 
     from qtransform.utils import load_checkpoint
-    load_checkpoint(cfg=cfg)
+    epoch, checkpoint = load_checkpoint(cfg=cfg)
     if torch.__version__ >= (2,0):
         model = torch.compile(model) # requires PyTorch 2.0 (optional)
-
     # load tokenizer to decode tokens properly
+    # tokenizer info saved in checkpoint
     from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
-    tokenizer: Tokenizer = get_tokenizer(cfg.tokenizer)
+    tokenizer_cfg = checkpoint.get("tokenizer_cfg")
+    if tokenizer_cfg is None:
+        log.warning(f'Model checkpoint does not contain tokenizer information. Using tokenizer info from config')
+        tokenizer_cfg = cfg.dataset.tokenizer
+    tokenizer: Tokenizer = get_tokenizer(tokenizer_cfg)
     encode = tokenizer.tokenize
     decode = tokenizer.decode
 
@@ -92,7 +100,7 @@ def generate(model, idx, max_new_tokens, temperature=1.0, top_k=None):
         # if the sequence context is growing too long we must crop it at block_size
         idx_cond = idx if idx.size(1) <= model.config.block_size else idx[:, -model.config.block_size:]
         # forward the model to get the logits for the index in the sequence
-        # therefore, the forward call of each model should return the ids 
+        # the results should not be softmaxed yet as they will be later within this function
         logits, _ = model(idx_cond)
         # pluck the logits at the final step and scale by desired temperature
         logits = logits[:, -1, :] / temperature
