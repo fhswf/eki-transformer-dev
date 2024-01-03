@@ -28,6 +28,7 @@ class CharacterTokenizer(Tokenizer):
         self.vocab = list()
 
     def encode(self, s) -> List[int]:
+        #TODO: check if characters appear in vocabulary
         return [self.stoi[c] for c in s] # encoder: take a string, output a list of integers
     def decode(self, l) -> str:
         #TODO: load vocab

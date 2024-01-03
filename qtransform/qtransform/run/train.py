@@ -152,7 +152,14 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
-            last_checkpoint = save_checkpoint(cfg=cfg, model=model, optimizer=optimizer, timestamp=timestamp, epoch=epoch, metrics=metrics, model_cfg=cfg.model)
+            last_checkpoint = save_checkpoint(cfg=cfg, 
+                model=model, 
+                optimizer=optimizer, 
+                timestamp=timestamp, 
+                epoch=epoch, 
+                metrics=metrics, 
+                model_cfg=cfg.model, 
+                tokenizer_cfg=cfg.dataset.tokenizer)
 
         # advance learning rate
         scheduler.step()
