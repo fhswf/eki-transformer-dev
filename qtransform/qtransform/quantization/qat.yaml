@@ -6,4 +6,3 @@ defaults:
   - model: ???
 model:
   dtype: ${data.dtype}
-  device: ${device}

@@ -49,8 +49,7 @@ seed: 1234567890
 #backend : 'nccl' # 'nccl', 'gloo', etc.
 
 model: 
-  calc_loss_in_model: False #loss is not calculated in model
+  calc_loss_in_model: False
 
 quantization:
   quantize: False
-  device: ${device}
