@@ -22,6 +22,8 @@ class InferConfig():
     temperature: float = 0.8
     top_k: int = 200
 
+    to_file: str = None
+
     onnx_model: str = None
 
 def run(cfg : DictConfig):
@@ -40,15 +42,9 @@ def run(cfg : DictConfig):
         with open_dict(cfg.dataset.dataloader):
             cfg.dataset.dataloader.update(cuda_kwargs)
     log.info(f"using device: {str(device)}")
+    infer(cfg, device)
 
-    from qtransform.model import get_model
-    model = get_model(cfg.model)
-    model.eval()
-    model.to(device)
-
-    return infer(cfg, model, device)
-
-def infer(cfg: DictConfig, model: nn.Module, device: Any):
+def infer(cfg: DictConfig, device: Any):
     """
     Sample from a trained model. It prints the predicted words onto stdout
     """
@@ -61,17 +57,34 @@ def infer(cfg: DictConfig, model: nn.Module, device: Any):
     top_k = infer_cfg.top_k # retain only the top_k most likely tokens, clamp others to have 0 probability
     # -----------------------------------------------------------------------------
 
+    #load model from checkpoint
     from qtransform.utils import load_checkpoint
     epoch, checkpoint = load_checkpoint(cfg=cfg)
+    model_cfg = checkpoint.get('model_cfg')
+    if model_cfg is None:
+        log.warning(f'No model config in checkpoint specified. Inferring from hydra config.')
+        model_cfg = cfg.get("model")
+    if model_cfg is None:
+        log.error(f'No model config specified.')
+        raise KeyError()
+
+    from qtransform.model import get_model
+    model = get_model(model_cfg)
+    model.eval()
+    model.to(device)
+
     if torch.__version__ >= (2,0):
         model = torch.compile(model) # requires PyTorch 2.0 (optional)
     # load tokenizer to decode tokens properly
-    # tokenizer info saved in checkpoint
+    # tokenizer info saved in checkpoint or in hydra config
     from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
     tokenizer_cfg = checkpoint.get("tokenizer_cfg")
     if tokenizer_cfg is None:
         log.warning(f'Model checkpoint does not contain tokenizer information. Using tokenizer info from config')
-        tokenizer_cfg = cfg.dataset.tokenizer
+        tokenizer_cfg = cfg.dataset.get("tokenizer")
+    if tokenizer_cfg is None:
+        log.error(f'Tokenizer configuration neither specified in model checkpoint nor in hydra config.')
+        raise KeyError()
     tokenizer: Tokenizer = get_tokenizer(tokenizer_cfg)
     encode = tokenizer.tokenize
     decode = tokenizer.decode

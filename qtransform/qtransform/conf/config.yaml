@@ -9,8 +9,8 @@ hydra:
     - pkg://qtransform
 defaults:
   - _self_
-  - model: ???
-  - dataset: ???
+  - model: 
+  - dataset: 
   - optim: default
   - run: ???
   - quantization: None

@@ -81,8 +81,7 @@ def run(cfg: DictConfig):
     # lets go
     quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:    
-        log.debug(f'Running quantized model')    
-        quant_cfg.device = device.type
+        log.debug(f'Running quantized model')
         from qtransform.quantization import get_quantizer
         quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         #add qat qparams (scale and zero)
