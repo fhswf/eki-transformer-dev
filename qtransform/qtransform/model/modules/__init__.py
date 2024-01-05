@@ -37,7 +37,9 @@ class BatchNorm(nn.BatchNorm1d):
         n,c,l = input.size()
         if c < self.num_features:
             #input tensor should always be three dimensional
-            input = torch.cat((input, torch.zeros(n, self.num_features - c, l)), dim=1)
+            #TODO: maybe move padding creation to constructor since batch_size and embedding does not change
+            padding = torch.zeros(n, self.num_features - c, l)
+            input = torch.cat((input, padding), dim=1)
         input = super().forward(input, *args, **kwargs)
         #remove padding 
         index = torch.tile(torch.arange(c).reshape(c,1), (n,1,l))
