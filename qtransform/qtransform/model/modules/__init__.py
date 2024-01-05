@@ -23,7 +23,7 @@ class LayerNorm(nn.Module):
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
 
 class BatchNorm(nn.BatchNorm1d):
-    """ BatchNorm but with an optional bias. PyTorch doesn't support simply bias=False """
+    """ BatchNorm but with an optional bias and padding to support variable input length. PyTorch doesn't support simply bias=False """
 
     def __init__(self, num_features, bias,  *args, **kwargs): #arg names need to be identical to torch argnames for quantization support
         self.num_features = num_features
@@ -33,12 +33,16 @@ class BatchNorm(nn.BatchNorm1d):
 
     def forward(self, input, *args, **kwargs):
         #dirty workaround to avoid runtimeerrors by adding a padding if the input is smaller than the feature length
-        #TODO: add masking to avoid artificially lowering mean
-        """if input.size(1) < self.num_features:
+        #padding does not artificially lower mean as normalization is performed along the word embeddings
+        n,c,l = input.size()
+        if c < self.num_features:
             #input tensor should always be three dimensional
-            input = torch.cat((input, torch.zeros(input.size(0), self.num_features - input.size(1), input.size(-1))), dim=1)"""
-        return super().forward(input, *args, **kwargs)
-    
+            input = torch.cat((input, torch.zeros(n, self.num_features - c, l)), dim=1)
+        input = super().forward(input, *args, **kwargs)
+        #remove padding 
+        index = torch.tile(torch.arange(c).reshape(c,1), (n,1,l))
+        return torch.gather(input=input, dim=1, index=index)
+
 from typing import Optional
 from brevitas.inject.defaults import Uint8ActPerTensorFloat
 
@@ -118,7 +122,6 @@ class CausalSelfAttention(nn.Module):
             #QuantMultiheadAttention does not have is_causal in constructor -> use attention mask instead
             y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
-           
         return y
         
 from logging import getLogger
@@ -129,7 +132,6 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
         self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
-        #self.activation = nn.ReLU6()
         self.active  = getattr(nn, config.transformer_active_func, None)
         if not self.active:
             log.error(f'{config.transformer_active_func} is not a valid activation function. Check property transformer_active_func')
