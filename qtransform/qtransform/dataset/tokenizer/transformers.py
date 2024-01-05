@@ -40,10 +40,10 @@ class TransformersTokenizer(Tokenizer):
     def tokenize_memmap(self, text: str):
         super().tokenize_memmap(text) #arg checking
         offset = self.num_tokens
-        tokens = self.tokenize(text)
+        tokens = self.encode(text)
         self.memmap[offset : offset + len(tokens)] = tokens
 
-    def tokenize(self, text) -> List[int]:
+    def encode(self, text) -> List[int]:
         #truncation is not performed in this case as only the ids are important currently
         tokens: list[int] = self.tokenizer(text)["input_ids"]
         self.num_tokens += len(tokens)
@@ -58,6 +58,10 @@ class TransformersTokenizer(Tokenizer):
             'max_token_value': self.max_token_value,
             'encoding': self.tokenizer_cfg.encoding,
             'dtype': self.tokenizer_cfg.dtype,
+            'module' : 'transformers',
             'fast': self.tokenizer_cfg.fast
         }
         self._save_metadata(filepath, meta)
+        
+    def load_metadata(self, file: str):
+        pass

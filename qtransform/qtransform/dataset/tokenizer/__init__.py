@@ -85,7 +85,7 @@ class Tokenizer(ABC):
             raise TypeError()
 
     @abstractclassmethod
-    def tokenize(self, text: str) -> List[int]:
+    def encode(self, text: str) -> List[int]:
         """
             Tokenize a text and return the tokens in form of a list of integers.
             Unlike tokenize_memmap, the tokens are not written into a memmap file. 
@@ -103,12 +103,20 @@ class Tokenizer(ABC):
 
     @abstractclassmethod
     def save_metadata(self, filepath: str):
+        """
+            Saves metadata of a tokenized file as well as information about the tokenizer into filepath. 
+            The information includes, but is not limited to: encoding, tokenizer_module, max_token_value.
+            If character tokenization is used, the vocabulary is saved within the metadata file as well.
+
+            args:
+                filepath: the filepath. if filepath is a directory, meta.pkl is appended to it.
+        """
         pass
 
     def _save_metadata(self, filepath, meta: Dict):
         """
             Saves metadata of a tokenized file from a meta object into filepath. This should include the encoding and information 
-            about the vocabulary.
+            about the vocabulary. 
         """
         if os.path.isfile(filepath):
             directory, file_name = os.path.split(filepath)
@@ -121,24 +129,17 @@ class Tokenizer(ABC):
         path = os.path.join(directory, file_name)
         with open(path, 'wb') as f:
             pickle.dump(meta, f)
+    
+    @abstractclassmethod
+    def load_metadata(self, file: str):
+        if not os.path.isfile(filepath):
+            log.error(f'Error while loading metadata for class {self.__class__.__name__}: "{filepath}" is not a file')
+            raise ValueError()
 
     def check_dtype_overflow():
         if len(self.max_token_value) > 2 ** self.memmap.dtype.itemsize * 8 -1:
             log.error(f'Vocab size is larger than what the dtype can store ({self.memmap.dtype})')
             raise TypeError() 
-
-    def save_vocab(filepath: str) -> None:
-        """
-            Saves the vocabulary of a tokenized dataset under filepath.
-        """
-        pass
-
-    def load_vocab(filepath: str) -> None:
-        """
-            Loads the vocabulary of a file. Currently only used for character tokenizers, not for
-            pretrained ones such as gpt2.
-        """    
-        pass
 
 import qtransform.dataset.tokenizer as package_self
 

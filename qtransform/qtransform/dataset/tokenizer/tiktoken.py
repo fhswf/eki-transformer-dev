@@ -22,12 +22,12 @@ class TikTokenizer(Tokenizer):
         self.max_token_value = self.encoder.max_token_value
 
     def tokenize_memmap(self, text: str):
-        tokens: List[int] = self.tokenize(text)
+        tokens: List[int] = self.encode(text)
         #self.check_dtype_overflow()
         offset = self.num_tokens
         self.memmap[offset: offset + len(tokens)] = tokens
 
-    def tokenize(self, text) -> List[int]:
+    def encode(self, text) -> List[int]:
         tokens = self.encoder.encode_ordinary(text)
         self.num_tokens += len(tokens)
         return tokens
@@ -43,3 +43,7 @@ class TikTokenizer(Tokenizer):
             'dtype': self.tokenizer_cfg.dtype
         }
         self._save_metadata(filepath, meta)
+    
+    def load_metadata(self, file: str):
+        #not used currently, metadata in tiktoken tokenizer
+        pass

@@ -109,7 +109,11 @@ class DatasetWrapper(ABC):
         self.tokenized_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
         self.dataset_file = join(self.tokenized_dir, self.cfg.name+ '-' + self.cfg.tokenizer.dtype + '.bin')
         #currently, dtype has to be set by user. maybe it could also be automatically infered by the max tokens property of Tokenizer
-        self.dtype = get_dtype(self.cfg.tokenizer.dtype)
+        if self.cfg.tokenizer.get('dtype') is None:
+            log.debug(f'Dtype for dataset omited. Assuming default: Int64')
+            self.dtype = get_dtype('Int64')
+        else:
+            self.dtype = get_dtype(self.cfg.tokenizer.dtype)
 
     @classmethod
     @abstractmethod

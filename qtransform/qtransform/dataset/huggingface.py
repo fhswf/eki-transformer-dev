@@ -107,6 +107,7 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
                     memmap[offset:offset+len(tokens)] = tokens
                     offset += len(tokens)
                 memmap.flush()
+                tokenizer.save_metadata(self.tokenized_dir)
             except Exception as e:
                 #remove broken memmap file
                 log.error(f'Something went wrong while tokenizing the dataset. Reason: {e}.\nRemoving the broken memmap file under {self.dataset_file}')

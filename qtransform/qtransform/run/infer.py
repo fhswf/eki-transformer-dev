@@ -86,7 +86,7 @@ def infer(cfg: DictConfig, device: Any):
         log.error(f'Tokenizer configuration neither specified in model checkpoint nor in hydra config.')
         raise KeyError()
     tokenizer: Tokenizer = get_tokenizer(tokenizer_cfg)
-    encode = tokenizer.tokenize
+    encode = tokenizer.encode
     decode = tokenizer.decode
 
     # encode the beginning of the prompt

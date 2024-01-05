@@ -20,9 +20,6 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
     """
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
-        if self.cfg.args.get('dtype') is None:
-            log.error(f'Missing dtype for "{self.cfg.name}" dataset.')
-            raise KeyError()
         #directories for untokenized and tokenized files
         self.untokenized_dir = concat_paths([*cfg.dataset_dir, "untokenized", ""])
 
