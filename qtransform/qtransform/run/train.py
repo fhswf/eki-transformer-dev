@@ -69,6 +69,11 @@ def run(cfg: DictConfig):
     else:
         eval_dataloader = None
 
+    #update tokenizer config with metadata to save it in model checkpoints
+    data_wrapper.tokenizer.load_metadata(filepath=os.path.join(data_wrapper.tokenized_dir, cfg.dataset.tokenizer.meta_file))
+    with open_dict(cfg.dataset.tokenizer):
+        cfg.dataset.tokenizer["meta"] = data_wrapper.tokenizer.meta
+
     from qtransform.optim import get_optim#, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
     #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)

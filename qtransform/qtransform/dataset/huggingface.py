@@ -70,14 +70,14 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
                 log.debug(f'Example of the first chunk: "{dataset_splits["chunks"][0]}"')
                 dataset_splits = dataset_splits.map(
                     #map function expects dictionary or dataset object, tokenize function returns list of tokens (integers)
-                    lambda batch: {"input_ids": [tokenizer.tokenize(x) for x in batch["chunks"]]}, 
+                    lambda batch: {"input_ids": [tokenizer.encode(x) for x in batch["chunks"]]}, 
                     batched=True, 
                     remove_columns = "chunks",
                     desc="tokenizing the dataset from chunks")
             else:
                 dataset_splits = dataset_splits.map(
                     #map function expects dictionary or dataset object, tokenize function returns list of tokens (integers)
-                    lambda batch: {"input_ids": [tokenizer.tokenize(x) for x in batch[data_column_name]]},
+                    lambda batch: {"input_ids": [tokenizer.encode(x) for x in batch[data_column_name]]},
                     batched=True, 
                     remove_columns = data_column_name,
                     desc = "tokenizing the dataset")
@@ -86,7 +86,7 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
             first_example = first_example if len(first_example) < 50 else first_example[:50]
             #log.debug(f'First example: {first_example}')
             #after concatenation, length is the total amount of tokens in entire dataset
-            length_tokens = tokenizer.num_tokens
+            length_tokens = tokenizer.meta.num_tokens
             log.debug(f'Dataset has {length_tokens} tokens.')
             batch_size = self.cfg.args.get('batches')
             if batch_size is None or batch_size > len(dataset_splits):

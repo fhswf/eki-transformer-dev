@@ -1,11 +1,16 @@
-from typing import List
+from typing import List, Dict
 from tiktoken import get_encoding, Encoding
-from qtransform.dataset.tokenizer import Tokenizer
+from qtransform.dataset.tokenizer import Tokenizer, Metadata
 from omegaconf import DictConfig
 import logging
 from numpy import array, dtype
+from dataclasses import dataclass, asdict
 
 log = logging.getLogger(__name__)
+
+@dataclass
+class TiktokenMetadata(Metadata):
+    module: str = "tiktoken"
 
 class TikTokenizer(Tokenizer):
     """
@@ -14,36 +19,23 @@ class TikTokenizer(Tokenizer):
     """
     def __init__(self, tokenizer_cfg, memmap = None):
         super().__init__(tokenizer_cfg = tokenizer_cfg, memmap=memmap)
+        self.meta: TiktokenMetadata = TiktokenMetadata(**asdict(self.meta))
         try:
-            self.encoder: Encoding = get_encoding(tokenizer_cfg.encoding)
+            self.encoder: Encoding = get_encoding(self.meta.encoding)
         except ValueError as e:
-            log.error(f'Could not load Tiktoken tokenizer with encoding: "{tokenizer_cfg.encoding}".')
+            log.error(f'Could not load Tiktoken tokenizer with encoding: "{self.meta.encoding}".')
             raise ValueError()
-        self.max_token_value = self.encoder.max_token_value
 
     def tokenize_memmap(self, text: str):
         tokens: List[int] = self.encode(text)
         #self.check_dtype_overflow()
-        offset = self.num_tokens
+        offset = self.meta.num_tokens
         self.memmap[offset: offset + len(tokens)] = tokens
 
     def encode(self, text) -> List[int]:
         tokens = self.encoder.encode_ordinary(text)
-        self.num_tokens += len(tokens)
+        self.meta.num_tokens += len(tokens) #only relevant for memmap indexing
         return tokens
 
     def decode(self, idx: List[int]) -> str:
-        return self.tokenizer.decode(idx)
-        
-    def save_metadata(self, filepath):
-        meta = {
-            'max_token_value': self.max_token_value,
-            'encoding': self.tokenizer_cfg.encoding,
-            'module': 'tiktoken',
-            'dtype': self.tokenizer_cfg.dtype
-        }
-        self._save_metadata(filepath, meta)
-    
-    def load_metadata(self, file: str):
-        #not used currently, metadata in tiktoken tokenizer
-        pass
+        return self.encoder.decode(idx)

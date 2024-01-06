@@ -1,20 +1,25 @@
 from numpy import array, memmap
 from omegaconf import DictConfig
-from qtransform.dataset.tokenizer import Tokenizer
+from qtransform.dataset.tokenizer import Tokenizer, Metadata
 import logging
 from typing import List, Dict
 import pickle
 from os.path import join, exists, isfile
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 log = logging.getLogger(__name__)
 
 #for now, metadata is only used for character tokenization
 @dataclass
-class Metadata():
-    vocab_size: int
-    itos: Dict[int, chr]
-    stoi: Dict[chr, int]
+class CharacterMetadata(Metadata):
+    itos: Dict[int, str] = None
+    stoi: Dict[str, int] = None
+
+    def __post_init__(self):
+        if not isinstance(self.itos, Dict):
+            self.itos = {0: "<UNKNOWN>"}
+        if not isinstance(self.stoi, Dict):
+            self.stoi = {"<UNKNOWN>": 0}
 
 class CharacterTokenizer(Tokenizer):
 
@@ -31,46 +36,25 @@ class CharacterTokenizer(Tokenizer):
         super().__init__(tokenizer_cfg, memmap)
         #python chars are at max 4B large, meaning that at the absolute most the vocab size is 2^32 (4 million)
         #that never happens as every single unicode character would need to appear within dataset
-        self.max_token_value = 0 #2**16 -1
-        self.stoi: dict = {"<UNKNOWN>": 0}
-        self.itos: dict = {0: "<UNKNOWN>"}
+        self.meta: CharacterMetadata = CharacterMetadata(**asdict(self.meta))
 
     def decode(self, l: List[int]) -> str:
-        return ''.join([self.itos[i] for i in l]) # decoder: take a list of integers, output a string
+        return ''.join([self.meta.itos[i] if i in self.meta.itos else self.meta.itos[0] for i in l]) # decoder: take a list of integers, output a string
     
     def tokenize_memmap(self, text: str):
         #log.debug(f'Tokenizing text:\n"{text}"\nWith parameters: {self.tokenizer_cfg}')
         super().tokenize_memmap(text) #arg checking
         #self.check_dtype_overflow()
-        self.memmap[self.num_tokens : self.num_tokens + len(text)] = self.encode(text)
+        self.memmap[self.meta.num_tokens : self.meta.num_tokens + len(text)] = self.encode(text)
 
     def encode(self, text: str) -> List[int]:
         #only update vocab with new characters
-        new_tokens = set(text) - set(self.stoi.keys()) 
+        new_tokens = set(text) - set(self.meta.stoi.keys()) 
         #remember the token of previous characters, start counting at max_token_value
         #merge encoding and training together as vocab is expanded during encoding process
-        self.stoi.update({ ch:i for i,ch in enumerate(new_tokens, self.max_token_value + 1) })
-        self.itos.update({ i:ch for i,ch in enumerate(new_tokens, self.max_token_value + 1) })
-        self.max_token_value = len(self.itos.keys()) - 1 #tokens start at 0
-        self.num_tokens += len(text)
-        #unknown tokens have token 0
-        return [self.stoi[c] if c in self.stoi else 0 for c in text]
-
-    def save_metadata(self, filepath: str):
-        # save the meta information as well, to help us encode/decode later
-        meta = {
-            'max_token_value': self.max_token_value,
-            'encoding': self.tokenizer_cfg.encoding,
-            'dtype': self.tokenizer_cfg.dtype,
-            'itos': self.itos,
-            'stoi': self.stoi
-        }
-        self._save_metadata(filepath, meta)
-
-    def load_metadata(self, file: str):
-        super().load_metadata(file)
-        with open(file, 'rb') as pkl_file:
-            meta = pickle.load(pkl_file)
-        self.max_token_value = meta["max_token_value"]
-        self.itos = meta["itos"]
-        self.stoi = meta["stoi"]
+        self.meta.stoi.update({ ch:i for i,ch in enumerate(new_tokens, self.meta.max_token_value + 1) })
+        self.meta.itos.update({ i:ch for i,ch in enumerate(new_tokens, self.meta.max_token_value + 1) })
+        self.meta.max_token_value = len(self.meta.itos.keys()) - 1 #tokens start at 0
+        self.meta.num_tokens += len(text)
+        #unknown tokens are saved in the vocabulary during encoding
+        return [self.meta.stoi[c] for c in text]
