@@ -81,6 +81,6 @@ def run(cfg: DictConfig):
 
     if cfg.run.export_fn == "export":           
         try:
-            export(model, torch.tensor(sample_tensor), f"onnx_{str(input_dim)}-" + filename, opset_version=opset_version,  export_params=True, **kwargs)
+            export(model, torch.tensor(sample_tensor), f"onnx_{str(input_dim)}-" + filename, **kwargs)
         except:
             log.error(f"Export via {export.__module__}.{export.__name__} failed, reason", exc_info=True)
