@@ -9,13 +9,8 @@ hydra:
     - pkg://qtransform
 defaults:
   - _self_
-<<<<<<< HEAD
-  - model: ???
-  - dataset: default
-=======
   - model: 
   - dataset: 
->>>>>>> origin/development-maik
   - optim: default
   - run: ???
   - quantization: None
