@@ -39,8 +39,8 @@ def run(cfg: DictConfig):
     from qtransform.model import get_model
     model = get_model(cfg.model)
     model.train()
-    #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not Tensors
-    #this is a problem if a layer uses a Tensor during the forward pass as the Tensor is not moved to the device with model.to(device)
+    #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
+    #this is a problem if a layer uses a non-named Tensor during the forward pass
     model.to(device=device)
 
     from qtransform.dataset import get_data, get_loader, DatasetWrapper
