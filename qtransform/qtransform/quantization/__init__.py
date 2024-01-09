@@ -270,7 +270,7 @@ class ActQuant(BaseQuant):
 from importlib import import_module
 from types import ModuleType
 import qtransform.quantization as package_self
-from re import search, subn, match
+from re import search, subn, match, IGNORECASE
 
 @dataclass
 class LayerQuantConfig:
@@ -299,6 +299,18 @@ class LayerQuantConfig:
         elif self.layer_type not in supported_torch_layers:
             log.error(f'Layer {self.layer_type} is not a valid torch.nn Module')
             raise ValueError
+
+
+        #--------------------------------------------------------
+        #batchnorm not supported yet
+
+        if match(r'batchnorm', self.layer_type, IGNORECASE):
+            log.error(f'BatchNorm is not supported yet!')
+            raise NotImplementedError()
+
+        #--------------------------------------------------------
+        
+        
         if not isinstance(self.name, str):
             try:
                 self.name = str(self.name)

@@ -25,11 +25,12 @@ class TikTokenizer(Tokenizer):
         except ValueError as e:
             log.error(f'Could not load Tiktoken tokenizer with encoding: "{self.meta.encoding}".')
             raise ValueError()
+        self.meta.max_token_value = self.encoder.max_token_value
 
     def tokenize_memmap(self, text: str):
-        tokens: List[int] = self.encode(text)
-        #self.check_dtype_overflow()
+        super().tokenize_memmap(text) # arg checking
         offset = self.meta.num_tokens
+        tokens: List[int] = self.encode(text)
         self.memmap[offset: offset + len(tokens)] = tokens
 
     def encode(self, text) -> List[int]:

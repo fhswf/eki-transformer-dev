@@ -39,16 +39,14 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
             #also, file is read with only one worker
             #TODO: maybe use apache arrow tables as huggingface uses them for their dataset class
             #(https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes#datasets.Dataset)
-            token_length = 0
-            #currently, file is as large as the amount of characters regardless of tokenization
+            #tokenization occurs twice in order to get the shape of the memmap 
             for file in files:
                 with open(file, 'r') as text_file: 
-                    chars_file = 0
-                    #should newline seperators (\n) be removed from tokens?
                     for line in text_file:
-                        chars_file += len(line)  
-                    token_length += chars_file
-                    log.debug(f'File {file} has {token_length} characters.')
+                        self.tokenizer.encode(line)
+            token_length = self.tokenizer.meta.num_tokens
+            log.debug(f'Vocab size: {self.tokenizer.meta.max_token_value}. Number of tokens: {self.tokenizer.meta.num_tokens}')
+            self.tokenizer.meta.num_tokens = 0
             try:
                 memmap = np.memmap(self.dataset_file, dtype=self.dtype, mode='w+', shape=(token_length, ))
                 self.tokenizer.memmap = memmap
@@ -57,14 +55,16 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
                     log.debug(f'Tokenizing file: {file} with encoding: {self.cfg.tokenizer.encoding}')
                     with open(file, 'r') as text_file: 
                         for line in text_file:
+                            new_line = line
                             #write tokens directly into memmap, do not return them
                             self.tokenizer.tokenize_memmap(line)
-                #reshape memmap in case there are less tokens than characters
-                memmap.resize((self.tokenizer.meta.num_tokens))
-                log.debug(f'Vocab size: {tokenizer.max_token_value}. Number of tokens: {self.tokenizer.meta.num_tokens}')
                 memmap.flush()
                 self.tokenizer.save_metadata(self.tokenized_dir)
             except Exception as e:
+                #for some reaosn
+                num_tokens = self.tokenizer.meta.num_tokens
+                tokens = self.tokenizer.encode(new_line)
+                log.warning(f'{new_line}: tokens: {len(tokens)}, from: {num_tokens}, , to: {num_tokens + len(tokens)}')
                 #remove broken memmap file
                 log.error(f'Something went wrong while tokenizing the dataset. Reason: {e}.\nRemoving the broken memmap file under {self.dataset_file}')
                 os.remove(self.dataset_file)
