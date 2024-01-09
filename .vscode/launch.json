@@ -10,9 +10,10 @@
             "request": "launch",
             "module": "qtransform",
             "justMyCode": true,
-            "args": ["run=train", "debug=True", "model=gpt_2_small", "dataset=huggingface", "dataset.name=openwebtext"],
+            "args": ["run=train", "model=gpt_2_h2l2e256b64_GeBN","dataset=huggingface", "debug=True", "dataset.name=openwebtext", "+export=True",
+            "run.epochs=100", "run.max_iters=300", "dataset/tokenizer=tiktoken", "dataset.tokenizer.encoding=gpt2", "+trace=True"],
             "console": "integratedTerminal",
-            "python": "python"
+            "python": "/home/kuhmichel/anaconda3/envs/eki/bin/python"
         }
     ]
 }

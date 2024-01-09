@@ -3,7 +3,7 @@ from types import ModuleType
 from logging import Logger
 from qtransform.utils.introspection import get_classes
 
-
+# TODO rename this to get_class or something
 def get_data(log: Logger, package_name: ModuleType, class_name: str, parent_class: type, args: Dict[str, Any] = None) -> Any:
     """
         A generic implementation to dynamically load classes from a given package with a given name.

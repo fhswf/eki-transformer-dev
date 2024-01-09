@@ -64,7 +64,7 @@ class Tokenizer(ABC):
         if not isinstance(value, np.memmap):
             log.error(f'Wrong type for memmap during tokenization ({value}, {type(value)})')
             raise TypeError()
-        if len(value.shape) > 1 and memmap.shape[0] != 1:
+        if len(value.shape) > 1 and value.shape[0] != 1:
             log.error(f'The memmap needs to be one dimensional for tokenization')
             raise ValueError()
         if value.mode != 'w+':
@@ -183,6 +183,11 @@ def get_tokenizer(tokenizer_cfg: DictConfig, memmap: np.memmap = None) -> Tokeni
         Tokenizes a text based on the hydra configuration. It encodes a text based on the encoding property and saves the output with 
         the datatype dtype in a numpy array binary file. For some tokenizers like character encoding, the encoding property is ignored.
     """
+    ## work around for issue https://github.com/openai/tiktoken/pull/181 and https://github.com/huggingface/datasets/issues/5536
+    import copyreg, functools, tiktoken
+    def pickle_Encoding(enc):
+        return (functools.partial(tiktoken.core.Encoding, enc.name, pat_str=enc._pat_str, mergeable_ranks=enc._mergeable_ranks, special_tokens=enc._special_tokens), ())
+    copyreg.pickle(tiktoken.core.Encoding, pickle_Encoding)
     log.debug(f'Attempting to retrieve tokenizer with cfg: {PrettyPrinter(indent=1).pformat(tokenizer_cfg)}')
     tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.wrapper, Tokenizer, args={"tokenizer_cfg": tokenizer_cfg, "memmap": memmap})
     return tokenizer

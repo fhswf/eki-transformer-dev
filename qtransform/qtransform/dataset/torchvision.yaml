@@ -1,4 +1,4 @@
-wrapper: TorchvisionDatasetWrapper #name of class within torchvision.py
+wrapper: TorchvisionDatasetWrapper
 module: torchvision
 name: ???
 type: torchvision

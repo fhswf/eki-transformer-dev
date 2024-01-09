@@ -1,4 +1,4 @@
-wrapper: HuggingfaceDatasetWrapper #name of class within torchvision.py
+wrapper: HuggingfaceDatasetWrapper
 module: huggingface
 name: ???
 type: huggingface
