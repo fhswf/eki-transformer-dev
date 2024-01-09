@@ -55,11 +55,16 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
                     log.debug(f'Tokenizing file: {file} with encoding: {self.cfg.tokenizer.encoding}')
                     with open(file, 'r') as text_file: 
                         for line in text_file:
+                            new_line = line
                             #write tokens directly into memmap, do not return them
                             self.tokenizer.tokenize_memmap(line)
                 memmap.flush()
                 self.tokenizer.save_metadata(self.tokenized_dir)
             except Exception as e:
+                #for some reaosn
+                num_tokens = self.tokenizer.meta.num_tokens
+                tokens = self.tokenizer.encode(new_line)
+                log.warning(f'{new_line}: tokens: {len(tokens)}, from: {num_tokens}, , to: {num_tokens + len(tokens)}')
                 #remove broken memmap file
                 log.error(f'Something went wrong while tokenizing the dataset. Reason: {e}.\nRemoving the broken memmap file under {self.dataset_file}')
                 os.remove(self.dataset_file)

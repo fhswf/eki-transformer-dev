@@ -64,8 +64,8 @@ class Tokenizer(ABC):
         if not isinstance(value, np.memmap):
             log.error(f'Wrong type for memmap during tokenization ({value}, {type(value)})')
             raise TypeError()
-        if len(value.shape) > 1 and memmap.shape[1] != 1:
-            log.error(f'The memmap needs to be one dimensional during tokenization')
+        if len(value.shape) > 1 and memmap.shape[0] != 1:
+            log.error(f'The memmap needs to be one dimensional for tokenization')
             raise ValueError()
         if value.mode != 'w+':
             log.error(f'Mode of memmap needs to be "w+" for tokenization.')

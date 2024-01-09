@@ -103,7 +103,7 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
                     if len(batch) == 0:
                         break
                     tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
-                    if hasattr(log, "trace"): log.debug(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
+                    if hasattr(log, "trace"): log.trace(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
                     memmap[offset:offset+len(tokens)] = tokens
                     offset += len(tokens)
                 memmap.flush()
