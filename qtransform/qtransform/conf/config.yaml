@@ -10,7 +10,7 @@ hydra:
 defaults:
   - _self_
   - model: ???
-  - dataset: ???
+  - dataset: default
   - optim: default
   - run: ???
   - quantization: None

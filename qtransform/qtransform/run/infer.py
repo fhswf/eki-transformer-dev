@@ -1,5 +1,7 @@
 import logging
 from typing import Any
+
+from qtransform import device_singleton
 log = logging. getLogger(__name__)
 from omegaconf import DictConfig
 from torch import nn
@@ -7,42 +9,22 @@ import torch
 import tiktoken
 from torch import functional as F
 
-
 def run(cfg : DictConfig):
     """ Inference """
     log.info("=================")
     log.info("Running Inference")
     log.info("=================")
     
-    cuda = None
-    device = None
-    if "cuda" in cfg:
-        cuda = cfg.cuda and torch.cuda.is_available()
-    else:
-        cuda = torch.cuda.is_available()
-    mps = None
-    if "mps" in cfg:
-        mps = cfg.mps and torch.backends.mps.is_available()
-    else:
-        mps = torch.backends.mps.is_available()
-
     torch.manual_seed(cfg.seed)    
-    if cuda:
-        device = torch.device("cuda")
-        cuda_kwargs = {'pin_memory': True,}
-        cfg.dataset.dataloader.update(cuda_kwargs)
-    elif mps:
-        device = torch.device("mps")
-    else:
-        device = torch.device("cpu")
-    log.info(f"using device: {str(device)}")
+    device_singleton.device = cfg.device
+    device = device_singleton.device
 
     from qtransform.model import get_model
     model = get_model(cfg.model)
     model.eval()
     model.to(device)
 
-    return infer(cfg, model)
+    return infer(cfg, model, device)
 
 
 def infer(cfg: DictConfig, model: nn.Module, device: Any):
@@ -58,7 +40,7 @@ def infer(cfg: DictConfig, model: nn.Module, device: Any):
     # -----------------------------------------------------------------------------
 
     from qtransform.utils import load_checkpoint
-    load_checkpoint(cfg=cfg)
+    from_epoch, checkpoint = load_checkpoint(cfg=cfg)
     if torch.__version__ >= 2.0:
         model = torch.compile(model) # requires PyTorch 2.0 (optional)
 

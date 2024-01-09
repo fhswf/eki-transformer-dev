@@ -1,0 +1,6 @@
+name: default
+args:
+  block_size: ${model.args.block_size}
+wrapper: None 
+defaults:
+  - tokenizer: tiktoken

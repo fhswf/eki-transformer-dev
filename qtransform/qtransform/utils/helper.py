@@ -11,6 +11,9 @@ log = logging.getLogger(__name__)
 def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
     """ load torch model checkpoint"""
     chkpt_folder = os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
+    if not cfg.run.from_checkpoint:
+        log.error(f"cfg.run.from_checkpoint is None, if you intent to load a checkpoint please specify the path here")
+        raise FileNotFoundError
     if "model_dir" in cfg.run:
         if os.path.isabs(cfg.run.from_checkpoint):
             checkpoint_path = cfg.run.from_checkpoint
@@ -28,6 +31,12 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
             except:
                 chkpt_folder = os.getcwd()
             checkpoint_path = os.path.join(chkpt_folder, cfg.run.from_checkpoint)
+
+    else: # model_dir not present => need full abs path to checkpoint 
+        if not os.path.isfile(cfg.run.from_checkpoint):
+            log.error(f"Checkpoint {checkpoint_path} is not a file")
+            raise FileNotFoundError
+        checkpoint_path = cfg.run.from_checkpoint
 
     log.info(f"Loading checkpoint from {checkpoint_path}")
     from_epoch = 0    

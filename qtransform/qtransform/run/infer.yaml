@@ -1,3 +1,5 @@
 command: infer
 
+from_checkpoint: 
+
 onnx_model:

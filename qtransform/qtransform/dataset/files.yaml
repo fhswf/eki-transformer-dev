@@ -1,4 +1,4 @@
-wrapper: FileSystemLLMDatasetWrapper #name of class within torchvision.py
+wrapper: FileSystemLLMDatasetWrapper
 #either has to match an entry from links, a dataset from torchvision or a filename (excluding encoding) within dataset directory
 name: ???
 module: files
