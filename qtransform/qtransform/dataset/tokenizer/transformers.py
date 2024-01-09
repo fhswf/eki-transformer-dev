@@ -48,12 +48,6 @@ class TransformersTokenizer(Tokenizer):
             raise KeyError()
         self.meta.max_token_value = self.tokenizer.vocab_size
     
-    def tokenize_memmap(self, text: str):
-        super().tokenize_memmap(text) #arg checking
-        offset = self.meta.num_tokens
-        tokens = self.encode(text)
-        self.memmap[offset : offset + len(tokens)] = tokens
-
     def encode(self, text) -> List[int]:
         #truncation is not performed in this case as only the ids are important currently
         tokens: list[int] = self.tokenizer(text)["input_ids"]

@@ -84,7 +84,6 @@ class Tokenizer(ABC):
             log.error(f'Cannot use metadata of type: {type(value)}')
         self._meta = value
 
-    @abstractclassmethod
     def tokenize_memmap(self, text: str):
         """
             Tokenize a text and write the result into a memmap to be retrieved later. 
@@ -97,6 +96,9 @@ class Tokenizer(ABC):
         if self.memmap is None:
             log.error(f'Memmap was not set')
             raise TypeError()
+        offset = self.meta.num_tokens
+        tokens: List[int] = self.encode(text)
+        self.memmap[offset: offset + len(tokens)] = tokens
 
     @abstractclassmethod
     def encode(self, text: str) -> List[int]:

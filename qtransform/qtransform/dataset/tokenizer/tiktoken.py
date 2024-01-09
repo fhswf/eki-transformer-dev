@@ -27,12 +27,6 @@ class TikTokenizer(Tokenizer):
             raise ValueError()
         self.meta.max_token_value = self.encoder.max_token_value
 
-    def tokenize_memmap(self, text: str):
-        super().tokenize_memmap(text) # arg checking
-        offset = self.meta.num_tokens
-        tokens: List[int] = self.encode(text)
-        self.memmap[offset: offset + len(tokens)] = tokens
-
     def encode(self, text) -> List[int]:
         tokens = self.encoder.encode_ordinary(text)
         self.meta.num_tokens += len(tokens) #only relevant for memmap indexing

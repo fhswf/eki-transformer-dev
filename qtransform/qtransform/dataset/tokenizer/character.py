@@ -40,12 +40,7 @@ class CharacterTokenizer(Tokenizer):
 
     def decode(self, l: List[int]) -> str:
         return ''.join([self.meta.itos[i] if i in self.meta.itos else self.meta.itos[0] for i in l]) # decoder: take a list of integers, output a string
-    
-    def tokenize_memmap(self, text: str):
-        super().tokenize_memmap(text) #arg checking
-        offset = self.meta.num_tokens
-        tokens: List[int] = self.encode(text)
-        self.memmap[offset: offset + len(tokens)] = tokens
+
 
     def encode(self, text: str) -> List[int]:
         #only update vocab with new characters
