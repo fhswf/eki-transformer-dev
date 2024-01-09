@@ -46,6 +46,7 @@ class TransformersTokenizer(Tokenizer):
         if self.tokenizer is None:
             log.error(f'No transformers tokenizer found for encoding: {self.meta.encoding} and fast={self.meta.fast}')
             raise KeyError()
+        self.meta.max_token_value = self.tokenizer.vocab_size
     
     def tokenize_memmap(self, text: str):
         super().tokenize_memmap(text) #arg checking
