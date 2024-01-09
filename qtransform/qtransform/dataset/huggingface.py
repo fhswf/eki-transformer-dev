@@ -82,7 +82,6 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
                     remove_columns = data_column_name,
                     drop_last_batch=True,
                     num_proc=16,
-
                     desc = "tokenizing the dataset")             
             if hasattr(log, "trace"): log.trace(f'Dataset split after tokenization: {dataset_splits}')
             first_example = dataset_splits["input_ids"][0] #for logging purposes

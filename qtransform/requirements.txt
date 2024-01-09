@@ -17,4 +17,5 @@ aiohttp
 pyyaml
 protobuf==3.20.3
 transformers
+tokenizers>=0.13.3 
 sentencepiece
