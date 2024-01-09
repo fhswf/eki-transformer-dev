@@ -3,7 +3,7 @@ from typing import Any
 
 from qtransform import device_singleton
 log = logging. getLogger(__name__)
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 from torch import nn
 import torch
 import tiktoken
