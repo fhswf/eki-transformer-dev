@@ -427,7 +427,6 @@ class ModelQuantConfig:
     cls: str
     layers: Dict[str, LayerQuantConfig]
     dtype: str
-    device: str
     model: Module
     quantized: bool = False #does self.model contain a quantized model?
     throw_errors_on_duplicate: bool = False #if duplicates for layers exist within config, throw error based on this field

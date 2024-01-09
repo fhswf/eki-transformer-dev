@@ -1,6 +1,6 @@
 wrapper: FileSystemLLMDatasetWrapper
 #either has to match an entry from links, a dataset from torchvision or a filename (excluding encoding) within dataset directory
-name: ???
+name: ??? #directory name, should contain human-readable text files for tokenization
 module: files
 sizes: #sizes of dataset splits. if omited, assume empty sizes for splits
   train: 0.7

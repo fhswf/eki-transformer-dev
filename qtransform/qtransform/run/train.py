@@ -69,6 +69,11 @@ def run(cfg: DictConfig):
     else:
         eval_dataloader = None
 
+    #update tokenizer config with metadata to save it in model checkpoints
+    data_wrapper.tokenizer.load_metadata(filepath=os.path.join(data_wrapper.tokenized_dir, cfg.dataset.tokenizer.meta_file))
+    with open_dict(cfg.dataset.tokenizer):
+        cfg.dataset.tokenizer["meta"] = data_wrapper.tokenizer.meta
+
     from qtransform.optim import get_optim#, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
     #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
@@ -81,15 +86,14 @@ def run(cfg: DictConfig):
     # lets go
     quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:    
-        log.debug(f'Running quantized model')    
-        quant_cfg.device = device.type
+        log.debug(f'Running quantized model')
         from qtransform.quantization import get_quantizer
         quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         #add qat qparams (scale and zero)
         model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         #calibrate the scales for each weight and activation
         # TODO make this a decorator so it can return stuff
-        model = quantizer.train_qat(model, train, [cfg, device, train_datalaoder, eval_dataoader, optimizer,scheduler, timestamp])
+        model = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
     else:
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
@@ -152,7 +156,14 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
-            last_checkpoint = save_checkpoint(cfg=cfg, model=model, optimizer=optimizer, timestamp=timestamp, epoch=epoch, metrics=metrics, model_cfg=cfg.model)
+            last_checkpoint = save_checkpoint(cfg=cfg, 
+                model=model, 
+                optimizer=optimizer, 
+                timestamp=timestamp, 
+                epoch=epoch, 
+                metrics=metrics, 
+                model_cfg=cfg.model, 
+                tokenizer_cfg=cfg.dataset.tokenizer)
 
         # advance learning rate
         scheduler.step()

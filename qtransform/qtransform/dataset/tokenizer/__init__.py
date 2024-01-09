@@ -1,6 +1,6 @@
-from dataclasses import dataclass
-from typing import Dict, List, Tuple
-from omegaconf import DictConfig, OmegaConf
+from dataclasses import dataclass, asdict, replace
+from typing import Dict, List, Tuple, Union, Any
+from omegaconf import DictConfig, OmegaConf, open_dict
 from qtransform.classloader import get_data
 import logging
 from qtransform.utils.introspection import concat_paths
@@ -12,20 +12,20 @@ import os
 import numpy as np
 import pickle
 from pprint import PrettyPrinter
-#TODO: maybe implement pytorch.utils.get_tokenizer()
+import inspect
 
 log = logging.getLogger(__name__)
 
 @dataclass
 class Metadata():
     """
-        Defines the structure of pickled metadata files.
+        Defines the structure of pickled metadata files. If a tokenizer needs additional fields, another dataclass deriving
+        from metadata should be created and its signature used.
     """
-    vocab_size: int
+    max_token_value: int
     encoding: str
     dtype: str
-
-
+    num_tokens: int = 0
 
 class Tokenizer(ABC):
     """
@@ -34,9 +34,8 @@ class Tokenizer(ABC):
         object to be used to write the tokens onto the harddrive. Alternatively, one could use the tokenize()
         method to retrieve a list of tokens from a text.
     """
-    max_token_value: int
-    num_tokens: int #the amount of tokens which have been encoded
     _memmap: np.memmap
+    _meta: Metadata
 
     def __init__(self, tokenizer_cfg: DictConfig, memmap: np.memmap = None):
         if isinstance(tokenizer_cfg, Dict):
@@ -47,8 +46,11 @@ class Tokenizer(ABC):
             raise TypeError()
         log.debug(f'Creating Tokenizer with parameters: {tokenizer_cfg}')
         self.tokenizer_cfg = tokenizer_cfg
-        self.max_token_value = 0
-        self.num_tokens = 0
+        self.meta = Metadata(max_token_value = 0, encoding = self.tokenizer_cfg.encoding, dtype=self.tokenizer_cfg.dtype, num_tokens=0)
+        if self.tokenizer_cfg.get('meta_file') is None:
+            with open_dict(self.tokenizer_cfg):
+                log.warning(f'Property meta_file omited in config. Assuming default: "meta.pkl"')
+                self.tokenizer_cfg["meta_file"] = "meta.pkl"
         #tokenization can use memmap directly or simply return a list of integers
         if memmap is not None:
             self.memmap = memmap
@@ -70,6 +72,18 @@ class Tokenizer(ABC):
             raise AttributeError()
         self._memmap = value
 
+    @property
+    def meta(self):
+        return self._meta
+    
+    @meta.setter
+    def meta(self, value: Metadata):
+        if isinstance(value, Union[Dict, DictConfig]):
+            value = Metadata(**value)
+        elif not isinstance(value, Metadata):
+            log.error(f'Cannot use metadata of type: {type(value)}')
+        self._meta = value
+
     @abstractclassmethod
     def tokenize_memmap(self, text: str):
         """
@@ -85,7 +99,7 @@ class Tokenizer(ABC):
             raise TypeError()
 
     @abstractclassmethod
-    def tokenize(self, text: str) -> List[int]:
+    def encode(self, text: str) -> List[int]:
         """
             Tokenize a text and return the tokens in form of a list of integers.
             Unlike tokenize_memmap, the tokens are not written into a memmap file. 
@@ -94,30 +108,71 @@ class Tokenizer(ABC):
             log.error(f'Text to tokenize is not a string')
             raise TypeError()
 
-
     @abstractclassmethod
-    def save_metadata(self, filepath: str):
-        pass
+    def decode(self, idx: List[int]) -> str:
+        """
+            Decodes a list of tokens into a sentence.
+        """
+        if not isinstance(idx, list):
+            log.error(f'idx is not a list')
+            raise TypeError()
 
-    def _save_metadata(self, filepath, meta: Dict):
+    def save_metadata(self, filepath: str):
         """
-            Saves metadata of a tokenized file from a meta object into filepath. This should include the encoding and information 
-            about the vocabulary.
+            Saves metadata of a tokenized file as well as information about the tokenizer into filepath. 
+            The information includes, but is not limited to: encoding, tokenizer_module, max_token_value.
+            If character tokenization is used, the vocabulary is saved within the metadata file as well.
+
+            args:
+                filepath: the filepath. if filepath is a directory, meta.pkl is appended to it.
         """
+        #file structure check
         if os.path.isfile(filepath):
             directory, file_name = os.path.split(filepath)
         else:
             directory = filepath
-            file_name = 'meta.pkl'
+            file_name = self.tokenizer_cfg.meta_file #by default: meta.pkl
         if not exists(directory):
             log.debug(f'Creating directory {directory}')
             os.makedirs(directory, exist_ok=True)
         path = os.path.join(directory, file_name)
+
+        #write
         with open(path, 'wb') as f:
-            pickle.dump(meta, f)
+            pickle.dump(asdict(self.meta), f)
+
+    def load_metadata(self, filepath: str = None, meta: Dict = None):
+        if filepath is not None:
+            meta = self._load_metadata(filepath)
+            self.meta =  replace(self.meta, **meta)
+        elif isinstance(meta, Union[Dict, DictConfig]):
+            self.meta =  replace(self.meta, **meta)
+        else:
+            log.error(f'Neither filepath was supplied nor is the supplied meta object of type dict (was type: {type(meta)})')
+            raise TypeError()
+
+    def _load_metadata(self, filepath: str) -> Dict[Any, Any]:
+        if not isinstance(filepath, str):
+            log.error(f'Error loading metadata from file: "{filepath}" is not a string.')
+            raise TypeError()
+        if not exists(filepath):
+            log.error(f'Metadata under path "{filepath}" does not exist.')
+            raise ValueError()
+        if not os.path.isfile(filepath):
+            log.error(f'Error while loading metadata for class {self.__class__.__name__}: "{filepath}" is not a file')
+            raise ValueError()
+        with open(filepath, 'rb') as pkl_file:
+            meta = pickle.load(pkl_file)
+        return meta
+
+    @DeprecationWarning
+    def meta_as_dict(self) -> Dict[str, Any]:
+        #does the same as dataclasses.asdict
+        params = set(inspect.signature(Metadata.__init__).parameters.keys()) - set(['self'])
+        return {x:getattr(self.meta, x) for x in params}
 
     def check_dtype_overflow():
-        if len(self.max_token_value) > 2 ** self.memmap.dtype.itemsize * 8 -1:
+        if len(self.meta.max_token_value) > 2 ** self.memmap.dtype.itemsize * 8 -1:
             log.error(f'Vocab size is larger than what the dtype can store ({self.memmap.dtype})')
             raise TypeError() 
 

@@ -20,9 +20,6 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
     """
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
-        if self.cfg.args.get('dtype') is None:
-            log.error(f'Missing dtype for "{self.cfg.name}" dataset.')
-            raise KeyError()
         #directories for untokenized and tokenized files
         self.untokenized_dir = concat_paths([*cfg.dataset_dir, "untokenized", ""])
 
@@ -42,34 +39,37 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
             #also, file is read with only one worker
             #TODO: maybe use apache arrow tables as huggingface uses them for their dataset class
             #(https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes#datasets.Dataset)
-            amount_characters = 0
+            token_length = 0
+            #currently, file is as large as the amount of characters regardless of tokenization
             for file in files:
                 with open(file, 'r') as text_file: 
                     chars_file = 0
                     #should newline seperators (\n) be removed from tokens?
                     for line in text_file:
                         chars_file += len(line)  
-                    amount_characters += chars_file
-                    log.debug(f'File {file} has {amount_characters} characters.')
+                    token_length += chars_file
+                    log.debug(f'File {file} has {token_length} characters.')
             try:
-                memmap = np.memmap(self.dataset_file, dtype=self.dtype, mode='w+', shape=(amount_characters))
-                tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer, memmap=memmap)
+                memmap = np.memmap(self.dataset_file, dtype=self.dtype, mode='w+', shape=(token_length, ))
+                self.tokenizer.memmap = memmap
                 #actually tokenize files, line by line
                 for file in files:
                     log.debug(f'Tokenizing file: {file} with encoding: {self.cfg.tokenizer.encoding}')
                     with open(file, 'r') as text_file: 
                         for line in text_file:
                             #write tokens directly into memmap, do not return them
-                            tokenizer.tokenize_memmap(line)
-                log.debug(f'Vocab size: {tokenizer.max_token_value}. Number of tokens: {tokenizer.num_tokens}')
+                            self.tokenizer.tokenize_memmap(line)
+                #reshape memmap in case there are less tokens than characters
+                memmap.resize((self.tokenizer.meta.num_tokens))
+                log.debug(f'Vocab size: {tokenizer.max_token_value}. Number of tokens: {self.tokenizer.meta.num_tokens}')
                 memmap.flush()
-                tokenizer.save_metadata(self.tokenized_dir)
+                self.tokenizer.save_metadata(self.tokenized_dir)
             except Exception as e:
                 #remove broken memmap file
                 log.error(f'Something went wrong while tokenizing the dataset. Reason: {e}.\nRemoving the broken memmap file under {self.dataset_file}')
                 os.remove(self.dataset_file)
                 raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
-                
+
         #train
         if self.dataset_sizes.train > 0.0:
             self.dataset_info.train = _FileSystemLLMDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
@@ -120,6 +120,12 @@ class _FileSystemLLMDataset(Dataset):
         if not isinstance(end, float) or end <= 0.0 or end > 1.0:
             log.error(f'Invalid ending range for dataset ({end})')
             raise KeyError()
+        if not isinstance(dtype, np.dtype): #np.dtype("dtype") or np.<dtype> e.g.: np.dtype("float32") or np.float32
+            try:
+                dtype = np.dtype(dtype) #not an instance (np.float32)
+            except TypeError as e:
+                log.error(e)
+                raise TypeError
         self.block_size = block_size
         if self.block_size <= 0:
             log.error(f'Block size of 0 is invalid.')
@@ -157,9 +163,11 @@ class _FileSystemLLMDataset(Dataset):
         """
             Returns inputs and labels. Called when iterating with e.g. a dataloader.
         """
-        #assert index >= 0
+        if index < 0:
+            index += len(self)
         #lower index to make sure that block_size elements are always retrieved
-        index = min(self.length - self.block_size - 2, index + self.block_size)
+        if index + self.block_size > len(self) - 1:
+            index = self.length - self.block_size - 2
         offset = index + self.block_size
         #From https://pytorch.org/docs/stable/generated/torch.from_numpy.html:
         #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. 

@@ -1,10 +1,22 @@
-from typing import List
-from qtransform.dataset.tokenizer import Tokenizer
-from omegaconf import DictConfig
+from typing import List, Dict, Any
+from qtransform.dataset.tokenizer import Tokenizer, Metadata
+from numpy import memmap
+from omegaconf import DictConfig, open_dict
 import logging
 import transformers
 from datasets import Dataset#, PreTrainedTokenizer, PreTrainedTokenizerFast
 from qtransform.classloader import get_data
+from re import match, search, compile
+from qtransform.utils.introspection import get_classes
+import sys
+from dataclasses import dataclass, asdict
+
+FAST = True #by default, use fast implementation of tokenizers
+
+@dataclass
+class TransformersMetadata(Metadata):
+    module: str = "transformers"
+    fast: bool = FAST
 
 log = logging.getLogger(__name__)
 
@@ -14,24 +26,38 @@ class TransformersTokenizer(Tokenizer):
         You can choose between the "full" version or the fast version. Differences can be read on 
         https://huggingface.co/docs/transformers/main_classes/tokenizer#tokenizer (from 13.12.2023)
     """
-    def tokenize(tokenizer_cfg: DictConfig, hf_dataset: Dataset):
-        log.debug(f'Tokenizing with parameters: {tokenizer_cfg}')
-        #TODO: transformers tokenization
-        ids = array(tokens, dtype=tokenizer_cfg.dtype)
-        save_tokens(ids, tokenizer_cfg)
-        """
+    def __init__(self, tokenizer_cfg, memmap: memmap = None):
+        super().__init__(tokenizer_cfg, memmap)
+        self.meta: TransformersMetadata = TransformersMetadata(**asdict(self.meta), fast=self.tokenizer_cfg.get("fast", FAST))
+        if self.tokenizer_cfg.get("fast") is None:
+            log.warning(f'Missing key "fast" in transformers tokenizer config. Defaulting to True.')
+            with open_dict(self.tokenizer_cfg):
+                self.tokenizer_cfg.fast = FAST
 
-        #tokenizers return a dictionary containing the input ids and the attention mask
-        #attention mask basically is a list of ones the length of the ids
-        #TODO: return list of ints instead of dict for compatibility
-        #tokenizer = AutoTokenizer.from_pretrained("gpt2",kwargs={"max_length": 1024})
-        # TODO cfg this
-        tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
-        #parameter is dataset containing text and other properties. only text is important
-        def tokenization(example):
-            # TODO cfg this
-            #max_length is the length of the attention mask
-            #is attention mask necessary?
-            return tokenizer(example["text"], max_length=1024, truncation=True)
-        """
+        #get pretrainedtokenizer classes and their model encodings
+        parent_class = transformers.PreTrainedTokenizerFast if self.meta.fast else transformers.PreTrainedTokenizer
+        pretrained_tokenizers = get_classes(transformers.models, parent_class)
+        self.tokenizer = None
+        for tokenizer_cls_name, tokenizer_cls in pretrained_tokenizers.items():
+            encodings = tokenizer_cls.max_model_input_sizes 
+            if self.meta.encoding in encodings:
+                self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding)
+        log.debug(f'Using tokenizer class: {self.tokenizer.__class__.__name__} with encoding: {self.meta.encoding}')
+        if self.tokenizer is None:
+            log.error(f'No transformers tokenizer found for encoding: {self.meta.encoding} and fast={self.meta.fast}')
+            raise KeyError()
+    
+    def tokenize_memmap(self, text: str):
+        super().tokenize_memmap(text) #arg checking
+        offset = self.meta.num_tokens
+        tokens = self.encode(text)
+        self.memmap[offset : offset + len(tokens)] = tokens
 
+    def encode(self, text) -> List[int]:
+        #truncation is not performed in this case as only the ids are important currently
+        tokens: list[int] = self.tokenizer(text)["input_ids"]
+        self.meta.num_tokens += len(tokens)
+        return tokens
+
+    def decode(self, idx: List[int]) -> str:
+        return self.tokenizer.decode(idx)

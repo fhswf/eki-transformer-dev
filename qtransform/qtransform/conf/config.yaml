@@ -9,8 +9,13 @@ hydra:
     - pkg://qtransform
 defaults:
   - _self_
+<<<<<<< HEAD
   - model: ???
   - dataset: default
+=======
+  - model: 
+  - dataset: 
+>>>>>>> origin/development-maik
   - optim: default
   - run: ???
   - quantization: None
@@ -42,20 +47,15 @@ dataset:
     test: ???
     bench: ???
   tokenizer: 
-      dataset_dir: 
-        - ${dataset.root_path}
-        - ${dataset.name}
-      #name of dataset
-      name: ${dataset.name}
       dtype: ${data.dtype}
+      meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
 seed: 1234567890
 
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.
 
 model: 
-  calc_loss_in_model: False #loss is not calculated in model
+  calc_loss_in_model: False
 
 quantization:
   quantize: False
-  device: ${device}

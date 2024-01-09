@@ -287,7 +287,7 @@ class QuantizationTest(unittest.TestCase):
         self.check_args()
         for layer_quant_cfg in self.model_quant_cfg.layers.values():
             layer_to_be_quantized = self.model.get_submodule(layer_quant_cfg.name)
-            quantized_layer = BrevitasQuantizer.get_quantized_layer(layer_to_be_quantized, layer_quant_cfg.layer_type, layer_quant_cfg.get_custom_quantizers(), layer_quant_cfg.name) 
+            quantized_layer = BrevitasQuantizer.get_quantized_layer(layer_to_be_quantized, layer_cfg=layer_quant_cfg) 
             #TODO: maybe put that field in LayerQuantConfig dataclass
             unquantized_layer_class = getattr(torch_modules, layer_quant_cfg.layer_type, None)
             self.assertNotEqual(unquantized_layer_class, None)

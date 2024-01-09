@@ -1,6 +1,6 @@
 command: export
 # model_chkpt_dir: ${oc.env:HOME}
-model_dir: models
+model_dir: models #name of directory in qtransform/outputs
 from_checkpoint: ???
 
 export_fn: export_qonnx  # brevitas export ot troch onnx.export #  can be export, export_brevitas_onnx, export_qonnx, export_onnx_qcdq

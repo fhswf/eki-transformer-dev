@@ -14,24 +14,37 @@ def new_gelu(x):
 class LayerNorm(nn.Module):
     """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
-    def __init__(self, bias, ndim):
+    def __init__(self, ndim, bias):
         super().__init__()
         self.weight = nn.Parameter(torch.ones(ndim))
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
 
     def forward(self, input):
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
-class BatchNorm(nn.BatchNorm1d):
-    """ BatchNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
-    def __init__(self, ndim, bias,  *args, **kwargs):
-        super().__init__(ndim, *args, **kwargs)
+class BatchNorm(nn.BatchNorm1d):
+    """ BatchNorm but with an optional bias and padding to support variable input length. PyTorch doesn't support simply bias=False """
+
+    def __init__(self, num_features, bias,  *args, **kwargs): #arg names need to be identical to torch argnames for quantization support
+        self.num_features = num_features
+        super().__init__(num_features, *args, **kwargs)
         #self.weight = nn.Parameter(torch.ones(ndim))
-        self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
+        self.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
 
     def forward(self, input, *args, **kwargs):
-        return super().forward(input, *args, **kwargs)
-    
+        #dirty workaround to avoid runtimeerrors by adding a padding if the input is smaller than the feature length
+        #padding does not artificially lower mean as normalization is performed along the word embeddings
+        n,c,l = input.size()
+        if c < self.num_features:
+            #input tensor should always be three dimensional
+            #TODO: maybe move padding creation to constructor since batch_size and embedding does not change
+            padding = torch.zeros(n, self.num_features - c, l)
+            input = torch.cat((input, padding), dim=1)
+        input = super().forward(input, *args, **kwargs)
+        #remove padding 
+        index = torch.tile(torch.arange(c).reshape(c,1), (n,1,l))
+        return torch.gather(input=input, dim=1, index=index)
+
 from typing import Optional
 from brevitas.inject.defaults import Uint8ActPerTensorFloat
 
@@ -88,7 +101,7 @@ class CausalSelfAttention(nn.Module):
 
     def forward(self, x):
         # this if block is needed for toprch <2.21 where flash attention onnx export does not work
-        if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash) or torch.__version__[3] < 2:
+        if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash) or torch.__version__ < (2,21):
 
             #log.warn("Using slower self attention for non quantized execution if torch does not support it or if flash == False")
             B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
@@ -111,7 +124,6 @@ class CausalSelfAttention(nn.Module):
             #QuantMultiheadAttention does not have is_causal in constructor -> use attention mask instead
             y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
-           
         return y
         
 from logging import getLogger
@@ -122,7 +134,6 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc    = nn.Linear(config.n_embd, 4 * config.n_embd, bias=config.bias)
         self.c_proj  = nn.Linear(4 * config.n_embd, config.n_embd, bias=config.bias)
-        #self.activation = nn.ReLU6()
         self.active  = getattr(nn, config.transformer_active_func, None)
         if not self.active:
             log.error(f'{config.transformer_active_func} is not a valid activation function. Check property transformer_active_func')
@@ -147,7 +158,7 @@ class TransformerBlock(nn.Module):
         elif config.norm_layer == "BatchNorm":
             norm_size = config.block_size
         else:
-            raise AttributeError("can determine model for norm layer: " + config.norm_layer)
+            raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
         ln_1 = getattr(custom_nn, config.norm_layer, None)
         ln_2 = getattr(custom_nn, config.norm_layer, None)
         self.ln_1 = ln_1(norm_size, bias=config.bias)

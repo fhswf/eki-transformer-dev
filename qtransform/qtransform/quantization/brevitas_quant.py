@@ -3,7 +3,7 @@ from brevitas import nn as qnn
 from torch import device
 from torch.nn import Module, ModuleDict
 import logging
-from qtransform.quantization import Quantizer, ModelQuantConfig
+from qtransform.quantization import Quantizer, ModelQuantConfig, LayerQuantConfig
 from qtransform.classloader import get_data
 import re
 from typing import Dict
@@ -18,6 +18,7 @@ from qtransform import device_singleton
 
 log = logging.getLogger(__package__)
 
+QUANTIZED_CLASSES = {x[0]:x[1] for x in inspect.getmembers(qnn,lambda x: inspect.isclass(x) and issubclass(x, Module))}
 
 class BrevitasQuantizer(Quantizer):
     """
@@ -60,16 +61,14 @@ class BrevitasQuantizer(Quantizer):
                     log.error(f'Passed model for quantization does not have submodule of name \"{layer_cfg.name}\". {error}')
                     raise ValueError
             #sublayer should now contain the layer to be quantized
-            quantizers = layer_cfg.get_custom_quantizers()
-            if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
-            quantized_layer: Module = BrevitasQuantizer.get_quantized_layer(layer=layer_to_be_quantized, layer_type=layer_cfg.layer_type, quantizers=quantizers, layer_name=layer_cfg.name)
+            quantized_layer: Module = BrevitasQuantizer.get_quantized_layer(layer=layer_to_be_quantized, layer_cfg=layer_cfg)
             #replace current non-quantized layer with quantized layer
             quantized_model.get_submodule('.'.join(sublayer_names[:-1])).add_module(sublayer_names[-1], quantized_layer)
         #remember that model within config is quantized
         quant_cfg.quantized = True if inplace else False
         return quantized_model
     
-    def get_quantized_layer(layer: Module, layer_type: str, quantizers: Dict[str, type], layer_name: str = None):
+    def get_quantized_layer(layer: Module, layer_cfg: LayerQuantConfig):
         """
             Quantizes a layer as specified in the yaml config file for the corresponding model. 
         """
@@ -79,17 +78,17 @@ class BrevitasQuantizer(Quantizer):
             #if quantized already, simply return it
             #possible feature: overwrite qparams of layer
             return layer
-        #for now, layers in layer_type have to case match the pytorch layers e.g. ReLU instead of relu, Relu etc.
-        quant_class = 'Quant' + layer_type
-        try:
-            #get quantized layers of generic modules
-            quantized_layer_class: type = get_data(log=log, package_name=qnn, class_name=quant_class, parent_class=object)
-        except KeyError:
-            #quantize custom layers
-            error = f'The config for layer {layer_name} specifies that it is of type \"{layer_type}\", however no quantized layer has been found within \"{qnn.__package__}\".'
-            error += f'\nMaybe check spelling? (E.g. ReLU has to be specified as ReLU and not relu, Relu, ReLu...)'
-            log.error(error)
-            raise ValueError
+        #
+        layer_type: str = layer_cfg.layer_type
+        quantizers = layer_cfg.get_custom_quantizers()
+        if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
+        layer_name: str = layer_cfg.name
+        quantized_class_name = list(filter(lambda x: re.search(layer_type, x), QUANTIZED_CLASSES.keys()))
+        if len(quantized_class_name) != 1:
+            log.error(f'Found quantizer classes with layer_type "{layer_type}": {quantized_class_name}. Exactly one entry needs\
+                to appear within this list, not {len(quantized_class_name)}')
+            raise ValueError()
+        quantized_layer_class = QUANTIZED_CLASSES[quantized_class_name[0]]
         log.debug(f'Quantized layer found for \"{layer_name}\": \"{quantized_layer_class}\"')
         #retrieve all set hyperparameters of unquantized layer
         #usually supplied in constructor

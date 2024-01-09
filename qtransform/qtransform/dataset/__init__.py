@@ -8,6 +8,7 @@ from qtransform import classloader
 from dataclasses import dataclass, fields
 from enum import Enum
 from os.path import join
+from qtransform.dataset.tokenizer import Tokenizer, get_tokenizer
 
 log = logging.getLogger(__name__)
 
@@ -109,7 +110,14 @@ class DatasetWrapper(ABC):
         self.tokenized_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
         self.dataset_file = join(self.tokenized_dir, self.cfg.name+ '-' + self.cfg.tokenizer.dtype + '.bin')
         #currently, dtype has to be set by user. maybe it could also be automatically infered by the max tokens property of Tokenizer
-        self.dtype = get_dtype(self.cfg.tokenizer.dtype)
+        if self.cfg.tokenizer.get('dtype') is None:
+            log.debug(f'Dtype for dataset omited. Assuming default: int64')
+            self.dtype = get_dtype('int64')
+        else:
+            self.dtype = get_dtype(self.cfg.tokenizer.dtype)
+        #tokenizer is created regardless of whether tokenization is necessary or not
+        #reason: typechecking of metadata to save it in model checkpoints
+        self.tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer)
 
     @classmethod
     @abstractmethod
@@ -141,6 +149,12 @@ class DatasetWrapper(ABC):
                     When shuffle is called, the training and eval datasets are created from all_datasets, containing different tensors than before.
             TODO:   Test the behavior of non-sequential datasets (test dataset goes from 90-100% and from 0-10%)
             TODO:   check size of dataset and splits, pick random number with torch.rand
+        """
+        pass
+
+    def load_metadata(self):
+        """
+            Loads a pickled metadata file, containing information about the tokenized dataset. 
         """
         pass
 
