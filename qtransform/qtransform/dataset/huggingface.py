@@ -80,11 +80,14 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
                     lambda batch: {"input_ids": [tokenizer.encode(x) for x in batch[data_column_name]]},
                     batched=True, 
                     remove_columns = data_column_name,
-                    desc = "tokenizing the dataset")
+                    drop_last_batch=True,
+                    num_proc=16,
+
+                    desc = "tokenizing the dataset")             
             if hasattr(log, "trace"): log.trace(f'Dataset split after tokenization: {dataset_splits}')
             first_example = dataset_splits["input_ids"][0] #for logging purposes
             first_example = first_example if len(first_example) < 50 else first_example[:50]
-            #log.debug(f'First example: {first_example}')
+            log.debug(f'First example: {first_example}')
             #after concatenation, length is the total amount of tokens in entire dataset
             length_tokens = tokenizer.meta.num_tokens
             log.debug(f'Dataset has {length_tokens} tokens.')
