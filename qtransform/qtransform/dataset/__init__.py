@@ -162,7 +162,7 @@ class DatasetWrapper(ABC):
                 dataset_splits = dataset_splits.map(self.chunk_examples, batched=True, remove_columns = self.cfg.args.data_column_name) 
             else:
                 #saves if-else statements for feature name
-                dataset_splits.rename_column(self.cfg.args.data_column_name, "chunks")
+                dataset_splits = dataset_splits.rename_column(self.cfg.args.data_column_name, "chunks")
             log.debug(f'Dataset after chunking: {dataset_splits}')
             #log.debug(f'Example of the first chunk: "{dataset_splits["chunks"][0]}"')
             dataset_splits = dataset_splits.map(

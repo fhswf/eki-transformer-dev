@@ -10,7 +10,7 @@ sizes: #sizes of dataset splits. if omited, assume empty sizes for splits
 args:
   block_size: ${model.args.block_size}
   batches: 1000
-  chunking: True #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
+  chunking: False #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
   chunk_size: 100 
 
 defaults:
