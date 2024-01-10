@@ -155,11 +155,16 @@ class DatasetWrapper(ABC):
             dataset_splits = datasets.concatenate_datasets([x.select_columns(self.cfg.args.data_column_name) for x in dataset_splits.values()])
             log.debug(f'Dataset has {len(dataset_splits)} rows.')
             tokenizer = get_tokenizer(self.cfg.tokenizer)
-            #split samples into sentences of length chunk_size
+            #split samples into sentences of length chunk_size or simply rename feature to "chunk" if chunking is False
             log.debug(f'Begin chunking dataset into sentences of length {self.cfg.args.chunk_size}')
-            dataset_splits = dataset_splits.map(self.chunk_examples, batched=True, remove_columns = self.cfg.args.data_column_name) 
+            chunking = self.cfg.args.get("chunking", False)
+            if chunking is True:
+                dataset_splits = dataset_splits.map(self.chunk_examples, batched=True, remove_columns = self.cfg.args.data_column_name) 
+            else:
+                #saves if-else statements for feature name
+                dataset_splits.rename_column(self.cfg.args.data_column_name, "chunks")
             log.debug(f'Dataset after chunking: {dataset_splits}')
-            log.debug(f'Example of the first chunk: "{dataset_splits["chunks"][0]}"')
+            #log.debug(f'Example of the first chunk: "{dataset_splits["chunks"][0]}"')
             dataset_splits = dataset_splits.map(
                 #map function expects dictionary or dataset object, tokenize function returns list of tokens (integers)
                 lambda batch: {"input_ids": [tokenizer.encode(x) for x in batch["chunks"]]}, 
@@ -185,6 +190,7 @@ class DatasetWrapper(ABC):
                     log.debug(f'Batch: {batch_id}/{batch_size}. Length of batch: {len(batch)}')
                     if len(batch) == 0:
                         break
+                    #would write operation be faster if values are moved to gpu?
                     tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
                     if hasattr(log, "trace"): log.trace(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
                     memmap[offset:offset+len(tokens)] = tokens
@@ -223,10 +229,15 @@ class DatasetWrapper(ABC):
         pass
 
     def chunk_examples(self, examples):
-        #splits the text of each row into chunks of length chunk_length. currently it is only used
-        #for character tokenization to avoid feeding large samples to the tokenizer
-        #perform tokenization on a handful of characters at a time
-        #from: https://huggingface.co/docs/datasets/process#split-long-examples
+        """
+            Splits the text of each row into chunks of length chunk_length. 
+            It is useful when samples have large amounts of text in order to perform
+            mapping in batches more efficiently.
+            Parts of the code are inspired from: https://huggingface.co/docs/datasets/process#split-long-examples
+
+            Returns: {"chunks" : chunks} 
+            where chunks is a list of sentences split after chunk_length characters.
+        """
         chunks = []
         CHUNK_LENGTH = self.cfg.args.chunk_size if self.cfg.args.get("chunk_size") else 100
         for sentence in examples[self.cfg.args.data_column_name]:
