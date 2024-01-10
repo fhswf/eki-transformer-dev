@@ -42,7 +42,8 @@ class BatchNorm(nn.BatchNorm1d):
             input = torch.cat((input, padding), dim=1)
         input = super().forward(input, *args, **kwargs)
         #remove padding 
-        index = torch.tile(torch.arange(c).reshape(c,1), (n,1,l))
+        # TODO tile can not e exported via onnx
+        index = torch.tile(torch.arange(c, device=input.device).reshape(c,1), (n,1,l))
         return torch.gather(input=input, dim=1, index=index)
 
 from typing import Optional
