@@ -9,6 +9,8 @@ sizes: #sizes of dataset splits. if omited, assume empty sizes for splits
   bench: 1.0
 args:
   block_size: ${model.args.block_size}
+  batches: 1000
+  chunk_size: 100
 
 defaults:
   - dataloader/default

@@ -9,6 +9,8 @@ from dataclasses import dataclass, fields
 from enum import Enum
 from os.path import join
 from qtransform.dataset.tokenizer import Tokenizer, get_tokenizer
+import datasets
+from datasets.dataset_dict import DatasetDict
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +85,8 @@ class DatasetInfo:
                 raise TypeError()
 
 from abc import ABC, abstractmethod
+import os
+
 class DatasetWrapper(ABC):
     """
     Capsule around Dataset, to unify their interfaces.
@@ -119,17 +123,116 @@ class DatasetWrapper(ABC):
         #reason: typechecking of metadata to save it in model checkpoints
         self.tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer)
 
-    @classmethod
-    @abstractmethod
     def load_dataset(self) -> DatasetInfo:
         """
             Loads a dataset from the config specified in the constructor. The split argument specifies
             the size of the returned dataset which have been stored in an instance of type DataSizes. 
+            If a dataset has not been tokenized yet, it will be tokenized and saved under the directory specified in 
+            dataset_dir of the hydra config. The tokenization uses huggingface's mapping functionality.
+            The tokenization was inspired by Karpathy's openwebtext script in nanoGPT.
+            (https://github.com/karpathy/nanoGPT/blob/master/data/openwebtext/prepare.py#L80)
+        """
+        log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
+        if not os.path.exists(self.dataset_file):
+            #assume feature "text" contains text to be tokenized
+            if self.cfg.args.get('data_column_name') is None:
+                log.warning(f'Field data_column_name omited. Assuming feature name "text" to be containing training data.')
+                with open_dict(self.cfg):
+                    self.cfg.args["data_column_name"] = "text"
 
-            TODO:   Check if it leads to performance issues in terms of memory usage if Datasets for all
-                    types (train, test, eval, bench) is created at once
+            log.info(f'Begin tokenizing dataset as file: {self.dataset_file}')
+            os.makedirs(self.tokenized_dir, exist_ok = True)
+            #retrieve dataset 
+            dataset_splits: DatasetDict = self.create_hf_dataset()
+            #some datasets (tiny_shakespeare) cram their dataset in one row which makes batch processing redundant
+            for split_name in dataset_splits.keys():
+                if len(dataset_splits[split_name]) == 1:
+                    log.warning(f'Sample length of {split_name} makes batch processing redundant as data is crammed into one row')
+            log.debug(f'Begin tokenizing dataset.')
+
+            #concatenate splits into one large split, only use text column
+            #otherwise, chunking will fail due to uneven amount of samples in each feature (https://github.com/huggingface/datasets/issues/1817#issuecomment-774066254)
+            dataset_splits = datasets.concatenate_datasets([x.select_columns(self.cfg.args.data_column_name) for x in dataset_splits.values()])
+            log.debug(f'Dataset has {len(dataset_splits)} rows.')
+            tokenizer = get_tokenizer(self.cfg.tokenizer)
+            #split samples into sentences of length chunk_size
+            log.debug(f'Begin chunking dataset into sentences of length {self.cfg.args.chunk_size}')
+            dataset_splits = dataset_splits.map(self.chunk_examples, batched=True, remove_columns = self.cfg.args.data_column_name) 
+            log.debug(f'Dataset after chunking: {dataset_splits}')
+            log.debug(f'Example of the first chunk: "{dataset_splits["chunks"][0]}"')
+            dataset_splits = dataset_splits.map(
+                #map function expects dictionary or dataset object, tokenize function returns list of tokens (integers)
+                lambda batch: {"input_ids": [tokenizer.encode(x) for x in batch["chunks"]]}, 
+                batched=True, 
+                remove_columns = "chunks",
+                num_proc=os.cpu_count()//2 if self.cfg.tokenizer.encoding != "character" else 1, #TODO: vocab not saved with multithreading currently
+                desc="tokenizing the dataset from chunks")
+            if hasattr(log, "trace"): log.trace(f'Dataset split after tokenization: {dataset_splits}')
+            length_tokens = sum([len(x) for x in dataset_splits["input_ids"]])   
+            tokenizer.meta.num_tokens = length_tokens
+            log.debug(f'Dataset has {length_tokens} tokens.')
+            batch_size = self.cfg.args.get('batches')
+            if batch_size is None or batch_size > len(dataset_splits):
+                batch_size = max(len(dataset_splits), len(dataset_splits) // 10)
+                log.info(f'Using batch size {batch_size} for memmap processing')
+            log.debug(f'Begin writing into memmap')
+            #write tokens into memmap
+            offset = 0
+            try:
+                memmap = np.memmap(self.dataset_file, mode='w+', dtype=self.dtype, shape=(length_tokens, ))
+                for batch_id in range(batch_size):
+                    batch = dataset_splits.shard(num_shards=batch_size, index=batch_id)
+                    log.debug(f'Batch: {batch_id}/{batch_size}. Length of batch: {len(batch)}')
+                    if len(batch) == 0:
+                        break
+                    tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
+                    if hasattr(log, "trace"): log.trace(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
+                    memmap[offset:offset+len(tokens)] = tokens
+                    offset += len(tokens)
+                memmap.flush()
+                tokenizer.save_metadata(self.tokenized_dir)
+            except Exception as e:
+                #remove broken memmap file
+                log.error(f'Something went wrong while tokenizing the dataset. Reason: {e}.\nRemoving the broken memmap file under {self.dataset_file}')
+                os.remove(self.dataset_file)
+                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
+            log.debug(f'Tokenization done.')
+
+        if self.dataset_sizes.train > 0.0:
+            self.dataset_info.train = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
+        #eval
+        if self.dataset_sizes.eval > 0.0:
+            percentage_eval = round(self.dataset_sizes.eval * 100)
+            eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
+            self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+        #bench
+        if self.dataset_sizes.bench > 0.0:
+            self.dataset_info.test = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.test)
+        #test
+        if self.dataset_sizes.test > 0.0:
+            #for now, use last percent of dataset for testing
+            self.dataset_info.test = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
+        
+    @classmethod
+    @abstractmethod
+    def create_hf_dataset(self) -> DatasetDict:
+        """
+            Creates a huggingface dataset from text files or loads a pre-existing huggingface dataset. Huggingface datasets
+            are used due to the memory efficient implementation as well as their mapping functionality.
         """
         pass
+
+    def chunk_examples(self, examples):
+        #splits the text of each row into chunks of length chunk_length. currently it is only used
+        #for character tokenization to avoid feeding large samples to the tokenizer
+        #perform tokenization on a handful of characters at a time
+        #from: https://huggingface.co/docs/datasets/process#split-long-examples
+        chunks = []
+        CHUNK_LENGTH = self.cfg.args.chunk_size if self.cfg.args.get("chunk_size") else 100
+        for sentence in examples[self.cfg.args.data_column_name]:
+            chunks += [sentence[i:i + CHUNK_LENGTH] for i in range(0, len(sentence), CHUNK_LENGTH)]
+        return {"chunks": chunks}
+        
 
     def check_split(self, split: str):
         """
@@ -157,6 +260,85 @@ class DatasetWrapper(ABC):
             Loads a pickled metadata file, containing information about the tokenized dataset. 
         """
         pass
+
+import numpy as np
+from typing import Tuple
+import torch
+
+#TODO: implement download=True option
+class MemmapDataset(Dataset):
+    
+    #TODO: is dtype necessary? since each file only contains the ids of tokens, not the actual embeddings
+    def __init__(self, token_file: str, dtype: np.dtype, block_size: int, start: float=0.0, end: float = 1.0):
+        """
+            Creates a dataset which loads a numpy array from a file. 
+            Slices of the dataset can be retrieved with the start and end parameters. 
+            They specify the starting and ending range of the dataset in percent.
+        """
+        super().__init__()
+        if not isinstance(start, float) or start < 0.0 or start >= 1.0:
+            log.error(f'Invalid starting range for dataset ({start})')
+            raise KeyError()
+        if not isinstance(end, float) or end <= 0.0 or end > 1.0:
+            log.error(f'Invalid ending range for dataset ({end})')
+            raise KeyError()
+        if not isinstance(dtype, np.dtype): #np.dtype("dtype") or np.<dtype> e.g.: np.dtype("float32") or np.float32
+            try:
+                dtype = np.dtype(dtype) #not an instance (np.float32)
+            except TypeError as e:
+                log.error(e)
+                raise TypeError
+        self.block_size = block_size
+        if self.block_size <= 0:
+            log.error(f'Block size of 0 is invalid.')
+            raise ValueError()
+        log.info(f"Attempting to retrieve tokenized dataset under \"{token_file}\"")
+        self.token_file = token_file
+        self.dtype = dtype
+        #the method of retrieving the byte size is somewhat inspired from the stackoverflow article
+        #https://stackoverflow.com/questions/19599864/easy-way-of-getting-number-of-bits-from-a-numpy-type
+        self.bytes = self.dtype.itemsize
+        amnt_tokens = os.path.getsize(self.token_file) / self.bytes
+        if amnt_tokens % 1 != 0.0:
+            log.error(f'The amount of tokens is supposed to be a whole number, but it is {amnt_tokens}. Maybe due to a wrong datatype?')
+            raise ValueError()
+        offset = int(amnt_tokens * start)
+        #rounding to the nearest multiplicative of datatype to make sure not to read half a token too much
+        offset -= offset % self.bytes
+        log.debug(f'Offset is {offset}, start is {start}, end is {end}')
+        #skip the first start * amnt_tokens and the last amnt_tokens * end items
+        log.debug(f'Tokenized file has {amnt_tokens} tokens of datatype: {dtype}. Attempting to start at token: {offset}')
+        #torch.nn.Embedding only takes inputs of type int (32b, 64b) -> cast np array to 64 signed int
+        self.data = np.memmap(self.token_file, dtype=self.dtype, mode='r', offset=offset)[:int(amnt_tokens * end)].astype(np.int64)
+        if len(self.data) < self.block_size:
+            log.error(f'Loaded data has less tokens than block size {self.block_size} for starting range {start} and ending range {end}. Maybe check size of splits?')
+            raise ValueError()
+        log.info(f'Loaded data has {len(self.data)} tokens.')
+        #log.debug(f'all unique tokens in dataset: {set(self.data)}, length: {len(set(self.data))}')
+        self.length = len(self.data)
+
+    def __len__(self):
+        return self.length
+    
+    #the dataloader works with batch sizes, dataset only works with indices
+    def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+            Returns inputs and labels. Called when iterating with e.g. a dataloader.
+        """
+        if index < 0:
+            index += len(self)
+        #lower index to make sure that block_size elements are always retrieved
+        if index + self.block_size > len(self) - 1:
+            index = self.length - self.block_size - 2
+        offset = index + self.block_size
+        #From https://pytorch.org/docs/stable/generated/torch.from_numpy.html:
+        #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. 
+        #The returned tensor is not resizable.
+        #therefore, copy part of np array or use torch.stack()
+        inputs: torch.Tensor = torch.from_numpy(np.copy(self.data[index:offset]))
+        #labels are always the following word for each word within the context
+        labels : torch.Tensor = torch.from_numpy(np.copy(self.data[index +1:offset+1]))
+        return inputs, labels
 
 def get_data(dataset_cfg: DictConfig) -> DatasetWrapper:
     import qtransform.dataset as package_self
