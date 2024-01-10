@@ -41,7 +41,7 @@ class TransformersTokenizer(Tokenizer):
         for tokenizer_cls_name, tokenizer_cls in pretrained_tokenizers.items():
             encodings = tokenizer_cls.max_model_input_sizes 
             if self.meta.encoding in encodings:
-                self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding)
+                self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding, truncation=True)
         log.debug(f'Using tokenizer class: {self.tokenizer.__class__.__name__} with encoding: {self.meta.encoding}')
         if self.tokenizer is None:
             log.error(f'No transformers tokenizer found for encoding: {self.meta.encoding} and fast={self.meta.fast}')
@@ -56,7 +56,9 @@ class TransformersTokenizer(Tokenizer):
 
     def encode(self, text) -> List[int]:
         #truncation is not performed in this case as only the ids are important currently
-        tokens: list[int] = self.tokenizer(text)["input_ids"]
+        if len(text) > self.tokenizer.model_max_length:
+            text = text[:self.tokenizer.model_max_length]
+        tokens: list[int] = self.tokenizer(text, max_length=self.tokenizer.model_max_length)["input_ids"]
         self.meta.num_tokens += len(tokens)
         return tokens
 
