@@ -144,11 +144,13 @@ class DatasetWrapper(ABC):
             os.makedirs(self.tokenized_dir, exist_ok = True)
             #retrieve dataset 
             dataset_splits: DatasetDict = self.create_hf_dataset()
-            #some datasets (tiny_shakespeare) cram their dataset in one row which makes batch processing redundant
-            for split_name in dataset_splits.keys():
-                if len(dataset_splits[split_name]) == 1:
-                    log.warning(f'Sample length of {split_name} makes batch processing redundant as data is crammed into one row')
             log.debug(f'Begin tokenizing dataset.')
+
+            #default huggingface batch_size: 1000 (https://huggingface.co/docs/datasets/process#batch-processing)
+            batch_size = self.cfg.args.get('batches')
+            if batch_size is None or batch_size > len(dataset_splits):
+                batch_size = 1000 
+                log.info(f'Using batch size {batch_size} for memmap processing')
 
             #concatenate splits into one large split, only use text column
             #otherwise, chunking will fail due to uneven amount of samples in each feature (https://github.com/huggingface/datasets/issues/1817#issuecomment-774066254)
@@ -156,31 +158,52 @@ class DatasetWrapper(ABC):
             log.debug(f'Dataset has {len(dataset_splits)} rows.')
             tokenizer = get_tokenizer(self.cfg.tokenizer)
             #split samples into sentences of length chunk_size or simply rename feature to "chunk" if chunking is False
-            log.debug(f'Begin chunking dataset into sentences of length {self.cfg.args.chunk_size}')
             chunking = self.cfg.args.get("chunking", False)
             if chunking is True:
-                dataset_splits = dataset_splits.map(self.chunk_examples, batched=True, remove_columns = self.cfg.args.data_column_name) 
+                log.debug(f'Begin chunking dataset into sentences of length {self.cfg.args.chunk_size}')
+                dataset_splits = dataset_splits.map(
+                    self.chunk_examples, 
+                    batched=True, 
+                    batch_size = batch_size,
+                    num_procs = self.get_hf_num_proc(dataset_splits.num_rows),
+                    remove_columns = self.cfg.args.data_column_name) 
             else:
                 #saves if-else statements for feature name
+                log.info(f'Skipping chunking of datasets')
                 dataset_splits = dataset_splits.rename_column(self.cfg.args.data_column_name, "chunks")
             log.debug(f'Dataset after chunking: {dataset_splits}')
-            #log.debug(f'Example of the first chunk: "{dataset_splits["chunks"][0]}"')
+
+            #larger batch size than amount of samples will lead to one large batch containing all samples
+            if len(dataset_splits) < batch_size:
+                log.warning(f'Batch size of {batch_size} and sample size of {len(dataset_splits)} makes batch processing redundant.')
+            def encode_batch(batch):
+                batch_ids = [tokenizer.encode(x) for x in batch["chunks"]]
+                return {"input_ids": batch_ids, "length": [len(x) for x in batch_ids]}
+
             dataset_splits = dataset_splits.map(
                 #map function expects dictionary or dataset object, tokenize function returns list of tokens (integers)
-                lambda batch: {"input_ids": [tokenizer.encode(x) for x in batch["chunks"]]}, 
-                batched=True, 
+                encode_batch,
+                batched=True,
+                batch_size = batch_size, 
                 remove_columns = "chunks",
-                num_proc=os.cpu_count()//2 if self.cfg.tokenizer.encoding != "character" else 1, #TODO: vocab not saved with multithreading currently
-                desc="tokenizing the dataset from chunks")
+                num_proc=self.get_hf_num_proc(dataset_splits.num_rows), 
+                desc=f'tokenizing from chunks')
             if hasattr(log, "trace"): log.trace(f'Dataset split after tokenization: {dataset_splits}')
-            length_tokens = sum([len(x) for x in dataset_splits["input_ids"]])   
+            length_tokens = sum(dataset_splits["length"]) 
             tokenizer.meta.num_tokens = length_tokens
             log.debug(f'Dataset has {length_tokens} tokens.')
-            batch_size = self.cfg.args.get('batches')
-            if batch_size is None or batch_size > len(dataset_splits):
-                batch_size = max(len(dataset_splits), len(dataset_splits) // 10)
-                log.info(f'Using batch size {batch_size} for memmap processing')
             log.debug(f'Begin writing into memmap')
+
+            #handler for exceptions or SIGINT (crtl + c)
+            def remove_memmap(error: str = "Program interrupted by user") -> None:
+                #remove broken memmap file
+                log.error(f'Stopped tokenization due to error: {error}.\nRemoving the broken memmap file under {self.dataset_file}')
+                os.remove(self.dataset_file)
+                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
+
+            import signal
+            signal.signal(signal.SIGINT, remove_memmap)
+
             #write tokens into memmap
             offset = 0
             try:
@@ -198,10 +221,7 @@ class DatasetWrapper(ABC):
                 memmap.flush()
                 tokenizer.save_metadata(self.tokenized_dir)
             except Exception as e:
-                #remove broken memmap file
-                log.error(f'Something went wrong while tokenizing the dataset. Reason: {e}.\nRemoving the broken memmap file under {self.dataset_file}')
-                os.remove(self.dataset_file)
-                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
+                remove_memmap(str(e))
             log.debug(f'Tokenization done.')
 
         if self.dataset_sizes.train > 0.0:
@@ -209,16 +229,30 @@ class DatasetWrapper(ABC):
         #eval
         if self.dataset_sizes.eval > 0.0:
             percentage_eval = round(self.dataset_sizes.eval * 100)
+            #eval data is subset of training data, choose random starting point
             eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
             self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
         #bench
         if self.dataset_sizes.bench > 0.0:
-            self.dataset_info.test = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.test)
+            self.dataset_info.test = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.bench)
         #test
         if self.dataset_sizes.test > 0.0:
             #for now, use last percent of dataset for testing
             self.dataset_info.test = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
         
+    def get_hf_num_proc(self, rows: int) -> int:
+        """
+            Get num_proc argument for huggingface mapping function based on the amount of rows that a dataset has.
+            It is at maximum os.cpu_count // 2 and at the minimum rows.
+        """
+        #TODO: vocab not saved with multithreading currently
+        max_procs = os.cpu_count() // 2
+        if self.cfg.tokenizer.encoding == "character":
+            return 1
+        elif max_procs <= rows:
+            return max_procs
+        return rows
+
     @classmethod
     @abstractmethod
     def create_hf_dataset(self) -> DatasetDict:
@@ -266,17 +300,10 @@ class DatasetWrapper(ABC):
         """
         pass
 
-    def load_metadata(self):
-        """
-            Loads a pickled metadata file, containing information about the tokenized dataset. 
-        """
-        pass
-
 import numpy as np
 from typing import Tuple
 import torch
 
-#TODO: implement download=True option
 class MemmapDataset(Dataset):
     
     #TODO: is dtype necessary? since each file only contains the ids of tokens, not the actual embeddings

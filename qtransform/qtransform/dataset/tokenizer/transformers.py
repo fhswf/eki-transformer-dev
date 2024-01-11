@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 from qtransform.dataset.tokenizer import Tokenizer, Metadata
-from numpy import memmap
+from numpy import memmap, array
 from omegaconf import DictConfig, open_dict
 import logging
 import transformers
@@ -46,10 +46,12 @@ class TransformersTokenizer(Tokenizer):
         if self.tokenizer is None:
             log.error(f'No transformers tokenizer found for encoding: {self.meta.encoding} and fast={self.meta.fast}')
             raise KeyError()
+        self.tokenizer.model_max_length = 1e30 #disable warning about max context
         self.meta.max_token_value = self.tokenizer.vocab_size
-    
+
     def encode(self, text) -> List[int]:
-        #truncation is not performed in this case as only the ids are important currently
+        #truncation is not performed as the tokens are appended into one continuous 1d memmap file
+        #if truncation is performed, a large portion of the data is lost during tokenization
         tokens: list[int] = self.tokenizer(text)["input_ids"]
         self.meta.num_tokens += len(tokens)
         return tokens
