@@ -194,16 +194,6 @@ class DatasetWrapper(ABC):
             log.debug(f'Dataset has {length_tokens} tokens.')
             log.debug(f'Begin writing into memmap')
 
-            #handler for exceptions or SIGINT (crtl + c)
-            def remove_memmap(error: str = "Program interrupted by user") -> None:
-                #remove broken memmap file
-                log.error(f'Stopped tokenization due to error: {error}.\nRemoving the broken memmap file under {self.dataset_file}')
-                os.remove(self.dataset_file)
-                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
-
-            import signal
-            signal.signal(signal.SIGINT, remove_memmap)
-
             #write tokens into memmap
             offset = 0
             try:
@@ -221,7 +211,10 @@ class DatasetWrapper(ABC):
                 memmap.flush()
                 tokenizer.save_metadata(self.tokenized_dir)
             except Exception as e:
-                remove_memmap(str(e))
+                #remove broken memmap file
+                log.error(f'Stopped tokenization due to error: {error}.\nRemoving the broken memmap file under {self.dataset_file}')
+                os.remove(self.dataset_file)
+                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
             log.debug(f'Tokenization done.')
 
         if self.dataset_sizes.train > 0.0:
@@ -346,8 +339,7 @@ class MemmapDataset(Dataset):
         log.debug(f'Offset is {offset}, start is {start}, end is {end}')
         #skip the first start * amnt_tokens and the last amnt_tokens * end items
         log.debug(f'Tokenized file has {amnt_tokens} tokens of datatype: {dtype}. Attempting to start at token: {offset}')
-        #torch.nn.Embedding only takes inputs of type int (32b, 64b) -> cast np array to 64 signed int
-        self.data = np.memmap(self.token_file, dtype=self.dtype, mode='r', offset=offset)[:int(amnt_tokens * end)].astype(np.int64)
+        self.data = np.memmap(self.token_file, dtype=self.dtype, mode='r', offset=offset)[:int(amnt_tokens * end)]
         if len(self.data) < self.block_size:
             log.error(f'Loaded data has less tokens than block size {self.block_size} for starting range {start} and ending range {end}. Maybe check size of splits?')
             raise ValueError()
@@ -369,13 +361,10 @@ class MemmapDataset(Dataset):
         if index + self.block_size > len(self) - 1:
             index = self.length - self.block_size - 2
         offset = index + self.block_size
-        #From https://pytorch.org/docs/stable/generated/torch.from_numpy.html:
-        #The returned tensor and ndarray share the same memory. Modifications to the tensor will be reflected in the ndarray and vice versa. 
-        #The returned tensor is not resizable.
-        #therefore, copy part of np array or use torch.stack()
-        inputs: torch.Tensor = torch.from_numpy(np.copy(self.data[index:offset]))
+        #fixed dtype as torch embeddings need int64 tensor to work
+        inputs: torch.Tensor = torch.from_numpy(self.data[index:offset].astype(np.int64))
         #labels are always the following word for each word within the context
-        labels : torch.Tensor = torch.from_numpy(np.copy(self.data[index +1:offset+1]))
+        labels : torch.Tensor = torch.from_numpy(self.data[index +1:offset+1].astype(np.int64))
         return inputs, labels
 
 def get_data(dataset_cfg: DictConfig) -> DatasetWrapper:

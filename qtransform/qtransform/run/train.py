@@ -202,13 +202,11 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
             ## TODO tensorboard logging and other types of reporting
         if mini_run and i>=200: # run for more than one data point
             break
-        #dataloaders for custom implemented datasets iterate endlessly
+        #dataloaders iterate through entire dataset
+        #problematic if datasets are large (openwebtext ~21GB) and testing should be done
         elif i>= cfg.run.max_iters:
             break
     return last_loss    
-
-
-# TODO
 
 @torch.no_grad()
 def eval_model(cfg: DictConfig, device, model: nn.Module, evaldata: data.Dataset):

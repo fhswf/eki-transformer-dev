@@ -92,7 +92,7 @@ def infer(cfg: DictConfig, device: Any):
     decode = tokenizer.decode
 
     #load metadata, including vocabulary for character tokenization
-    log.warning(checkpoint["tokenizer_cfg"]["meta"])
+    log.debug(checkpoint["tokenizer_cfg"]["meta"])
     tokenizer.load_metadata(meta=checkpoint["tokenizer_cfg"]["meta"])
     # encode the beginning of the prompt
     if start.startswith('FILE:'):
