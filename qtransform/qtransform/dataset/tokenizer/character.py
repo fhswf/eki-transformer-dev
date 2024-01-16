@@ -14,6 +14,7 @@ log = logging.getLogger(__name__)
 class CharacterMetadata(Metadata):
     itos: Dict[int, str] = None
     stoi: Dict[str, int] = None
+    module: str = "character"
 
     def __post_init__(self):
         if not isinstance(self.itos, Dict):

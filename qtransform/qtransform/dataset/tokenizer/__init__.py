@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict, replace
+from dataclasses import dataclass, asdict, replace, fields
 from typing import Dict, List, Tuple, Union, Any
 from omegaconf import DictConfig, OmegaConf, open_dict
 from qtransform.classloader import get_data
@@ -26,6 +26,7 @@ class Metadata():
     encoding: str
     dtype: str
     num_tokens: int = 0
+    module: str = ""
 
 class Tokenizer(ABC):
     """
@@ -146,6 +147,12 @@ class Tokenizer(ABC):
     def load_metadata(self, filepath: str = None, meta: Dict = None):
         if filepath is not None:
             meta = self._load_metadata(filepath)
+            #keys not supported in metadata of tokenizer (e.g. fast encoding for tiktoken)
+            keys = set(meta.keys()) - set([x.name for x in fields(self.meta)])
+            keys_dict = {x:meta[x] for x in keys}
+            log.warning(f'Metadata contains keys {keys_dict}. They are not supported in {self.tokenizer_cfg.module}. Removing them.')
+            meta = {x: meta[x] for x in meta if x not in keys}
+            meta["module"] = self.tokenizer_cfg.module
             self.meta =  replace(self.meta, **meta)
         elif isinstance(meta, Union[Dict, DictConfig]):
             self.meta =  replace(self.meta, **meta)

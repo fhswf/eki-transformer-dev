@@ -1,2 +1,3 @@
 wrapper: CharacterTokenizer
 encoding: character
+module: character
