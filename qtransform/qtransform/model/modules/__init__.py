@@ -42,7 +42,7 @@ class BatchNorm(nn.BatchNorm1d):
         input = super().forward(input, *args, **kwargs)
         #remove padding 
         #tensor.repeat instead of torch.tile for onnx compatibility (https://github.com/pytorch/pytorch/issues/63796)
-        index = torch.arange(c).reshape(c,1).repeat((n,1,l))
+        index = torch.arange(c).reshape(c,1).repeat((n,1,l)).to(input.device)
         return torch.gather(input=input, dim=1, index=index)
 
 from typing import Optional
