@@ -30,7 +30,11 @@ Here is a list:
 ```
 
 ### Examples
-```
+``` bash
+# train openwebtext without quantization
 qtransform run=train model=gpt_2_h2l2e256b64_GeBN dataset=huggingface debug=True dataset.name=openwebtext +export=True run.epochs=100 run.ma
 x_iters=300 dataset/tokenizer=tiktoken dataset.tokenizer.encoding=gpt2
+
+# train a transformer with tiny_shakespeare and use qat 
+qtransform run=train model=gpt_2_h2l2e256b64_ReBN debug=True dataset=huggingface dataset.name=tiny_shakespeare +export=True run.epochs=5 run.max_iters=300 dataset/tokenizer=tiktoken dataset.tokenizer.encoding=gpt2 quantization=qat quantization/model=4b_default_gpt2
 ```
