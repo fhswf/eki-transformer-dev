@@ -41,7 +41,7 @@ class TransformersTokenizer(Tokenizer):
         for tokenizer_cls_name, tokenizer_cls in pretrained_tokenizers.items():
             encodings = tokenizer_cls.max_model_input_sizes 
             if self.meta.encoding in encodings:
-                self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding)
+                self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding, truncation=True)
         log.debug(f'Using tokenizer class: {self.tokenizer.__class__.__name__} with encoding: {self.meta.encoding}')
         if self.tokenizer is None:
             log.error(f'No transformers tokenizer found for encoding: {self.meta.encoding} and fast={self.meta.fast}')
