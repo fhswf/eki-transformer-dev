@@ -42,7 +42,8 @@ class BatchNorm(nn.BatchNorm1d):
         input = super().forward(input, *args, **kwargs)
         #remove padding 
         #tensor.repeat instead of torch.tile for onnx compatibility (https://github.com/pytorch/pytorch/issues/63796)
-        index = torch.arange(c).reshape(c,1).repeat((n,1,l)).to(input.device)
+        index = torch.arange(c).reshape(c,1).repeat((n,1,l))
+        index.to(device=input.device)
         return torch.gather(input=input, dim=1, index=index)
 
 from typing import Optional
@@ -71,6 +72,31 @@ from dataclasses import dataclass
 from typing import Optional
 
 from brevitas import nn as qnn
+from brevitas.nn import utils as qutils
+from brevitas.proxy import WeightQuantProxyFromInjector, BiasQuantProxyFromInjector
+
+## TODO test this
+def merge_bn_mha(layer, bn, output_channel_dim=0):
+    out = qutils.mul_add_from_bn(
+        bn_mean=bn.running_mean,
+        bn_var=bn.running_var,
+        bn_eps=bn.eps,
+        bn_weight=bn.weight.data.clone(),
+        bn_bias=bn.bias.data.clone())
+    mul_factor, add_factor = out
+    out_ch_weight_shape = qutils.compute_channel_view_shape(layer.out_proj.weight, output_channel_dim)
+    layer.out_proj.weight.data.mul_(mul_factor.view(out_ch_weight_shape))
+    if layer.out_proj.bias is not None:
+        out_ch_bias_shape = qutils.compute_channel_view_shape(layer.out_proj.bias, channel_dim=0)
+        layer.out_proj.bias.data.mul_(mul_factor.view(out_ch_bias_shape))
+        layer.out_proj.bias.data.add_(add_factor.view(out_ch_bias_shape))
+    else:
+        layer.out_proj.bias = nn.Parameter(add_factor)
+    if (hasattr(layer, 'out_proj_weight_quant') and
+            isinstance(layer.out_proj_weight_quant, WeightQuantProxyFromInjector)):
+        layer.out_proj_weight_quant.init_tensor_quant()
+    if (hasattr(layer, 'out_proj_bias_quant') and isinstance(layer.out_proj_bias_quant, BiasQuantProxyFromInjector)):
+        layer.out_proj_bias_quant.init_tensor_quant()
 
 class CausalSelfAttention(nn.Module):
     """
@@ -84,6 +110,11 @@ class CausalSelfAttention(nn.Module):
         self.dropout = config.dropout
         self.block_size = config.block_size
         self.mha = nn.MultiheadAttention(config.n_embd, config.n_head, dropout=self.dropout, batch_first=True)
+        
+        qnn.Q
+        utils.merge_bn
+        self.mha.out_proj.weight
+        self.mha.out_proj.bias
         self.attn_mask = torch.nn.parameter.Parameter(torch.tril(torch.ones((config.block_size,config.block_size)))) # limit to left in the input sequence
         self.flash = config.flash
         # in case we need to do attention by hand:
