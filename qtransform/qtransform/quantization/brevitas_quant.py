@@ -83,6 +83,8 @@ class BrevitasQuantizer(Quantizer):
         quantizers = layer_cfg.get_custom_quantizers()
         if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
         layer_name: str = layer_cfg.name
+        #filter every class which contains name of layer to be quantized
+        # -> MultiheadAttention: QuantMultiheadAttention, BatchNorm1d: BatchNorm1dQuantToScaleBias
         quantized_class_name = list(filter(lambda x: re.search(layer_type, x), QUANTIZED_CLASSES.keys()))
         if len(quantized_class_name) != 1:
             log.error(f'Found quantizer classes with layer_type "{layer_type}": {quantized_class_name}. Exactly one entry needs\
@@ -94,6 +96,7 @@ class BrevitasQuantizer(Quantizer):
         #usually supplied in constructor
         #exceptions: dtype, device have to be retrieved from general config
         signature_unquantized_layer = inspect.signature(layer.__init__)
+        log.debug(f'Constructor signature of layer {layer_name} (class {layer.__class__}): {signature_unquantized_layer}')
         hyperparameters = dict()
         for attribute_name in set(signature_unquantized_layer.parameters.keys()) - set(['self', 'dtype', 'device', 'inplace']):
             #some init parameters are not necessarily stored as attributes in layer

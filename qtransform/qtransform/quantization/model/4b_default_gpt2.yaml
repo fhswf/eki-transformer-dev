@@ -14,9 +14,9 @@ layers:
     transformer.dropout: 
       quantize: True
       layer_type: Dropout #no quantizers for dropout possible, what is the default behavior then?
-    #transformer.ln_out:
-    #  quantize: True
-    #  layer_type: BatchNorm1d #avoid LayerNorm
+    transformer.ln_out:
+      quantize: True
+      layer_type: BatchNorm1d
     linear_out:
       quantize: True
       layer_type: Linear
@@ -30,9 +30,9 @@ layers:
           args:
             bit_width: 4
     #transformer heads
-    #transformer.layer.r'[0-9]+'.r'ln_[0-9]':
-    #  quantize: True
-    #  layer_type: BatchNorm1d #avoid LayerNorm
+    transformer.layer.r'[0-9]+'.r'ln_[0-9]':
+      quantize: True
+      layer_type: BatchNorm1d
     #Feed forward neural network
     transformer.layer.r'[0-9]+'.mlp.r'c_.+':
       quantize: True

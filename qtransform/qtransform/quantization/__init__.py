@@ -304,9 +304,9 @@ class LayerQuantConfig:
         #--------------------------------------------------------
         #batchnorm not supported yet
 
-        if match(r'batchnorm', self.layer_type, IGNORECASE):
-            log.error(f'BatchNorm is not supported yet!')
-            raise NotImplementedError()
+        #if match(r'batchnorm', self.layer_type, IGNORECASE):
+        #    log.error(f'BatchNorm is not supported yet!')
+        #    raise NotImplementedError()
 
         #--------------------------------------------------------
         
@@ -320,6 +320,11 @@ class LayerQuantConfig:
         if self.layer is None:
             log.error(f'Layer quantization config for {self.name} can not be applied for an empty layer')
             raise KeyError
+
+        #quick check if quantized class is suitable for layer (e.g. specify QuantLinear for LayerNorm layer)
+        if not match(self.layer.__class__.__name__, self.layer_type, IGNORECASE):
+            log.error(f'Quantizer class {self.layer_type} is unsuitable for layer "{self.name}" of type: {self.layer.__class__.__name__}')
+            raise ValueError()
         #cleanup layer config for non-quantizer specific properties
         for field in (x for x in fields(self) if x.name not in ['quantized_layer_type', 'quantizers', 'layer']):
             if hasattr(log,"trace"): log.trace(f"Cleaning up field:  {field.name:10s}\t within layer: {self.name}")
