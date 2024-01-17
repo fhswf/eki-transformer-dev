@@ -496,13 +496,6 @@ class ModelQuantConfig:
                 log.error(f'Layer configs only support these properties: {[x.name + " (required)" if get_origin(x.type) is not Union else x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
                 raise TypeError
 
-"""
-    Supported torch.nn modules for quantization by Brevitas:
-    quant_eltwise, quant_convtranspose, quant_max_pool, quant_accumulator, 
-    quant_rnn, quant_linear, quant_activation, quant_avg_pool, quant_upsample, equalized_layer, utils, quant_mha, quant_embedding, 
-    quant_dropout, quant_conv, quant_bn, quant_scale_bias, hadamard_classifier, __init__, quant_layer
-"""
-
 class Quantizer(ABC):
     """
         A generic wrapper to handle QAT differently depending on the chosen framework specified in the hydra config.
