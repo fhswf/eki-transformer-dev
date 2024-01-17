@@ -315,7 +315,7 @@ class LayerQuantConfig:
         #layernorm is not implemented, therefore merge them with merge_bn later 
         if match(r'(batch|layer)norm', self.layer_type, IGNORECASE):
             log.warning(f'Quantization for Batchnorm and Layernorm layers are performed by merging them into the next layer' \
-                f'during export, effectively ignoring the specified config (for: {self.name}). ')
+                f'during export, thereby ignoring the config (for: {self.name}). ')
             self.replace_later = True
             self.quantizers = {}
             self.quantize = False        

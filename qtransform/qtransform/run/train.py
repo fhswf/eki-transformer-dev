@@ -91,7 +91,6 @@ def run(cfg: DictConfig):
         quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         #add qat qparams (scale and zero)
         model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
-        #calibrate the scales for each weight and activation
         # TODO make this a decorator so it can return stuff
         model = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
     else:
@@ -127,6 +126,14 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
         if 'optimizer_state_dict' not in checkpoint:
             log.error("Can not load checkpoint with no optimizer_state_dict")
             raise KeyError
+        if 'quantized' not in checkpoint:
+            log.warning(f'No info specified if checkpoint is quantized. Assuming false.')
+        elif checkpoint["quantized"]:
+            #skip qparams from checkpoint
+            #for some reason, mlp qparams are saved within checkpoint but not the ones from mha
+            #TODO: investigate
+            from brevitas import config
+            config.IGNORE_MISSING_KEYS = True
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         metrics = {}

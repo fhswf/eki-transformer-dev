@@ -84,6 +84,7 @@ def save_checkpoint(cfg: DictConfig,
                 "model_cfg": model_cfg,
                 "tokenizer_cfg": tokenizer_cfg, 
                 "metrics": metrics,
+                "quantized": True if cfg.get('quantization', {"quantize": False})["quantize"] is True else False
                 }, f=checkpoint_path)
         log.info(f"Model checkpoint saved to {checkpoint_path}")
     return checkpoint_path
