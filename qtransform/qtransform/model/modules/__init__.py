@@ -196,10 +196,16 @@ class TransformerBlock(nn.Module):
             norm_size = config.n_embd
         elif config.norm_layer == "BatchNorm":
             norm_size = config.block_size
+        elif config.norm_layer == "None":
+            norm_size = None
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
-        ln_1 = getattr(custom_nn, config.norm_layer, None)
-        ln_2 = getattr(custom_nn, config.norm_layer, None)
+        if norm_size:
+            ln_1 = getattr(custom_nn, config.norm_layer, None)
+            ln_2 = getattr(custom_nn, config.norm_layer, None)
+        else:
+            ln_1 = nn.Identity()
+            ln_2 = nn.Identity()
         self.ln_1 = ln_1(norm_size, bias=config.bias)
         self.attn = CausalSelfAttention(config)
         self.ln_2 = ln_2(norm_size, bias=config.bias)

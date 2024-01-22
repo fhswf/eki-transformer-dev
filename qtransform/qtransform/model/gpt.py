@@ -61,10 +61,15 @@ class GPT(nn.Module):
             norm_size = config.n_embd
         elif config.norm_layer == "BatchNorm":
             norm_size = config.block_size
+        elif config.norm_layer == "None":
+            norm_size = None
         else:
             raise AttributeError("can determine model for norm layer: " + config.norm_layer)
         
-        ln_out = getattr(custom_nn, config.norm_layer, None)
+        if norm_size:
+            ln_out = getattr(custom_nn, config.norm_layer, None)
+        else:
+            ln_out = nn.Identity()
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
