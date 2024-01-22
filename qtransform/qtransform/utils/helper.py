@@ -8,6 +8,8 @@ import logging
 from torch import nn
 log = logging.getLogger(__name__)
 
+
+
 def get_default_chkpt_folder() -> str:
     """
         Returns the default directory where model checkpoints are stored if the path was not configured
@@ -20,7 +22,7 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
     #model_dir: specify custom path for checkpoints, otherwise use directory model_dir in qtransform/utils/model_dir
     chkpt_folder = get_default_chkpt_folder()
     if "from_checkpoint" not in cfg.run:
-        log.error(f'Key "from_checkpoint" not specified in run config')
+        log.error(f'Key "from_checkpoint" not specified in run config, e.g. run.from_checkpoint="<path>"')
         raise KeyError()
     #from_checkpoint is the absolute path to a file, ignore model_dir 
     if os.path.isabs(cfg.run.from_checkpoint):
@@ -42,7 +44,8 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
             raise FileNotFoundError
     log.info(f"Loading checkpoint from {checkpoint_path}")
     from_epoch = 0    
-    checkpoint = torch.load(checkpoint_path)
+    from qtransform import device_singleton
+    checkpoint = torch.load(checkpoint_path, map_location=device_singleton.device)
     if 'epoch' in checkpoint:
         from_epoch = checkpoint['epoch']
     else:

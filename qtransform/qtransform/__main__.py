@@ -6,6 +6,9 @@ import qtransform
 from qtransform.utils import addLoggingLevel
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 
+import brevitas
+brevitas.config.IGNORE_MISSING_KEYS = True
+
 @hydra.main(version_base=None, config_path=qtransform.get_module_config_path(), config_name="config.yaml")
 def cli_wrapper(cfg: DictConfig):
     """ 
@@ -19,6 +22,7 @@ def module_wrapper(cfg: DictConfig):
     main(cfg)
 
 def main(cfg: DictConfig):
+
     logging.captureWarnings(True)
     root_log = logging.getLogger("root")
     log = logging.getLogger(f"{__package__}.{__name__}")   
