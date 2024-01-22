@@ -75,16 +75,28 @@ from brevitas import nn as qnn
 from brevitas.nn import utils as qutils
 from brevitas.proxy import WeightQuantProxyFromInjector, BiasQuantProxyFromInjector
 
+def compute_channel_view_shape(tensor: torch.Tensor, channel_dim: int):
+    """
+        copied from: brevitas.nn.utils.compute_channel_view_shape
+    """
+    broadcast_shape = [1] * len(tensor.size())
+    broadcast_shape[channel_dim] = -1
+    return tuple(broadcast_shape)
+
 ## TODO test this
+## TODO maybe specify in args if batch norm is performed during input or output projection
 def merge_bn_mha(layer, bn, output_channel_dim=0):
+    #retrieve learnable parameters from batchnorm (scale + bias)
     out = qutils.mul_add_from_bn(
         bn_mean=bn.running_mean,
         bn_var=bn.running_var,
         bn_eps=bn.eps,
         bn_weight=bn.weight.data.clone(),
         bn_bias=bn.bias.data.clone())
-    mul_factor, add_factor = out
+    mul_factor, add_factor = out #scalar values
+    #out_proj is QuantLinear(in_features=embd_dim, out_features=embd_dim)
     out_ch_weight_shape = qutils.compute_channel_view_shape(layer.out_proj.weight, output_channel_dim)
+    #apply batchnorm during after forward pass of layer, before returning result
     layer.out_proj.weight.data.mul_(mul_factor.view(out_ch_weight_shape))
     if layer.out_proj.bias is not None:
         out_ch_bias_shape = qutils.compute_channel_view_shape(layer.out_proj.bias, channel_dim=0)
@@ -148,10 +160,11 @@ class CausalSelfAttention(nn.Module):
             y = self.resid_dropout(self.c_proj(y))
         else:
             #QuantMultiheadAttention does not have is_causal in constructor -> use attention mask instead
+            #TODO: in QuantMultiHeadAttention, q,k,v are only transposed if param batch_first is True. Investigate
+            #TODO number 2: error with incompatible sizes during forward pass in QuantMultiheadAttention
             y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
         return y
-        
 from logging import getLogger
 log = getLogger(__name__)
 

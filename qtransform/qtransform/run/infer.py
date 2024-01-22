@@ -69,7 +69,10 @@ def infer(cfg: DictConfig, device: Any):
     if model_cfg is None:
         log.error(f'No model config specified.')
         raise KeyError()
-
+    if "quantized" not in checkpoint:
+        log.warning(f'No info specified if checkpoint is quantized. Assuming false.')
+    elif checkpoint["quantized"]:
+        log.warning(f'Behavior might be unexpected as checkpoint possibly contains quantized params.')
     from qtransform.model import get_model
     model = get_model(model_cfg)
     model.eval()

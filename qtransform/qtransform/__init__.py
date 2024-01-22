@@ -35,8 +35,8 @@ class DeviceSingleton:
         return self._device
 
     @device.setter
-    def device(self, new_device):
-        match new_device:
+    def device(self, value):
+        match value:
             case 'cuda':
                 new_device = 'cuda' if cuda.is_available() else 'cpu'
             case 'gpu':
@@ -49,7 +49,7 @@ class DeviceSingleton:
                 log.warning(f'Device {new_device} not recognized. Using default: CPU')
                 new_device = 'cpu'
         self._device = device(new_device)
-        log.info(f'Using device: {new_device}')
+        log.info(f'Device specified: {value}. Using device: {new_device}')
 
 
 device_singleton = DeviceSingleton()

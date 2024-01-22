@@ -27,6 +27,7 @@ class BrevitasQuantizer(Quantizer):
         quantization as well as allowing quantization on a specified number of bits among other hyperparameters specified in the .yaml files of this module.
     """
     def get_quantized_model(quant_cfg: ModelQuantConfig, inplace=False) -> Module:
+        log.info(f'Quantizing model')
         if quant_cfg is None:
             log.error(f'Quantization needs to have both config and model')
             raise KeyError

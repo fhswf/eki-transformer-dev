@@ -284,6 +284,7 @@ class LayerQuantConfig:
     #after using a default Quantizer, it is necessary to do the injection part ourselves
     #which means creating a custom Class deriving of the base brevitas quantizer class and overriding qparams
     quantizers: Optional[Dict[str, BaseQuant]] = None #generic container for all quantizers
+    replace_later: bool = False #merge layer with next layer if True
 
     def __post_init__(self):
         #check if layer should even be quantized
@@ -300,17 +301,6 @@ class LayerQuantConfig:
             log.error(f'Layer {self.layer_type} is not a valid torch.nn Module')
             raise ValueError
 
-
-        #--------------------------------------------------------
-        #batchnorm not supported yet
-
-        #if match(r'batchnorm', self.layer_type, IGNORECASE):
-        #    log.error(f'BatchNorm is not supported yet!')
-        #    raise NotImplementedError()
-
-        #--------------------------------------------------------
-        
-        
         if not isinstance(self.name, str):
             try:
                 self.name = str(self.name)
@@ -321,6 +311,15 @@ class LayerQuantConfig:
             log.error(f'Layer quantization config for {self.name} can not be applied for an empty layer')
             raise KeyError
 
+        #brevitas batchnorm normalizes along batch size (dim 0) instead of features (dim 1)
+        #layernorm is not implemented, therefore merge them with merge_bn later 
+        if match(r'(batch|layer)norm', self.layer_type, IGNORECASE):
+            log.warning(f'Quantization for Batchnorm and Layernorm layers are performed by merging them into the next layer' \
+                f'during export, thereby ignoring the config (for: {self.name}). ')
+            self.replace_later = True
+            self.quantizers = {}
+            self.quantize = False        
+            return
         #quick check if quantized class is suitable for layer (e.g. specify QuantLinear for LayerNorm layer)
         if not match(self.layer.__class__.__name__, self.layer_type, IGNORECASE):
             log.error(f'Quantizer class {self.layer_type} is unsuitable for layer "{self.name}" of type: {self.layer.__class__.__name__}')
@@ -496,13 +495,6 @@ class ModelQuantConfig:
             except TypeError as e:
                 log.error(f'Layer configs only support these properties: {[x.name + " (required)" if get_origin(x.type) is not Union else x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
                 raise TypeError
-
-"""
-    Supported torch.nn modules for quantization by Brevitas:
-    quant_eltwise, quant_convtranspose, quant_max_pool, quant_accumulator, 
-    quant_rnn, quant_linear, quant_activation, quant_avg_pool, quant_upsample, equalized_layer, utils, quant_mha, quant_embedding, 
-    quant_dropout, quant_conv, quant_bn, quant_scale_bias, hadamard_classifier, __init__, quant_layer
-"""
 
 class Quantizer(ABC):
     """
