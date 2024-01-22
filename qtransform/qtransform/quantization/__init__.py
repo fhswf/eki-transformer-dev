@@ -285,6 +285,7 @@ class LayerQuantConfig:
     #which means creating a custom Class deriving of the base brevitas quantizer class and overriding qparams
     quantizers: Optional[Dict[str, BaseQuant]] = None #generic container for all quantizers
     replace_later: bool = False #merge layer with next layer if True
+    args: Optional[Dict] = None # containts extra args for any class that we want to instantiate
 
     def __post_init__(self):
         #check if layer should even be quantized
@@ -493,6 +494,7 @@ class ModelQuantConfig:
                     if hasattr(log, "trace"): log.trace(f"Processing layer \"{layer_name}\" with config: {layer_cfg}")            
                     self.layers[layer_name] = LayerQuantConfig(**{"name": layer_name, "layer": layer, **layer_cfg})
             except TypeError as e:
+                log.error(e)
                 log.error(f'Layer configs only support these properties: {[x.name + " (required)" if get_origin(x.type) is not Union else x.name for x in fields(LayerQuantConfig)]}. Caused by layer: {submodules_list_string}.')
                 raise TypeError
 

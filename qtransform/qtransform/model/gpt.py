@@ -69,14 +69,14 @@ class GPT(nn.Module):
         if norm_size:
             ln_out = getattr(custom_nn, config.norm_layer, None)
         else:
-            ln_out = nn.Identity()
+            ln_out = nn.Identity
 
         self.transformer = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd),
             wpe = nn.Embedding(config.block_size, config.n_embd),
             dropout = nn.Dropout(config.dropout),
             layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
-            ln_out = ln_out(norm_size, bias=config.bias),
+            ln_out = ln_out(norm_size, config.bias),
         ))
         self.linear_out = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:

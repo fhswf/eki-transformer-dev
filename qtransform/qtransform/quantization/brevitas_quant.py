@@ -116,6 +116,8 @@ class BrevitasQuantizer(Quantizer):
         for i in set(quantizers.keys()) - set(x for x in signature_quantized_layer.parameters.keys() if x.find('_quant') != -1):
             log.warning(f'Quantizer for type: {i} of layer {layer_name} is not going to be applied as an argument of that name is not found within the constructor of {quantized_layer_class}.')
         args = {**hyperparameters, **quantizers}
+        if layer_cfg.args is not None:
+            args.update(**layer_cfg.args)
         log.debug(f'Quantizing layer \"{layer_name}\" with args: \"{args}\"')
         #create object of quantized layer, passing hyperparameters from current layer and (custom) quantizer classes
         try:

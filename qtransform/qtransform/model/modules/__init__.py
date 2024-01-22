@@ -204,11 +204,11 @@ class TransformerBlock(nn.Module):
             ln_1 = getattr(custom_nn, config.norm_layer, None)
             ln_2 = getattr(custom_nn, config.norm_layer, None)
         else:
-            ln_1 = nn.Identity()
-            ln_2 = nn.Identity()
-        self.ln_1 = ln_1(norm_size, bias=config.bias)
+            ln_1 = nn.Identity
+            ln_2 = nn.Identity
+        self.ln_1 = ln_1(norm_size, config.bias)
         self.attn = CausalSelfAttention(config)
-        self.ln_2 = ln_2(norm_size, bias=config.bias)
+        self.ln_2 = ln_2(norm_size, config.bias)
         self.mlp = MLP(config)
 
     def forward(self, x):

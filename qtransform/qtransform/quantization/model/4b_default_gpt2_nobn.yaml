@@ -119,3 +119,6 @@ layers:
           args: 
             bit_width: 4
         #out_proj_output_quant=None,
+      ## extra args:
+      args:
+        packed_in_proj: False
