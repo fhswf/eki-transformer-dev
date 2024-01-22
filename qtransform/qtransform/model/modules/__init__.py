@@ -2,6 +2,7 @@ import torch
 from torch import nn 
 from torch.nn import functional as F
 from qtransform.model import modules as custom_nn
+from brevitas import nn as qnn
 import math
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
 def new_gelu(x):
@@ -138,8 +139,9 @@ class CausalSelfAttention(nn.Module):
         #print(torch.__version__[2])
 
     def forward(self, x):
+        #print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!HELP ME")
         # this if block is needed for toprch <2.21 where flash attention onnx export does not work
-        if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash) or torch.__version__ < (2,21):
+        if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash): #or torch.__version__ < (2,21):
 
             #log.warn("Using slower self attention for non quantized execution if torch does not support it or if flash == False")
             B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
@@ -191,28 +193,31 @@ class TransformerBlock(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        norm_size = None
+        self.norm_size = None
         if config.norm_layer == "LayerNorm":
-            norm_size = config.n_embd
+            self.norm_size = config.n_embd
         elif config.norm_layer == "BatchNorm":
-            norm_size = config.block_size
+            self.norm_size = config.block_size
         elif config.norm_layer == "None":
-            norm_size = None
+            self.norm_size = None
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
-        if norm_size:
+        if self.norm_size:
             ln_1 = getattr(custom_nn, config.norm_layer, None)
             ln_2 = getattr(custom_nn, config.norm_layer, None)
+            self.ln_1 = ln_1(self.norm_size, config.bias)
+            self.ln_2 = ln_2(self.norm_size, config.bias)
         else:
-            ln_1 = nn.Identity
-            ln_2 = nn.Identity
-        self.ln_1 = ln_1(norm_size, config.bias)
-        self.attn = CausalSelfAttention(config)
-        self.ln_2 = ln_2(norm_size, config.bias)
+            self.attn = CausalSelfAttention(config)
+        
         self.mlp = MLP(config)
 
     def forward(self, x):
-        x = x + self.attn(self.ln_1(x))
-        x = x + self.mlp(self.ln_2(x))
+        if self.norm_size:
+            x = x + self.attn(self.ln_1(x))
+            x = x + self.mlp(self.ln_2(x))
+        else:
+            x = x + self.attn(x)
+            x = x + self.mlp(x)
         return x
     

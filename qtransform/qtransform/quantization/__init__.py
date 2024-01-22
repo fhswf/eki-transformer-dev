@@ -487,8 +487,9 @@ class ModelQuantConfig:
             found_layers = search_layers_from_module(submodules_list_string, self.model)
             if hasattr(log, "trace"): log.trace(f'Found layers for config {submodules_list_string}: {found_layers}')
             if len(found_layers) == 0:
-                log.error(f'No layers could be found with config: {submodules_list_string}')
-                raise ValueError
+                log.warn(f'No layers could be found with config: {submodules_list_string}')
+                
+                # raise ValueError
             try:
                 for layer_name, layer in found_layers.items():
                     if hasattr(log, "trace"): log.trace(f"Processing layer \"{layer_name}\" with config: {layer_cfg}")            

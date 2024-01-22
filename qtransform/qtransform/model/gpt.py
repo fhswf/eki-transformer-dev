@@ -56,28 +56,34 @@ class GPT(nn.Module):
         assert config.block_size is not None
         log.info(f"Model config: {self.config}")
 
-        norm_size = None
+        self.norm_size = None
         if config.norm_layer == "LayerNorm":
-            norm_size = config.n_embd
+            self.norm_size = config.n_embd
         elif config.norm_layer == "BatchNorm":
-            norm_size = config.block_size
+            self.norm_size = config.block_size
         elif config.norm_layer == "None":
-            norm_size = None
+            self.norm_size = None
         else:
             raise AttributeError("can determine model for norm layer: " + config.norm_layer)
         
-        if norm_size:
+        if self.norm_size:
             ln_out = getattr(custom_nn, config.norm_layer, None)
+            self.transformer = nn.ModuleDict(dict(
+                wte = nn.Embedding(config.vocab_size, config.n_embd),
+                wpe = nn.Embedding(config.block_size, config.n_embd),
+                dropout = nn.Dropout(config.dropout),
+                layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
+                ln_out = ln_out(self.norm_size, config.bias),
+            ))
         else:
             ln_out = nn.Identity
+            self.transformer = nn.ModuleDict(dict(
+                wte = nn.Embedding(config.vocab_size, config.n_embd),
+                wpe = nn.Embedding(config.block_size, config.n_embd),
+                dropout = nn.Dropout(config.dropout),
+                layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
+            ))
 
-        self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(config.vocab_size, config.n_embd),
-            wpe = nn.Embedding(config.block_size, config.n_embd),
-            dropout = nn.Dropout(config.dropout),
-            layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
-            ln_out = ln_out(norm_size, config.bias),
-        ))
         self.linear_out = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
@@ -128,7 +134,8 @@ class GPT(nn.Module):
         x = self.transformer.dropout(tok_emb + pos_emb)
         for block in self.transformer.layer:
             x = block(x)
-        x = self.transformer.ln_out(x)
+        if self.norm_size:
+            x = self.transformer.ln_out(x)
 
         if targets is not None:
             # if we are given some desired targets also calculate the loss

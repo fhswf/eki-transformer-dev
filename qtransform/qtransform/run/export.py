@@ -17,13 +17,15 @@ from datetime import datetime
 
 log = logging.getLogger(__name__)
 
-def run(cfg: DictConfig):
+def run(cfg: DictConfig, *args):
     """ exports a trained model to QONNX or others?"""
     log.info("================")
     log.info("Exporting Model")
     log.info("================")
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
+
+    model = None
 
     device_singleton.device = cfg.device
     device = device_singleton.device
@@ -38,32 +40,26 @@ def run(cfg: DictConfig):
     else:
         log.error("No model defintion provided in either checkpoint or cfg.model")
         return 1
-   # log.debug("===================")
-   # for module in model.modules():
-   #     log.debug(module)
-   # log.debug(module.state_dict())
-   # log.debug("===================")
-    quant_cfg = cfg.get('quantization')
-    if quant_cfg and quant_cfg.quantize:    
-        log.debug(f'Running quantized model')
-        from qtransform.quantization import get_quantizer
-        quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
-        #add qat qparams (scale and zero)
-        model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
-    #log.debug("===================")
-    #for module in model.modules():
-    #    log.debug(module)
-    #log.debug("===================")
-    #log.debug(module.state_dict())
-    #log.debug("===================")
-    #log.debug("===================")
-    #log.debug("===================")
-    #slog.debug(checkpoint['model_state_dict'])
-    model.load_state_dict(checkpoint['model_state_dict'])
-
+    
+    try: ## this is so dirty, but for some reason OmegaConf does not work here...
+        _run = cfg.run.running_model
+    except KeyError:
+        _run = False
+    if  _run:
+        model = args[0]
+    else:
+        quant_cfg = cfg.get('quantization')
+        if quant_cfg and quant_cfg.quantize:    
+            log.debug(f'Running quantized model')
+            from qtransform.quantization import get_quantizer
+            quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
+            #add qat qparams (scale and zero)
+            model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+        model.load_state_dict(checkpoint['model_state_dict'])
     #log.debug(f"Model structure: {model}")
     #log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
 
+    print(model)
     input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
     max_token_id = checkpoint['model_cfg']['args']['vocab_size']
     sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
@@ -96,7 +92,7 @@ def run(cfg: DictConfig):
         "do_constant_folding": True
     }
     #prepare_and_transform_for_export(cfg, model)
-    log.info("exporting... " + f"qonnx_{str(input_dim)}_" + filename)
+    log.info("exporting... " + f"{str(cfg.run.export_fn)}_{str(input_dim)}_" + filename)
     if cfg.run.export_fn == "qonnx":
         try:
             export_qonnx(model, torch.tensor(sample_tensor), export_path=f"qonnx_{str(input_dim)}_" + filename, **kwargs)

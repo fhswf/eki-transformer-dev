@@ -106,11 +106,12 @@ def run(cfg: DictConfig):
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
         OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
+        OmegaConf.update(cfg, "run.running_model", True, force_add=True)
         if quant_cfg and quant_cfg.quantize:
             OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
         else:
             OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
-        export.run(cfg)
+        export.run(cfg, model)
         
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
