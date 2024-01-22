@@ -26,6 +26,10 @@ def run(cfg: DictConfig):
     #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
     ## note: float16 data type will automatically use a GradScaler
     #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
+
+    if "dataloader" not in cfg.dataset:
+        log.error(f"dataloder not specified for dataset: {cfg.dataset.name}. Use dataset=huggingface to get one automaticly.")
+
     device_singleton.device = cfg.device
     device = device_singleton.device
     if device.type == 'cuda':
@@ -92,15 +96,20 @@ def run(cfg: DictConfig):
         #add qat qparams (scale and zero)
         model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         # TODO make this a decorator so it can return stuff
-        model = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
+        last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
     else:
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
     # maybe subsequent jobs can be managed by hydra in the future?
     # when this paradigm comes up more frequently we have to make this a thing ....
+    log.debug("done")
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
         OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
+        if quant_cfg and quant_cfg.quantize:
+            OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
+        else:
+            OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
         export.run(cfg)
         
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
