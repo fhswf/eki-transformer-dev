@@ -11,3 +11,4 @@ args:
   transformer_active_func: ReLU
   norm_layer: None
   flash: False
+  single_output: False

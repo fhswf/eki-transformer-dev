@@ -195,7 +195,8 @@ class BaseQuant():
             raise ValueError(f'Quantizer class \"{self.default_quantizer}\" did not appear in modules: {list(SUPPORTED_QUANTIZERS.keys())}')
         #TODO: find out why unsigned values are problematic
         elif self.default_quantizer[0].capitalize() == "U":
-            raise ValueError(f'Quantizers for unsigned values are not supported.')
+            log.warning(f"Using unsigned quantizer for {self.default_quantizer} at {self.quantizer_module}")
+            #raise ValueError(f'Quantizers for unsigned values are not supported.')
         #cleanup quantargs, if present
         if not isinstance(self.args, QuantArgs):
             if self.args is not None:

@@ -41,9 +41,10 @@ def run(cfg: DictConfig, *args):
         log.error("No model defintion provided in either checkpoint or cfg.model")
         return 1
     
+    from omegaconf import DictConfig, OmegaConf, errors
     try: ## this is so dirty, but for some reason OmegaConf does not work here...
         _run = cfg.run.running_model
-    except KeyError:
+    except errors.ConfigAttributeError:
         _run = False
     if  _run:
         model = args[0]

@@ -7,7 +7,7 @@ from qtransform.utils import addLoggingLevel
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 
 import brevitas
-brevitas.config.IGNORE_MISSING_KEYS = True
+#brevitas.config.IGNORE_MISSING_KEYS = True
 
 @hydra.main(version_base=None, config_path=qtransform.get_module_config_path(), config_name="config.yaml")
 def cli_wrapper(cfg: DictConfig):

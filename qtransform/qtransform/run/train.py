@@ -116,6 +116,7 @@ def run(cfg: DictConfig):
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
+    #print(model)
     mini_run = False
     epochs_to_run = None
     last_checkpoint = None
