@@ -106,7 +106,7 @@ def run(cfg: DictConfig):
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
         OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
-        OmegaConf.update(cfg, "run.running_model", True, force_add=True)
+        #OmegaConf.update(cfg, "run.running_model", True, force_add=True)
         if quant_cfg and quant_cfg.quantize:
             OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
         else:

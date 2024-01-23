@@ -59,7 +59,6 @@ def run(cfg: DictConfig, *args):
     #log.debug(f"Model structure: {model}")
     #log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
 
-    print(model)
     input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
     max_token_id = checkpoint['model_cfg']['args']['vocab_size']
     sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)

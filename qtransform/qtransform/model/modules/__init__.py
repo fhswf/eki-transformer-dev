@@ -207,8 +207,8 @@ class TransformerBlock(nn.Module):
             ln_2 = getattr(custom_nn, config.norm_layer, None)
             self.ln_1 = ln_1(self.norm_size, config.bias)
             self.ln_2 = ln_2(self.norm_size, config.bias)
-        else:
-            self.attn = CausalSelfAttention(config)
+            
+        self.attn = CausalSelfAttention(config)
         
         self.mlp = MLP(config)
 
