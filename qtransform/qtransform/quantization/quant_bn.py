@@ -4,8 +4,8 @@ from brevitas.nn.mixin import * #WeightQuantType, BiasQuantType
 from brevitas.quant.scaled_int import Int8WeightPerTensorFloat
 from typing import Optional, Union
 from brevitas.quant_tensor import QuantTensor
-from torch import Tensor
 from torch.nn import BatchNorm1d
+import torch
 #test if a quantized layer can be implemented which basically scales the values along a tensor and adds a bias, thereby simulating batch normalization
 class QuantBatchnorm1d(QuantWBIOL, TorchModule):
     def __init__(
@@ -31,10 +31,10 @@ class QuantBatchnorm1d(QuantWBIOL, TorchModule):
             return_quant_tensor=return_quant_tensor,
             **kwargs)
     
-    def forward(self, input: Union[Tensor, QuantTensor]) -> Union[Tensor, QuantTensor]:
+    def forward(self, input: Union[torch.Tensor, QuantTensor]) -> Union[torch.Tensor, QuantTensor]:
         return self.forward_impl(input)
     
-    def inner_forward_impl(self, x: Tensor, quant_weight: Tensor, quant_bias: Optional[Tensor]):
+    def inner_forward_impl(self, x: torch.Tensor, quant_weight: torch.Tensor, quant_bias: Optional[torch.Tensor]):
         #inner_forward_impl is apparently the actual forward pass of the layer 
         #multiply each row of x with one value of weight and add bias
         return x * quant_weight[:,None] + quant_bias[:,None]
