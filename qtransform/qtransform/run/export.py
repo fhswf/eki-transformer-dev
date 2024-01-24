@@ -139,7 +139,8 @@ def auto_merge_layers(cfg, model: torch.nn.Module, inplace=False, qat=True):
         # merge if applicable
         if isinstance(module, nn.modules.batchnorm._NormBase):
             log.debug("=========")    
-            if isinstance(module, qnn.QuantMultiheadAttention):
+            raise NotImplementedError(f'merge_bn is currently being refactored')
+            """if isinstance(module, qnn.QuantMultiheadAttention):
                 merge_bn_mha(last_module, model)
                 # TODO remove bn layer connect (and connect nodes)?
             elif isinstance(last_module, nn.MultiheadAttention):
@@ -148,7 +149,7 @@ def auto_merge_layers(cfg, model: torch.nn.Module, inplace=False, qat=True):
                 log.info(f"Last Layer with weigts was {last_module}, trying to merge {module} weights")
                 qnn.utils.merge_bn(last_module, model)
             else:
-                log.error(f"cant merge norm layer because we dont know what to merge it into. Module is {module}")
+                log.error(f"cant merge norm layer because we dont know what to merge it into. Module is {module}")"""
 
         # log last layer with weights
                 
