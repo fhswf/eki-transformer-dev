@@ -84,17 +84,18 @@ class QuantBatchnorm1d(QuantWBIOL, CustomBatchNorm1d):
         return custom_bn(x, quant_weight, quant_bias)
 
 from brevitas.nn.utils import merge_bn
-def replace_bn(bn: BatchNorm1d, new_bn: CustomBatchNorm1d = None) -> CustomBatchNorm1d:
+def replace_bn(bn: BatchNorm1d, new_bn: CustomBatchNorm1d = None, qat: bool = False) -> CustomBatchNorm1d:
     """
     Merges a BatchNorm layer into CustomBatchNorm1d. To do that, merge_bn from brevitas.nn.utils is used, updating the
     weights and biases of CustomBatchNorm1d. However, the newly merged instance will not be as accurate as the unquantized
     BatchNorm layer. Each normalized value has an approximate margin of error of 0.05. 
-    If new_bn is omited, an instance will be created.
+    If new_bn is omited, an instance will be created. Depending on whether qat is True or False, either QuantBatchnorm1d or 
+    CustomBatchNorm1d is used.
     """
     if not isinstance(bn, BatchNorm1d):
         raise TypeError(f'Cannot merge non-batchnorm layer ({type(bn)}).')
     if new_bn is None:
-        new_bn = CustomBatchNorm1d(bn.num_features)
+        new_bn = QuantBatchnorm1d(bn.num_features) if qat else CustomBatchNorm1d(bn.num_features)
     elif new_bn.num_features != bn.num_features:
         raise ValueError(f'Property num_features are different for new_bn ({new_bn.num_features}) and bn {bn.num_features}')
     merge_bn(layer=new_bn, bn=bn)

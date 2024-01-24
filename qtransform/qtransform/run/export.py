@@ -125,21 +125,23 @@ def search_for_weight(model, module: nn.Module)->(bool, str):
             paramname = n
     return has_standart_weight, paramname
         
-
+from qtransform.quantization.quant_bn import replace_bn, CustomBatchNorm1d, QuantBatchnorm1d
 def auto_merge_layers(cfg, model: torch.nn.Module, inplace=False, qat=True):
     """
     Should be used wiht caution. Auto merging layers only works if all layers are sequential. 
     Which is to say:  batchnorm or layernorm appear directly after some linear tranformation.
     """
     model: torch.nn.Module = model if inplace else deepcopy(model)
-    last_module: torch.nn.Module = None
-    param_name = None
+    #last_module: torch.nn.Module = None
+    #param_name = None
     for mn, module in model.named_modules():
 
         # merge if applicable
+        # currently, only batchnorm is merged
         if isinstance(module, nn.modules.batchnorm._NormBase):
             log.debug("=========")    
-            raise NotImplementedError(f'merge_bn is currently being refactored')
+            module = replace_bn(module, qat=qat)
+            #raise NotImplementedError(f'merge_bn is currently being refactored')
             """if isinstance(module, qnn.QuantMultiheadAttention):
                 merge_bn_mha(last_module, model)
                 # TODO remove bn layer connect (and connect nodes)?
@@ -149,7 +151,7 @@ def auto_merge_layers(cfg, model: torch.nn.Module, inplace=False, qat=True):
                 log.info(f"Last Layer with weigts was {last_module}, trying to merge {module} weights")
                 qnn.utils.merge_bn(last_module, model)
             else:
-                log.error(f"cant merge norm layer because we dont know what to merge it into. Module is {module}")"""
+                log.error(f"cant merge norm layer because we dont know what to merge it into. Module is {module}")
 
         # log last layer with weights
                 
@@ -164,7 +166,7 @@ def auto_merge_layers(cfg, model: torch.nn.Module, inplace=False, qat=True):
             if yes:
                 log.debug(f"last layer with weights {mn} {param_name}")
                 last_module = module
-                #log.debug(last_module)
+                #log.debug(last_module)"""
 
     #raise NotImplementedError
     return model
