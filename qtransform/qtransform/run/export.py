@@ -6,7 +6,6 @@ from omegaconf import DictConfig
 import hydra
 import os
 from qtransform import device_singleton
-from qtransform.model.modules import merge_bn_mha
 from qtransform.utils.helper import load_checkpoint
 import torch
 from torch import nn

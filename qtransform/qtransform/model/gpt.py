@@ -50,7 +50,7 @@ class GPT(nn.Module):
     def __init__(self, config: GPTConfig):
         super().__init__()
         try:
-            self.config = config if isinstance(config, GPTConfig) else GPTConfig(**config)
+            self.config = config = config if isinstance(config, GPTConfig) else GPTConfig(**config)
         except:   
             log.error(f'Model config {config} could not be applied. Config can only have options: {[x.name for x in fields(GPTConfig)]}')
         assert config.vocab_size is not None
