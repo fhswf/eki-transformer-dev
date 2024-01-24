@@ -17,6 +17,14 @@ layers:
     #transformer.ln_out:
     #  quantize: True
     #  layer_type: BatchNorm1d
+    transformer.ln_out:
+      quantize: True
+      layer_type: Identity
+      quantizers: 
+        weight:
+          default_quantizer: Int8WeightPerTensorFloat
+          args:
+            bit_width: 4
     linear_out:
       quantize: True
       layer_type: Linear
@@ -33,6 +41,16 @@ layers:
     #transformer.layer.r'[0-9]+'.r'ln_[0-9]':
     #  quantize: True
     #  layer_type: BatchNorm1d
+    #Feed forward neural network
+    #transformer heads
+    transformer.layer.r'[0-9]+'.r'ln_[0-9]':
+      quantize: True
+      layer_type: Identity
+      #quantizers: 
+      #  weight:
+      #    default_quantizer: Int8WeightPerTensorFloat
+      #    args:
+      #      bit_width: 4
     #Feed forward neural network
     transformer.layer.r'[0-9]+'.mlp.r'c_.+':
       quantize: True
@@ -51,15 +69,15 @@ layers:
     transformer.layer.r'[0-9]+'.mlp.active:
       quantize: True
       layer_type: ReLU #no GeLU for brevitas currently
-      quantizers:
-        act:
-          default_quantizer: Int8ActPerTensorFloat
-          args:
-            bit_width: 4
-        input:
-          default_quantizer: Int8ActPerTensorFloat
-          args:
-            bit_width: 4
+      #quantizers:
+      #  act:
+      #    default_quantizer: Int8ActPerTensorFloat
+      #    args:
+      #      bit_width: 4
+      #  input:
+      #    default_quantizer: Int8ActPerTensorFloat
+      #    args:
+      #      bit_width: 4
       
     transformer.layer.r'[0-9]+'.mlp.dropout:
       quantize: True
@@ -119,3 +137,6 @@ layers:
           args: 
             bit_width: 4
         #out_proj_output_quant=None,
+      ## extra args:
+      args:
+        packed_in_proj: False

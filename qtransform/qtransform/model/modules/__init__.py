@@ -2,6 +2,7 @@ import torch
 from torch import nn 
 from torch.nn import functional as F
 from qtransform.model import modules as custom_nn
+from brevitas import nn as qnn
 import math
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
 def new_gelu(x):
@@ -83,6 +84,7 @@ class CausalSelfAttention(nn.Module):
         self.n_embd = config.n_embd
         self.dropout = config.dropout
         self.block_size = config.block_size
+        qnn.QuantMultiheadAttention
         self.mha = nn.MultiheadAttention(config.n_embd, config.n_head, dropout=self.dropout, batch_first=True)
         self.attn_mask = torch.nn.parameter.Parameter(torch.tril(torch.ones((config.block_size,config.block_size)))) # limit to left in the input sequence
         self.flash = config.flash
@@ -100,31 +102,33 @@ class CausalSelfAttention(nn.Module):
         #print(torch.__version__[2])
 
     def forward(self, x):
+        #print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!HELP ME")
         # this if block is needed for toprch <2.21 where flash attention onnx export does not work
-        if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash) or torch.__version__ < (2,21):
 
-            #log.warn("Using slower self attention for non quantized execution if torch does not support it or if flash == False")
-            B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
-            # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-            q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
-            k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-            q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-            v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-            # manual implementation of attention
-            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-            att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
-            att = F.softmax(att, dim=-1)
-            att = self.attn_dropout(att)
-            y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-            y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
-
-            # output projection
-            y = self.resid_dropout(self.c_proj(y))
-        else:
+        #if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash): #or torch.__version__ < (2,21):
+#
+        #    #log.warn("Using slower self attention for non quantized execution if torch does not support it or if flash == False")
+        #    B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        #    # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        #    q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
+        #    k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        #    q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        #    v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        #    # manual implementation of attention
+        #    att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        #    att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+        #    att = F.softmax(att, dim=-1)
+        #    att = self.attn_dropout(att)
+        #    y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+        #    y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
+#
+        #    # output projection
+        #    y = self.resid_dropout(self.c_proj(y))
+        #else:
             #QuantMultiheadAttention does not have is_causal in constructor -> use attention mask instead
             #TODO: in QuantMultiHeadAttention, q,k,v are only transposed if param batch_first is True. Investigate
             #TODO number 2: error with incompatible sizes during forward pass in QuantMultiheadAttention
-            y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
+        y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
         return y
 from logging import getLogger
@@ -153,28 +157,31 @@ class TransformerBlock(nn.Module):
 
     def __init__(self, config):
         super().__init__()
-        norm_size = None
+        self.norm_size = None
         if config.norm_layer == "LayerNorm":
-            norm_size = config.n_embd
+            self.norm_size = config.n_embd
         elif config.norm_layer == "BatchNorm":
-            norm_size = config.block_size
+            self.norm_size = config.block_size
         elif config.norm_layer == "None":
-            norm_size = None
+            self.norm_size = None
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
-        if norm_size:
+        if self.norm_size:
             ln_1 = getattr(custom_nn, config.norm_layer, None)
             ln_2 = getattr(custom_nn, config.norm_layer, None)
-        else:
-            ln_1 = nn.Identity
-            ln_2 = nn.Identity
-        self.ln_1 = ln_1(norm_size, config.bias)
+            self.ln_1 = ln_1(self.norm_size, config.bias)
+            self.ln_2 = ln_2(self.norm_size, config.bias)
+
         self.attn = CausalSelfAttention(config)
-        self.ln_2 = ln_2(norm_size, config.bias)
+        
         self.mlp = MLP(config)
 
     def forward(self, x):
-        x = x + self.attn(self.ln_1(x))
-        x = x + self.mlp(self.ln_2(x))
+        if self.norm_size:
+            x = x + self.attn(self.ln_1(x))
+            x = x + self.mlp(self.ln_2(x))
+        else:
+            x = x + self.attn(x)
+            x = x + self.mlp(x)
         return x
     

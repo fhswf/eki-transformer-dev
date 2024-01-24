@@ -17,22 +17,44 @@ layers:
     #transformer.ln_out:
     #  quantize: True
     #  layer_type: BatchNorm1d
-    linear_out:
+    transformer.ln_out:
       quantize: True
-      layer_type: Linear
+      layer_type: Identity
       quantizers: 
         weight:
           default_quantizer: Int8WeightPerTensorFloat
           args:
             bit_width: 4
-        bias:
-          default_quantizer: Int8Bias
-          args:
-            bit_width: 4
-    #transformer heads
+
+    # last layer of our model, does the projection towards embeddings
+    # TODO curretnly does prevent the model to converge
+    #linear_out:
+    #  quantize: True
+    #  layer_type: Linear
+    #  quantizers: 
+    #    weight:
+    #      default_quantizer: Int8WeightPerTensorFloat
+    #      args:
+    #        bit_width: 4
+        #bias:
+        #  default_quantizer: Int8Bias
+        #  args:
+        #    bit_width: 4
+             
+    #transformer Norm for  heads 
     #transformer.layer.r'[0-9]+'.r'ln_[0-9]':
     #  quantize: True
     #  layer_type: BatchNorm1d
+
+    transformer.layer.r'[0-9]+'.r'ln_[0-9]':
+      quantize: True
+      layer_type: Identity
+      quantizers: 
+        weight:
+          default_quantizer: Int8WeightPerTensorFloat
+          args:
+            bit_width: 4
+
     #Feed forward neural network
     transformer.layer.r'[0-9]+'.mlp.r'c_.+':
       quantize: True
@@ -53,7 +75,7 @@ layers:
       layer_type: ReLU #no GeLU for brevitas currently
       quantizers:
         act:
-          default_quantizer: Int8ActPerTensorFloat
+          default_quantizer: Uint8ActPerTensorFloat
           args:
             bit_width: 4
         input:
@@ -119,3 +141,7 @@ layers:
           args: 
             bit_width: 4
         #out_proj_output_quant=None,
+      ## extra args:
+      args:
+        packed_in_proj: False
+        batch_first: True

@@ -43,6 +43,7 @@ class GPTConfig:
     flash: bool = False # cuda flas hattention
     transformer_active_func: str = 'ReLU' #specify which activation function to use in MLP (feed forwad neural network)
     norm_layer: str = 'BatchNorm' # note that this is a name for a adapter module in this repository und model.modules
+    single_output: bool = False # use mini runtime optimization to only predict last token, saven on some runtime but poentially currupts onnx export
 
 from dataclasses import fields
 class GPT(nn.Module):
@@ -55,29 +56,36 @@ class GPT(nn.Module):
         assert config.vocab_size is not None
         assert config.block_size is not None
         log.info(f"Model config: {self.config}")
-
-        norm_size = None
+        
+        self.single_output = config.single_output
+        self.norm_size = None
         if config.norm_layer == "LayerNorm":
-            norm_size = config.n_embd
+            self.norm_size = config.n_embd
         elif config.norm_layer == "BatchNorm":
-            norm_size = config.block_size
+            self.norm_size = config.block_size
         elif config.norm_layer == "None":
-            norm_size = None
+            self.norm_size = None
         else:
             raise AttributeError("can determine model for norm layer: " + config.norm_layer)
         
-        if norm_size:
+        if self.norm_size:
             ln_out = getattr(custom_nn, config.norm_layer, None)
+            self.transformer = nn.ModuleDict(dict(
+                wte = nn.Embedding(config.vocab_size, config.n_embd),
+                wpe = nn.Embedding(config.block_size, config.n_embd),
+                dropout = nn.Dropout(config.dropout),
+                layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
+                ln_out = ln_out(self.norm_size, config.bias),
+            ))
         else:
             ln_out = nn.Identity
+            self.transformer = nn.ModuleDict(dict(
+                wte = nn.Embedding(config.vocab_size, config.n_embd),
+                wpe = nn.Embedding(config.block_size, config.n_embd),
+                dropout = nn.Dropout(config.dropout),
+                layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
+            ))
 
-        self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(config.vocab_size, config.n_embd),
-            wpe = nn.Embedding(config.block_size, config.n_embd),
-            dropout = nn.Dropout(config.dropout),
-            layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
-            ln_out = ln_out(norm_size, config.bias),
-        ))
         self.linear_out = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
@@ -128,16 +136,19 @@ class GPT(nn.Module):
         x = self.transformer.dropout(tok_emb + pos_emb)
         for block in self.transformer.layer:
             x = block(x)
-        x = self.transformer.ln_out(x)
+        if self.norm_size:
+            x = self.transformer.ln_out(x)
 
-        if targets is not None:
-            # if we are given some desired targets also calculate the loss
-            logits = self.linear_out(x)
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-        else:
+        loss = None
+        if targets is None and self.single_output:
             # inference-time mini-optimization: only forward the lm_head on the very last position
             logits = self.linear_out(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
-            loss = None
+        else:
+            # if we are given some desired targets also calculate the loss
+            logits = self.linear_out(x)
+            if targets is not None:
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+
         return logits, loss
 
     def crop_block_size(self, block_size):
