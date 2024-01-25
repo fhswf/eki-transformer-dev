@@ -44,6 +44,7 @@ class GPTConfig:
     transformer_active_func: str = 'ReLU' #specify which activation function to use in MLP (feed forwad neural network)
     norm_layer: str = 'BatchNorm' # note that this is a name for a adapter module in this repository und model.modules
     single_output: bool = False # use mini runtime optimization to only predict last token, saven on some runtime but poentially currupts onnx export
+    use_weight_tying: bool = True # same weights for input emb and outputi proj https://paperswithcode.com/method/weight-tying
 
 from dataclasses import fields
 class GPT(nn.Module):
@@ -58,6 +59,7 @@ class GPT(nn.Module):
         log.info(f"Model config: {self.config}")
         
         self.single_output = config.single_output
+        self.use_weight_tying = config.single_output
         self.norm_size = None
         if config.norm_layer == "LayerNorm":
             self.norm_size = config.n_embd
@@ -87,11 +89,15 @@ class GPT(nn.Module):
             ))
 
         self.linear_out = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
         # This behavior is deprecated and will be an error in future versions"
         # not 100% sure what this is, so far seems to be harmless. TODO investigate
-        self.transformer.wte.weight = self.linear_out.weight # https://paperswithcode.com/method/weight-tying
+
+        # https://paperswithcode.com/method/weight-tying
+        if self.use_weight_tying:
+            self.transformer.wte.weight = self.linear_out.weight
 
         # init all weights
         self.apply(self._init_weights)
