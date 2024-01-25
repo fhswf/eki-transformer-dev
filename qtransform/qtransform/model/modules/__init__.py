@@ -17,6 +17,7 @@ class LayerNorm(nn.Module):
 
     def __init__(self, normalized_shape, bias):
         super().__init__()
+        self.normalized_shape = normalized_shape
         self.weight = nn.Parameter(torch.ones(normalized_shape))
         self.bias = nn.Parameter(torch.zeros(normalized_shape)) if bias else None
 
