@@ -20,20 +20,23 @@ def check_shapes(tensor: torch.Tensor) -> torch.Tensor:
         tensor = tensor[:,None]
     if len(shape_tensor) == 2:
         if shape_tensor[0] > 1 and shape_tensor[1] > 1:
-            raise ValueError(f'Too many values to unpack for tensor {tensor}.')
+            raise ValueError(f'Too many values to unpack for tensor {shape_tensor}.')
         elif shape_tensor[0] == 1 and shape_tensor[1] > 1:
             tensor = tensor.transpose(0,1)
     elif len(shape_tensor) > 2:
-        raise ValueError(f'Too many values to unpack for tensor {tensor}.')
+        raise ValueError(f'Too many values to unpack for tensor {shape_tensor}.')
     return tensor
 
 
 def custom_bn1d(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> torch.Tensor:
     """
-    Forward pass of custom BatchNorm implementation. It expects a Tensor x of size [N,C] or [N,C,L]
-    and both a weight and bias Tensor, each of size [C, 1] or of size [1,C] / [C].
-    Each row/ embedding of a sentence (dimension C) will be multiplied with one value from the index of the corresponding
+    Forward pass of custom BatchNorm implementation. It expects a Tensor x of size [C,L] or [N,C,L]
+    and both a weight and bias Tensor, each of size [C, 1] or of size [1,C] / [C]. 
+    Each row/ embedding of a sentence (values in dimension L) will be multiplied with one value from the index of the corresponding
     weight tensor and added with the value of the bias tensor.
+    If the size C of tensor x is not the same as of tensor weight and bias, padding is added.
+
+    Output: tensor of shape [N,C] or [N,C,L], basically of the same size as the input tensor.
     """
     if not isinstance(x, torch.Tensor) :
         raise TypeError('Input is not a tensor')
@@ -44,20 +47,22 @@ def custom_bn1d(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> to
 
     weight = check_shapes(weight)
     bias = check_shapes(bias)
-    #make a batch of size 1 
-    if len(x.size()) == 2:
-        x = x.repeat(1,1,1)
-        out = x * weight + bias
-        return x[0]
-    #input is batched already
-    return x * weight + bias
+    x_size = x.size()
+    if len(x_size) > 3:
+        raise ValueError(f'Input tensor is too large (expected size 2 or 3, got: {len(x.size)})')
+    #multiplication will expand the number of rows by the amount of rows in weight
+    #problematic during inference as words will be artificially inserted
+    C_x = x_size[0] if len(x_size) == 2 else x_size[1]
+    out = x * weight[C_x] + bias[C_x]
+    #only return the original amount of rows from x of output tensor
+    return out[:,None:C_x] if len(x_size) == 3 else out[:C_x]
 
 class CustomBatchNorm1d(TorchModule):
     """
     Incredibly basic implementation of Batchnorm which normalizes by scaling the input tensor with its weight and adding a bias on each element.
     """
-    _weight: torch.Tensor
-    _bias: torch.Tensor
+    _weight: torch.nn.Parameter
+    _bias: torch.nn.Parameter
 
     def __init__(self, num_features: int):
         if not isinstance(num_features, int) or num_features <= 0:
@@ -65,8 +70,8 @@ class CustomBatchNorm1d(TorchModule):
         TorchModule.__init__(self)
         self.num_features = num_features
         #do the same as identity
-        self.weight = torch.ones(self.num_features)
-        self.bias = torch.zeros(self.num_features)
+        self.weight = torch.nn.Parameter(torch.ones(self.num_features))
+        self.bias = torch.nn.Parameter(torch.zeros(self.num_features))
     
     @property
     def weight(self):
@@ -76,7 +81,7 @@ class CustomBatchNorm1d(TorchModule):
     def weight(self, value: torch.Tensor) -> None:
         if not isinstance(value, torch.Tensor):
             raise TypeError(f'Cannot set weight to type {type(value)}')
-        self._weight = check_shapes(value)
+        self._weight.data = check_shapes(value)
 
     @property
     def bias(self):
@@ -86,7 +91,7 @@ class CustomBatchNorm1d(TorchModule):
     def bias(self, value: torch.Tensor) -> None:
         if not isinstance(value, torch.Tensor):
             raise TypeError(f'Cannot set bias to type {type(value)}')
-        self._bias = check_shapes(value)
+        self._bias.data = check_shapes(value)
 
     def forward(self, x):
         #without merging: multiply by one, add zero 
@@ -130,7 +135,7 @@ class QuantBatchnorm1d(QuantWBIOL, CustomBatchNorm1d):
         return custom_bn1d(x, quant_weight, quant_bias)
 
 from brevitas.nn.utils import merge_bn
-def replace_bn(bn: BatchNorm1d, new_bn: CustomBatchNorm1d = None, qat: bool = False) -> CustomBatchNorm1d:
+def replace_bn(bn: BatchNorm1d, new_bn: CustomBatchNorm1d = None, qat: bool = True) -> CustomBatchNorm1d:
     """
     Merges a BatchNorm layer into CustomBatchNorm1d. To do that, merge_bn from brevitas.nn.utils is used, updating the
     weights and biases of CustomBatchNorm1d. However, the newly merged instance will not be as accurate as the unquantized
