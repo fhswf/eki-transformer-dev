@@ -47,7 +47,7 @@ class BatchNorm(nn.BatchNorm1d):
         #index = torch.arange(c).reshape(c,1).repeat((n,1,l))
         #index.to(device=input.device)
         #return torch.gather(input=input, dim=1, index=index)
-        return input[:,None,c]
+        return input[:,None:c]
 
 
 from typing import Optional
