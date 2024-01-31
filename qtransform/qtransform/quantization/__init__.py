@@ -196,7 +196,8 @@ class BaseQuant():
             raise ValueError(f'Quantizer class \"{self.default_quantizer}\" did not appear in modules: {list(SUPPORTED_QUANTIZERS.keys())}')
         #TODO: find out why unsigned values are problematic
         elif self.default_quantizer[0].capitalize() == "U":
-            raise ValueError(f'Quantizers for unsigned values are not supported.')
+            log.warning(f"Using unsigned quantizer for {self.default_quantizer} at {self.quantizer_module}")
+            #raise ValueError(f'Quantizers for unsigned values are not supported.')
         #cleanup quantargs, if present
         if not isinstance(self.args, QuantArgs):
             if self.args is not None:
@@ -314,14 +315,17 @@ class LayerQuantConfig:
             raise KeyError
 
         #brevitas batchnorm normalizes along batch size (dim 0) instead of features (dim 1)
-        #layernorm is not implemented, therefore merge them with merge_bn later 
-        if match(r'(batch|layer)norm', self.layer_type, IGNORECASE):
-            log.warning(f'Quantization for Batchnorm and Layernorm layers are performed by merging them into the next layer' \
+        if match(r'batchnorm', self.layer_type, IGNORECASE):
+            log.warning(f'Quantization for Batchnorm is performed by replacing it with a linear layer ' \
                 f'during export, thereby ignoring the config (for: {self.name}). ')
             self.replace_later = True
             self.quantizers = {}
             self.quantize = False        
             return
+        #our fork implements quantization of layernorm, TODO: test
+        elif match(r'layernorm', self.layer_type, IGNORECASE):
+            log.warning(f'The quantization of layernorm was implemented by us as it did not exist ' \
+            'in the base repository of brevitas. Further behavior could be undefined.')
         #quick check if quantized class is suitable for layer (e.g. specify QuantLinear for LayerNorm layer)
         if not match(self.layer.__class__.__name__, self.layer_type, IGNORECASE):
             log.error(f'Quantizer class {self.layer_type} is unsuitable for layer "{self.name}" of type: {self.layer.__class__.__name__}')

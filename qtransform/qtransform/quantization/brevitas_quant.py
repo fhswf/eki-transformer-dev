@@ -97,20 +97,21 @@ class BrevitasQuantizer(Quantizer):
         #usually supplied in constructor
         #exceptions: dtype, device have to be retrieved from general config
         signature_unquantized_layer = inspect.signature(layer.__init__)
+        signature_quantized_layer = inspect.signature(quantized_layer_class.__init__)
         log.debug(f'Constructor signature of layer {layer_name} (class {layer.__class__}): {signature_unquantized_layer}')
+        log.debug(f'Constructor signature of quantized layer {quantized_class_name}: {signature_quantized_layer}')
         hyperparameters = dict()
-        for attribute_name in set(signature_unquantized_layer.parameters.keys()) - set(['self', 'dtype', 'device', 'inplace']):
+        necessary_params = set(signature_unquantized_layer.parameters.keys()) & set(signature_quantized_layer.parameters.keys())
+        for attribute_name in necessary_params - set(['self', 'dtype', 'device', 'inplace']):
             #some init parameters are not necessarily stored as attributes in layer
             #e.g. dtype, device, _weight, ...
-            try:
-                hyperparameters[attribute_name] = getattr(layer, attribute_name)
-            except AttributeError:
-                pass
+            hyperparameter = getattr(layer, attribute_name, None)
+            if hyperparameter is None:
+                continue
+            hyperparameters[attribute_name] = hyperparameter
         #bias is not included in all layers, but is a required argument for some
-        try:
-            hyperparameters["bias"] = True if hyperparameters["bias"] is not None else False
-        except:
-            pass
+        if "bias" in necessary_params:
+            hyperparameters["bias"] = True if hyperparameters.get("bias", None) is not None else False
         #check what quantizers are going to actually be applied during instantiation
         signature_quantized_layer = inspect.signature(quantized_layer_class.__init__)
         for i in set(quantizers.keys()) - set(x for x in signature_quantized_layer.parameters.keys() if x.find('_quant') != -1):

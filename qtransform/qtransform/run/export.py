@@ -6,7 +6,6 @@ from omegaconf import DictConfig
 import hydra
 import os
 from qtransform import device_singleton
-from qtransform.model.modules import merge_bn_mha
 from qtransform.utils.helper import load_checkpoint
 import torch
 from torch import nn
@@ -41,9 +40,10 @@ def run(cfg: DictConfig, *args):
         log.error("No model defintion provided in either checkpoint or cfg.model")
         return 1
     
+    from omegaconf import DictConfig, OmegaConf, errors
     try: ## this is so dirty, but for some reason OmegaConf does not work here...
         _run = cfg.run.running_model
-    except KeyError:
+    except errors.ConfigAttributeError:
         _run = False
     if  _run:
         model = args[0]
@@ -120,21 +120,24 @@ def search_for_weight(model, module: nn.Module)->(bool, str):
             paramname = n
     return has_standart_weight, paramname
         
-
+from qtransform.quantization.quant_bn import replace_bn, CustomBatchNorm1d, QuantBatchnorm1d
 def auto_merge_layers(cfg, model: torch.nn.Module, inplace=False, qat=True):
     """
     Should be used wiht caution. Auto merging layers only works if all layers are sequential. 
     Which is to say:  batchnorm or layernorm appear directly after some linear tranformation.
     """
     model: torch.nn.Module = model if inplace else deepcopy(model)
-    last_module: torch.nn.Module = None
-    param_name = None
+    #last_module: torch.nn.Module = None
+    #param_name = None
     for mn, module in model.named_modules():
 
         # merge if applicable
+        # currently, only batchnorm is merged
         if isinstance(module, nn.modules.batchnorm._NormBase):
             log.debug("=========")    
-            if isinstance(module, qnn.QuantMultiheadAttention):
+            module = replace_bn(module, qat=qat)
+            #raise NotImplementedError(f'merge_bn is currently being refactored')
+            """if isinstance(module, qnn.QuantMultiheadAttention):
                 merge_bn_mha(last_module, model)
                 # TODO remove bn layer connect (and connect nodes)?
             elif isinstance(last_module, nn.MultiheadAttention):
@@ -158,7 +161,7 @@ def auto_merge_layers(cfg, model: torch.nn.Module, inplace=False, qat=True):
             if yes:
                 log.debug(f"last layer with weights {mn} {param_name}")
                 last_module = module
-                #log.debug(last_module)
+                #log.debug(last_module)"""
 
     #raise NotImplementedError
     return model
