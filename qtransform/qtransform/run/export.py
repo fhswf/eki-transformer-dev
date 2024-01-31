@@ -93,7 +93,6 @@ def run(cfg: DictConfig, *args):
     #prepare_and_transform_for_export(cfg, model)
     #by default, save onnx models into current directory
     root_path = cfg.run.get('root_path', os.path.abspath('.'))
-    log.critical(cfg.run.get('root_path'))
     model_name = f"{str(cfg.run.export_fn)}_{str(input_dim)}_" + filename
     from qtransform.utils.introspection import concat_paths
     model_path = concat_paths([root_path, model_name])
