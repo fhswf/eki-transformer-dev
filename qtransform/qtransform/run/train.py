@@ -96,8 +96,11 @@ def run(cfg: DictConfig):
         #add qat qparams (scale and zero)
         model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         # TODO make this a decorator so it can return stuff
+        #if hasattr(log,"trace"): log.trace(model)
+        #print(model)
         last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
     else:
+        #if hasattr(log,"trace"): log.trace(model)
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
 
     # maybe subsequent jobs can be managed by hydra in the future?

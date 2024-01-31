@@ -1,9 +1,28 @@
 import torch
+import math
 from torch import nn 
 from torch.nn import functional as F
 from qtransform.model import modules as custom_nn
+from dataclasses import dataclass
+from typing import Optional
+from brevitas.inject.defaults import Uint8ActPerTensorFloat
+from brevitas.nn.quant_layer import ActQuantType
+from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 from brevitas import nn as qnn
-import math
+from brevitas.nn import utils as qutils
+from brevitas.proxy import WeightQuantProxyFromInjector, BiasQuantProxyFromInjector
+
+__all__ = ['EltwiseAdd']
+
+class EltwiseAdd(nn.Module):
+    """Layer Wrapper for torch '+' operator to Replace with qnn.QuantEltwiseAdd Fake Layer that adds two intputs together."""
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input, other):
+        return input + other
+    
+
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
 def new_gelu(x):
     """
@@ -47,11 +66,6 @@ class BatchNorm(nn.BatchNorm1d):
         index.to(device=input.device)
         return torch.gather(input=input, dim=1, index=index)
 
-from typing import Optional
-from brevitas.inject.defaults import Uint8ActPerTensorFloat
-
-from brevitas.nn.quant_layer import ActQuantType
-from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 class QuantGELU(QuantNLAL):
     """Does not work so well"""
     def __init__(
@@ -69,12 +83,7 @@ class QuantGELU(QuantNLAL):
             return_quant_tensor=return_quant_tensor,
             **kwargs)
         
-from dataclasses import dataclass
-from typing import Optional
 
-from brevitas import nn as qnn
-from brevitas.nn import utils as qutils
-from brevitas.proxy import WeightQuantProxyFromInjector, BiasQuantProxyFromInjector
 
 def compute_channel_view_shape(tensor: torch.Tensor, channel_dim: int):
     """
@@ -207,17 +216,22 @@ class TransformerBlock(nn.Module):
             ln_2 = getattr(custom_nn, config.norm_layer, None)
             self.ln_1 = ln_1(self.norm_size, config.bias)
             self.ln_2 = ln_2(self.norm_size, config.bias)
-            
-        self.attn = CausalSelfAttention(config)
         
+        self.residual1 = custom_nn.EltwiseAdd()
+        self.residual2 = custom_nn.EltwiseAdd()
+        self.attn = CausalSelfAttention(config)
         self.mlp = MLP(config)
 
     def forward(self, x):
         if self.norm_size:
-            x = x + self.attn(self.ln_1(x))
-            x = x + self.mlp(self.ln_2(x))
+            x = self.residual1(x, self.attn(self.ln_1(x)))
+            x = self.residual2(x, self.mlp(self.ln_2(x)))
+            #x = x + self.attn(self.ln_1(x))
+            #x = x + self.mlp(self.ln_2(x))
         else:
-            x = x + self.attn(x)
-            x = x + self.mlp(x)
+            x = self.residual1(x, self.attn(x))
+            x = self.residual2(x, self.mlp(x))
+            #x = x + self.attn(x)
+            #x = x + self.mlp(x)
         return x
     
