@@ -15,10 +15,11 @@ def new_gelu(x):
 class LayerNorm(nn.Module):
     """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
-    def __init__(self, ndim, bias):
+    def __init__(self, normalized_shape, bias):
         super().__init__()
-        self.weight = nn.Parameter(torch.ones(ndim))
-        self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
+        self.normalized_shape = normalized_shape
+        self.weight = nn.Parameter(torch.ones(normalized_shape))
+        self.bias = nn.Parameter(torch.zeros(normalized_shape)) if bias else None
 
     def forward(self, input):
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
@@ -41,11 +42,13 @@ class BatchNorm(nn.BatchNorm1d):
             padding = torch.zeros(n, self.num_features - c, l)
             input = torch.cat((input, padding), dim=1)
         input = super().forward(input, *args, **kwargs)
-        #remove padding 
-        #tensor.repeat instead of torch.tile for onnx compatibility (https://github.com/pytorch/pytorch/issues/63796)
-        index = torch.arange(c).reshape(c,1).repeat((n,1,l))
-        index.to(device=input.device)
-        return torch.gather(input=input, dim=1, index=index)
+        #remove padding
+        #torch.repeat not supported by FINN compiler 
+        #index = torch.arange(c).reshape(c,1).repeat((n,1,l))
+        #index.to(device=input.device)
+        #return torch.gather(input=input, dim=1, index=index)
+        return input[:,None:c]
+
 
 from typing import Optional
 from brevitas.inject.defaults import Uint8ActPerTensorFloat
@@ -72,44 +75,6 @@ class QuantGELU(QuantNLAL):
 from dataclasses import dataclass
 from typing import Optional
 
-from brevitas import nn as qnn
-from brevitas.nn import utils as qutils
-from brevitas.proxy import WeightQuantProxyFromInjector, BiasQuantProxyFromInjector
-
-def compute_channel_view_shape(tensor: torch.Tensor, channel_dim: int):
-    """
-        copied from: brevitas.nn.utils.compute_channel_view_shape
-    """
-    broadcast_shape = [1] * len(tensor.size())
-    broadcast_shape[channel_dim] = -1
-    return tuple(broadcast_shape)
-
-## TODO test this
-## TODO maybe specify in args if batch norm is performed during input or output projection
-def merge_bn_mha(layer, bn, output_channel_dim=0):
-    #retrieve learnable parameters from batchnorm (scale + bias)
-    out = qutils.mul_add_from_bn(
-        bn_mean=bn.running_mean,
-        bn_var=bn.running_var,
-        bn_eps=bn.eps,
-        bn_weight=bn.weight.data.clone(),
-        bn_bias=bn.bias.data.clone())
-    mul_factor, add_factor = out #scalar values
-    #out_proj is QuantLinear(in_features=embd_dim, out_features=embd_dim)
-    out_ch_weight_shape = qutils.compute_channel_view_shape(layer.out_proj.weight, output_channel_dim)
-    #apply batchnorm during after forward pass of layer, before returning result
-    layer.out_proj.weight.data.mul_(mul_factor.view(out_ch_weight_shape))
-    if layer.out_proj.bias is not None:
-        out_ch_bias_shape = qutils.compute_channel_view_shape(layer.out_proj.bias, channel_dim=0)
-        layer.out_proj.bias.data.mul_(mul_factor.view(out_ch_bias_shape))
-        layer.out_proj.bias.data.add_(add_factor.view(out_ch_bias_shape))
-    else:
-        layer.out_proj.bias = nn.Parameter(add_factor)
-    if (hasattr(layer, 'out_proj_weight_quant') and
-            isinstance(layer.out_proj_weight_quant, WeightQuantProxyFromInjector)):
-        layer.out_proj_weight_quant.init_tensor_quant()
-    if (hasattr(layer, 'out_proj_bias_quant') and isinstance(layer.out_proj_bias_quant, BiasQuantProxyFromInjector)):
-        layer.out_proj_bias_quant.init_tensor_quant()
 
 class CausalSelfAttention(nn.Module):
     """

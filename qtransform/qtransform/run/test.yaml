@@ -11,3 +11,6 @@ tests:
   - module: quantization.quantization
     filenames: 
       - '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/quantization/cfg_files/test_gpt.yaml'
+  - module: quantization.quant_bn
+    filenames:
+      - '/home/mabot004/eki-transformer-dev/qtransform/qtransform/test/quantization/quant_bn/cfg_files/quant_bn.yaml'
