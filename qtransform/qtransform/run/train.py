@@ -106,8 +106,15 @@ def run(cfg: DictConfig):
     from qtransform.utils.helper import write_to_pipe
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
+        from hydra import compose
+        #load another entire hydra config with run=export, then override the current run config with export
+        #this saves having to re-initialize the globalhydra configuration and further redundant config steps
+        #(https://hydra.cc/docs/advanced/compose_api/ and https://github.com/facebookresearch/hydra/issues/440)
+        export_cfg = compose(config_name="config", overrides=["run=export"])
+        with open_dict(cfg):
+            cfg.run = export_cfg.run
         OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
-        #OmegaConf.update(cfg, "run.running_model", True, force_add=True)
+        OmegaConf.update(cfg, "run.running_model", True, force_add=True)
         if quant_cfg and quant_cfg.quantize:
             OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
         else:
