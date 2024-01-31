@@ -1,9 +1,28 @@
 import torch
+import math
 from torch import nn 
 from torch.nn import functional as F
 from qtransform.model import modules as custom_nn
+from dataclasses import dataclass
+from typing import Optional
+from brevitas.inject.defaults import Uint8ActPerTensorFloat
+from brevitas.nn.quant_layer import ActQuantType
+from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 from brevitas import nn as qnn
-import math
+from brevitas.nn import utils as qutils
+from brevitas.proxy import WeightQuantProxyFromInjector, BiasQuantProxyFromInjector
+
+__all__ = ['EltwiseAdd']
+
+class EltwiseAdd(nn.Module):
+    """Layer Wrapper for torch '+' operator to Replace with qnn.QuantEltwiseAdd Fake Layer that adds two intputs together."""
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input, other):
+        return input + other
+    
+
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
 def new_gelu(x):
     """
@@ -50,11 +69,6 @@ class BatchNorm(nn.BatchNorm1d):
         return input[:,None:c]
 
 
-from typing import Optional
-from brevitas.inject.defaults import Uint8ActPerTensorFloat
-
-from brevitas.nn.quant_layer import ActQuantType
-from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 class QuantGELU(QuantNLAL):
     """Does not work so well"""
     def __init__(
@@ -72,9 +86,42 @@ class QuantGELU(QuantNLAL):
             return_quant_tensor=return_quant_tensor,
             **kwargs)
         
-from dataclasses import dataclass
-from typing import Optional
 
+
+def compute_channel_view_shape(tensor: torch.Tensor, channel_dim: int):
+    """
+        copied from: brevitas.nn.utils.compute_channel_view_shape
+    """
+    broadcast_shape = [1] * len(tensor.size())
+    broadcast_shape[channel_dim] = -1
+    return tuple(broadcast_shape)
+
+## TODO test this
+## TODO maybe specify in args if batch norm is performed during input or output projection
+def merge_bn_mha(layer, bn, output_channel_dim=0):
+    #retrieve learnable parameters from batchnorm (scale + bias)
+    out = qutils.mul_add_from_bn(
+        bn_mean=bn.running_mean,
+        bn_var=bn.running_var,
+        bn_eps=bn.eps,
+        bn_weight=bn.weight.data.clone(),
+        bn_bias=bn.bias.data.clone())
+    mul_factor, add_factor = out #scalar values
+    #out_proj is QuantLinear(in_features=embd_dim, out_features=embd_dim)
+    out_ch_weight_shape = qutils.compute_channel_view_shape(layer.out_proj.weight, output_channel_dim)
+    #apply batchnorm during after forward pass of layer, before returning result
+    layer.out_proj.weight.data.mul_(mul_factor.view(out_ch_weight_shape))
+    if layer.out_proj.bias is not None:
+        out_ch_bias_shape = qutils.compute_channel_view_shape(layer.out_proj.bias, channel_dim=0)
+        layer.out_proj.bias.data.mul_(mul_factor.view(out_ch_bias_shape))
+        layer.out_proj.bias.data.add_(add_factor.view(out_ch_bias_shape))
+    else:
+        layer.out_proj.bias = nn.Parameter(add_factor)
+    if (hasattr(layer, 'out_proj_weight_quant') and
+            isinstance(layer.out_proj_weight_quant, WeightQuantProxyFromInjector)):
+        layer.out_proj_weight_quant.init_tensor_quant()
+    if (hasattr(layer, 'out_proj_bias_quant') and isinstance(layer.out_proj_bias_quant, BiasQuantProxyFromInjector)):
+        layer.out_proj_bias_quant.init_tensor_quant()
 
 class CausalSelfAttention(nn.Module):
     """
@@ -177,14 +224,21 @@ class TransformerBlock(nn.Module):
 
         self.attn = CausalSelfAttention(config)
         
+        self.residual1 = custom_nn.EltwiseAdd()
+        self.residual2 = custom_nn.EltwiseAdd()
+        self.attn = CausalSelfAttention(config)
         self.mlp = MLP(config)
 
     def forward(self, x):
         if self.norm_size:
-            x = x + self.attn(self.ln_1(x))
-            x = x + self.mlp(self.ln_2(x))
+            x = self.residual1(x, self.attn(self.ln_1(x)))
+            x = self.residual2(x, self.mlp(self.ln_2(x)))
+            #x = x + self.attn(self.ln_1(x))
+            #x = x + self.mlp(self.ln_2(x))
         else:
-            x = x + self.attn(x)
-            x = x + self.mlp(x)
+            x = self.residual1(x, self.attn(x))
+            x = self.residual2(x, self.mlp(x))
+            #x = x + self.attn(x)
+            #x = x + self.mlp(x)
         return x
     
