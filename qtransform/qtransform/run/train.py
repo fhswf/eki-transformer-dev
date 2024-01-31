@@ -99,10 +99,11 @@ def run(cfg: DictConfig):
         last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
     else:
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
-
     # maybe subsequent jobs can be managed by hydra in the future?
     # when this paradigm comes up more frequently we have to make this a thing ....
-    log.debug("done")
+    log.debug("Finished training model")
+    #write checkpoint into fifo if model is not exported, otherwise write path to onnx model into fifo
+    from qtransform.utils.helper import write_to_pipe
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
         OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
@@ -112,6 +113,9 @@ def run(cfg: DictConfig):
         else:
             OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
         export.run(cfg, model)
+    else:
+        #write checkpoint into fifo
+        write_to_pipe(cfg, last_checkpoint)
         
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:

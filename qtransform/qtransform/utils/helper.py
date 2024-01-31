@@ -6,6 +6,7 @@ from omegaconf import DictConfig
 import torch
 import logging
 from torch import nn
+from stat import S_ISFIFO
 log = logging.getLogger(__name__)
 
 
@@ -91,3 +92,35 @@ def save_checkpoint(cfg: DictConfig,
                 }, f=checkpoint_path)
         log.info(f"Model checkpoint saved to {checkpoint_path}")
     return checkpoint_path
+
+def write_to_pipe(cfg: DictConfig, content: str) -> None:
+    """
+    Write into a named pipe in order for other qtransform processes to access information from this current instance.
+    The filepath of checkpoints or ONNX models could be written into the pipe in order to continue training from it or 
+    perform inference or benchmarking. 
+
+    The "pipe" field from the hydra config specifies the filepath of the named pipe (by default: /dev/null). If the pipe does
+    not exist yet and the current operating system is UNIX-like, it will be created. 
+    """
+    #write checkpoint into named_pipe
+    pipe_name = cfg.get('pipe', '/dev/null')
+    #by default, write checkpoint to /dev/null if pipe name is omited
+    pipe_name = '/dev/null' if pipe_name is None else pipe_name
+    if not os.path.exists(pipe_name):
+        from sys import platform
+        if platform == "win32":
+            log.error(f'Cannot create pipes on non-UNIX system.')
+            raise RuntimeError()
+        log.debug(f'Creating named pipe "{pipe_name}"')
+        os.mkfifo(pipe_name)
+
+    if not S_ISFIFO(os.stat(pipe_name).st_mode) and pipe_name != '/dev/null':
+        log.error(f'Specified filepath "{pipe_name}" is not a pipe.')
+    else:
+        log.info(f'Writing content "{content}" into fifo "{pipe_name}". ' \
+                 f'Until another process reads from the fifo, the current process (PID {os.getpid()}) is blocked.'
+        )
+        #writing into a named pipe blocks process until another process reads from it
+        #problematic if something should be done after writing into the pipe
+        with open(pipe_name, 'w') as pipe:
+            pipe.write(content)
