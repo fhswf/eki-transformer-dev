@@ -7,3 +7,5 @@ export_fn: qonnx  # brevitas export ot troch onnx.export #  can be export, expor
 opset_version: 16
 
 do_constant_folding: True ### found in the onnx docs, not sure what this does, param for opnnx.export func, currently unsused
+
+root_path: ~/.qtransform/onnx/ #absolute path to directory where onnx models should be saved. default: base directory of qtransform

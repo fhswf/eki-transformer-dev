@@ -91,25 +91,33 @@ def run(cfg: DictConfig, *args):
         "do_constant_folding": True
     }
     #prepare_and_transform_for_export(cfg, model)
-    log.info("exporting... " + f"{str(cfg.run.export_fn)}_{str(input_dim)}_" + filename)
+    #by default, save onnx models into current directory
+    root_path = cfg.run.get('root_path', os.path.abspath('.'))
+    log.critical(cfg.run.get('root_path'))
+    model_name = f"{str(cfg.run.export_fn)}_{str(input_dim)}_" + filename
+    from qtransform.utils.introspection import concat_paths
+    model_path = concat_paths([root_path, model_name])
+    log.info("exporting... " + model_name)
     if cfg.run.export_fn == "qonnx":
         try:
-            export_qonnx(model, torch.tensor(sample_tensor), export_path=f"qonnx_{str(input_dim)}_" + filename, **kwargs)
+            export_qonnx(model, torch.tensor(sample_tensor), export_path=model_path, **kwargs)
         except Exception:
             log.error(f"Export via {export_qonnx.__module__}.{export_qonnx.__name__} failed, reason", exc_info=True)
    
     if cfg.run.export_fn == "qcdq":             
         try:
-            export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=f"onnx_qcdq_{str(input_dim)}_" + filename, **kwargs)
+            export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=model_path, **kwargs)
         except:
             log.error(f"Export via {export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__} failed, reason", exc_info=True)
 
     if cfg.run.export_fn == "onnx":           
         try:
-            export(model, torch.tensor(sample_tensor), f"onnx_{str(input_dim)}-" + filename, **kwargs)
+            export(model, torch.tensor(sample_tensor), model_path, **kwargs)
         except:
             log.error(f"Export via {export.__module__}.{export.__name__} failed, reason", exc_info=True)
-
+    #write path to fifo
+    from qtransform.utils.helper import write_to_pipe
+    write_to_pipe(cfg, model_path)
 
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None
