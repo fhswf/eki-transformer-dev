@@ -9,8 +9,13 @@ for i in $(seq ${ITERATIONS}); do
     text=$(tr -dc A-Za-z0-9 </dev/urandom | head -c 13)
     #writing needs to be in background
     args=$i
+    echo -e "++++ Iteration: ${i} ++++"
+    #from manpage of mkfifo: 
+    
+    #However, it has to be open at both ends simultaneously before you can proceed to do any input or output operations on it. 
+    #Opening a FIFO for reading normally blocks until some other process opens the same FIFO for writing, and vice versa. See fifo(7) for nonblocking handling of FIFO special files. 
     python use_pipe.py pipe=${PIPE_NAME} run=create text=${text} args=$args &
-    #right now, the output of the first create run script is fed into every consume script
-    #TODO: fix this
     python use_pipe.py pipe=${PIPE_NAME} run=consume
+    echo
 done
+rm -f ${PIPE_NAME}
