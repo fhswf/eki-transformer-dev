@@ -1,0 +1,3 @@
+quantize: True
+kind: ptq 
+type: BrevitasPTQQuantizer
