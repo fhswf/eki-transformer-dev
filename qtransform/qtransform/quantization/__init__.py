@@ -2,6 +2,7 @@ from abc import ABC, abstractclassmethod, abstractmethod
 import logging
 import json
 from torch.nn import Module
+from qtransform.model.modules import __all__ as supported_custom_layers 
 from torch.nn.modules import __all__ as supported_torch_layers #all layer names of torch
 from omegaconf import DictConfig, OmegaConf
 import pprint 
@@ -299,8 +300,8 @@ class LayerQuantConfig:
             log.error(f'Layer {self.name} has to contain a property \"layer_type\" which describes its type, e.g. \"Linear\" for linear layers.')
             raise TypeError
         #check if layer_type is the name of a torch module
-        elif self.layer_type not in supported_torch_layers:
-            log.error(f'Layer {self.layer_type} is not a valid torch.nn Module')
+        elif not (self.layer_type in supported_torch_layers or self.layer_type in supported_custom_layers):
+            log.error(f'Layer {self.layer_type} is not a valid torch.nn Module or custom Module from qtransform')
             raise ValueError
 
         if not isinstance(self.name, str):
@@ -362,6 +363,10 @@ class LayerQuantConfig:
         self.quantizers = dict()
         for quantizer_name, quantizer_cfg in quantizers.items() if quantizers is not None else []:
             if hasattr(log,"trace"): log.trace(f"Cleaning up quantizer:  {quantizer_name:10s}\t within layer: {self.name}")
+            if quantizer_cfg is None:
+                self.quantizers[quantizer_name] = None
+                log.warning(f"setting quantizer {quantizer_name} for layer {self.name} to None as config is left empty")
+                continue
             if not isinstance(quantizer_cfg, Union[Dict, DictConfig]):
                 log.error(f'Quantizer {quantizer_name:10s}\t within layer: {self.name} is not nested.')
             #get type of quantizer in order to construct specific quantargs instance
@@ -377,6 +382,7 @@ class LayerQuantConfig:
                 raise ValueError
             #use first type in name
             quantizer_class = getattr(package_self, assumed_quantizer_type.capitalize() + 'Quant')
+
             try:
                 self.quantizers[quantizer_name] = quantizer_class(**{"type": assumed_quantizer_type, **quantizer_cfg})
             except Exception as e:
@@ -409,30 +415,35 @@ class LayerQuantConfig:
         
         for quantizer_name, quantizer_cfg in self.quantizers.items() if self.quantizers is not None else []:
             log.debug(f'Setting custom quantizer for type: {quantizer_name} and args: {quantizer_cfg}')
-            #import module that has default quantizer
-            quantizer_module: ModuleType = import_module(quantizer_cfg.quantizer_module)
-            #create subclass from that quantizer and override values
-            #from: https://stackoverflow.com/questions/9269902/is-there-a-way-to-create-subclasses-on-the-fly
-            quantizer_args = dict()
-            #type constructor needs dict for args, not (data)class
-            for field in fields(quantizer_cfg.args) if quantizer_cfg.args is not None else []:
-                quant_value = getattr(quantizer_cfg.args, field.name)
-                #only overwrite values of quantizer if it was set in config file
-                if quant_value:
-                    quantizer_args[field.name] = quant_value
-            #property access of class from module
-            quantizer_class = getattr(quantizer_module, quantizer_cfg.default_quantizer)
             #cleanup name of quantizer for quantized brevitas class
             #structure: <type>_quant
             suffix = '_quant' if search('_quant', quantizer_name) is None else ''
-            #make subclass of default quantizer
-            #it is not an instance, but of type class
-            #it also overrides qparams from default quantizer with supplied quantizers
-            quantizers[quantizer_name + suffix] = type(
-                    'Custom' + self.name.capitalize() + self.layer_type.capitalize() + str(quantizer_name).capitalize() + 'Quantizer', 
-                    (quantizer_class,), 
-                    quantizer_args
-                )
+            #import module that has default quantizer
+            if quantizer_cfg is not None:
+                quantizer_module: ModuleType = import_module(quantizer_cfg.quantizer_module)
+                #create subclass from that quantizer and override values
+                #from: https://stackoverflow.com/questions/9269902/is-there-a-way-to-create-subclasses-on-the-fly
+                quantizer_args = dict()
+                #type constructor needs dict for args, not (data)class
+                for field in fields(quantizer_cfg.args) if quantizer_cfg.args is not None else []:
+                    quant_value = getattr(quantizer_cfg.args, field.name)
+                    #only overwrite values of quantizer if it was set in config file
+                    if quant_value:
+                        quantizer_args[field.name] = quant_value
+                #property access of class from module
+                quantizer_class = getattr(quantizer_module, quantizer_cfg.default_quantizer)
+                #make subclass of default quantizer
+                #it is not an instance, but of type class
+                #it also overrides qparams from default quantizer with supplied quantizers
+                quantizers[quantizer_name + suffix] = type(
+                        'Custom' + self.name.capitalize() + self.layer_type.capitalize() + str(quantizer_name).capitalize() + 'Quantizer', 
+                        (quantizer_class,), 
+                        quantizer_args
+                    )
+            else:
+                quantizer_module = None
+                quantizers[quantizer_name + suffix] = None
+            
         return quantizers
 
 
