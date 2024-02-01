@@ -61,6 +61,9 @@ class GPT(nn.Module):
         self.single_output = config.single_output
         self.use_weight_tying = config.single_output
         self.norm_size = None
+
+        self.emb_add = custom_nn.EltwiseAdd()
+
         if config.norm_layer == "LayerNorm":
             self.norm_size = config.n_embd
         elif config.norm_layer == "BatchNorm":
@@ -139,6 +142,7 @@ class GPT(nn.Module):
         # forward the GPT model itself
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
+        self.emb_add(tok_emb, pos_emb)
         x = self.transformer.dropout(tok_emb + pos_emb)
         for block in self.transformer.layer:
             x = block(x)
