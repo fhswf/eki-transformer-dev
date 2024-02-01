@@ -1,2 +1,5 @@
 command: "bench"
 el: 2
+
+from_checkpoint: 
+model_path: 
