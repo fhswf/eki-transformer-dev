@@ -1,28 +1,28 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
 throw_errors_on_duplicate : False #If the same layer has multiple configs within this file, pick the last one and throw warnings. Otherwise, throw an error and exit
 layers:
-    transformer.r'w[tp]e': 
-      quantize: True
-      layer_type: Embedding
-      quantizers: 
-        weight: 
-          #type: weight
-          #order of overriding: default_quantizer, then template, then args
-          default_quantizer: Int8WeightPerTensorFloat
-          args:
-            bit_width: 4
-    transformer.dropout: 
-      quantize: True
-      layer_type: Dropout #no quantizers for dropout possible, what is the default behavior then?
+    #transformer.r'w[tp]e': 
+    #  quantize: True
+    #  layer_type: Embedding
+    #  quantizers: 
+    #    weight: 
+    #      #type: weight
+    #      #order of overriding: default_quantizer, then template, then args
+    #      default_quantizer: Int8WeightPerTensorFloat
+    #      args:
+    #        bit_width: 4
+    #transformer.dropout: 
+    #  quantize: True
+    #  layer_type: Dropout #no quantizers for dropout possible, what is the default behavior then?
 
     transformer.emb_add:
       quantize: True
       layer_type: EltwiseAdd
       quantizers: 
-        input: 
-          default_quantizer: Int8ActPerTensorFloat
-          args:
-            bit_width: 4
+        #input: 
+        #  default_quantizer: Int8ActPerTensorFloat
+        #  args:
+        #    bit_width: 4
         output:
           default_quantizer: Int8ActPerTensorFloat
           args:

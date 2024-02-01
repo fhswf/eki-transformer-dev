@@ -59,45 +59,73 @@ def run(cfg: DictConfig, *args):
     #log.debug(f"Model structure: {model}")
     #log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
 
-    input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
-    max_token_id = checkpoint['model_cfg']['args']['vocab_size']
-    sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
-
     filename = cfg.run.from_checkpoint.split("/")[-1] + ".onnx"
     if cfg.run.get("output"):
         filename = cfg.run.get("output")
 
+    # what if we want to split the model during export?
+    # something dirty for now....
+    import qtransform
+    if isinstance(model, qtransform.model.gpt2split.GPT2Ensemble) and cfg.run.split==True:
+        log.info("Splitting model for export...")
+
+        input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
+        max_token_id = checkpoint['model_cfg']['args']['vocab_size']
+        sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
+        export_select(cfg, model.gpt2embdedding, input_dim, sample_tensor, "gpt2embdedding")
+        raise NotImplementedError
+        
+        input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
+        max_token_id = checkpoint['model_cfg']['args']['vocab_size']
+        sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
+        export_select(cfg, model.gpt2core, input_dim, sample_tensor, "gpt2core")
+
+        input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
+        max_token_id = checkpoint['model_cfg']['args']['vocab_size']
+        sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
+        export_select(cfg, model.gpt2nexttokenprediction, input_dim, sample_tensor, "gpt2nexttokenprediction")
+       
+    else:
+        input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
+        max_token_id = checkpoint['model_cfg']['args']['vocab_size']
+        sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
+        export_select(cfg, model, input_dim, sample_tensor, filename)
+
+def export_select(cfg, model, input_dim, sample_tensor, suffix=""):
     """
-    export function maps to torch onnx export:
-    # Export the model
-        torch.onnx.export(torch_model,  # model being run
-        x,                              # model input (or a tuple for multiple inputs)
-        "model.onnx",        # where to save the model (can be a file or file-like object)
-        export_params=True,             # store the trained parameter weights inside the model file
-        opset_version=10,               # the ONNX version to export the model to
-        do_constant_folding=True,       # whether to execute constant folding for optimization
-        input_names = ['input'],        # the model's input names
-        output_names = ['output'],      # the model's output names
-        dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
-                    'output' : {0 : 'batch_size'}})
-    """
+        export function maps to torch onnx export:
+        # Export the model
+            torch.onnx.export(torch_model,  # model being run
+            x,                              # model input (or a tuple for multiple inputs)
+            "model.onnx",        # where to save the model (can be a file or file-like object)
+            export_params=True,             # store the trained parameter weights inside the model file
+            opset_version=10,               # the ONNX version to export the model to
+            do_constant_folding=True,       # whether to execute constant folding for optimization
+            input_names = ['input'],        # the model's input names
+            output_names = ['output'],      # the model's output names
+            dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
+                        'output' : {0 : 'batch_size'}})
+        """
+    filename = cfg.run.from_checkpoint.split("/")[-1] + suffix + ".onnx"
+    if cfg.run.get("output"):
+        filename = cfg.run.get("output") + suffix
     kwargs = {
-        "input_names" :['input', 'offsets'],   # the model's input names
-        "output_names" : ['output'],         # the model's output names
-        #"dynamic_axes" :{'input' : {0 : 'batch_size'},    # variable length axes
-        #                'output' : {0 : 'batch_size'}},
-        "opset_version": cfg.run.opset_version,  
-        "export_params": True,  
-        "do_constant_folding": True
-    }
-    #prepare_and_transform_for_export(cfg, model)
+            "input_names" :['input', 'offsets'],   # the model's input names
+            "output_names" : ['output'],         # the model's output names
+            #"dynamic_axes" :{'input' : {0 : 'batch_size'},    # variable length axes
+            #                'output' : {0 : 'batch_size'}},
+            "opset_version": cfg.run.opset_version,  
+            "export_params": True,  
+            "do_constant_folding": True
+        }
+        #prepare_and_transform_for_export(cfg, model)
     log.info("exporting... " + f"{str(cfg.run.export_fn)}_{str(input_dim)}_" + filename)
     if cfg.run.export_fn == "qonnx":
         try:
             export_qonnx(model, torch.tensor(sample_tensor), export_path=f"qonnx_{str(input_dim)}_" + filename, **kwargs)
         except Exception:
             log.error(f"Export via {export_qonnx.__module__}.{export_qonnx.__name__} failed, reason", exc_info=True)
-   
+    
     if cfg.run.export_fn == "qcdq":             
         try:
             export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=f"onnx_qcdq_{str(input_dim)}_" + filename, **kwargs)
