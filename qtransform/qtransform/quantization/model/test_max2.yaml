@@ -111,7 +111,7 @@ layers:
       layer_type: ReLU #no GeLU for brevitas currently
       quantizers:
         act:
-          default_quantizer: Int8ActPerTensorFloat
+          default_quantizer: Uint8ActPerTensorFloat
           args:
             bit_width: 4
         input:
