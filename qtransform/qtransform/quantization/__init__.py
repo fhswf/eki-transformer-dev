@@ -256,7 +256,6 @@ class BaseQuant():
         
         
 #creating explicit classes in order to avoid future type collisions with Union[WeightQuantArgs, BiasQuantArgs, ActQuantArgs]
-#TODO: make BaseQuant contain generic Type of args e.g. BaseQuant[WeightQuantArgs]
 @dataclass
 class WeightQuant(BaseQuant):
     args: Optional[WeightQuantArgs] = None
@@ -315,6 +314,8 @@ class LayerQuantConfig:
             raise KeyError
 
         #brevitas batchnorm normalizes along batch size (dim 0) instead of features (dim 1)
+        #solution is to merge batchnorm into either the previous layer or into a custom BatchNorm layer
+        #which performs simple scaling
         if match(r'batchnorm', self.layer_type, IGNORECASE):
             log.warning(f'Quantization for Batchnorm is performed by replacing it with a linear layer ' \
                 f'during export, thereby ignoring the config (for: {self.name}). ')

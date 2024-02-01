@@ -14,6 +14,7 @@ def check_shapes(tensor: torch.Tensor) -> torch.Tensor:
     Checks if a tensor is of shape [C], [N,C] or [C,N] with N = 1 and C >= 1.
     If tensor is of a different shape, a ValueError will be thrown.
     The returning tensor will be of shape [C, 1].
+    This is done in order to multiply each row of an input tensor with each index of the weight tensor.
     """
     shape_tensor = tensor.size()
     if len(shape_tensor) == 1:
@@ -44,18 +45,19 @@ def custom_bn1d(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> to
         raise TypeError('Weight is not a tensor')
     elif not isinstance(bias, torch.Tensor):
         raise TypeError('Bias is not a Tensor')
-
+    if weight.size()[0] != bias.size()[0]:
+        raise ValueError(f'Weight and bias have different sizes (weight: {weight.size()}, bias: {bias.size()})')
     weight = check_shapes(weight)
     bias = check_shapes(bias)
     x_size = x.size()
     if len(x_size) > 3:
         raise ValueError(f'Input tensor is too large (expected size 2 or 3, got: {len(x.size)})')
     #multiplication will expand the number of rows by the amount of rows in weight
-    #problematic during inference as words will be artificially inserted
+    #problematic during inference as words will be artificially inserted if prompt size is less than weight.size() words
     C_x = x_size[0] if len(x_size) == 2 else x_size[1]
-    out = x * weight[C_x] + bias[C_x]
-    #only return the original amount of rows from x of output tensor
-    return out[:,None:C_x] if len(x_size) == 3 else out[:C_x]
+    if C_x > weight.size()[0]:
+        raise ValueError(f'num_features of input tensor ({C_x}) too large for weight tensor ({weight.size()[0]})')
+    return x * weight[:C_x] + bias[:C_x]
 
 class CustomBatchNorm1d(TorchModule):
     """
@@ -145,11 +147,11 @@ def replace_bn(bn: BatchNorm1d, new_bn: CustomBatchNorm1d = None, qat: bool = Tr
     """
     if not isinstance(bn, BatchNorm1d):
         raise TypeError(f'Cannot merge non-batchnorm layer ({type(bn)}).')
-    if not isinstance(new_bn, CustomBatchNorm1d):
-        raise TypeError(f'Cannot merge batchnorm into non CustomBatchNorm1d layer (type: {type(new_bn)}).')
     if new_bn is None:
         new_bn = QuantBatchnorm1d(bn.num_features) if qat else CustomBatchNorm1d(bn.num_features)
-    elif new_bn.num_features != bn.num_features:
+    if not isinstance(new_bn, CustomBatchNorm1d):
+        raise TypeError(f'Cannot merge batchnorm into non CustomBatchNorm1d layer (type: {type(new_bn)}).')
+    if new_bn.num_features != bn.num_features:
         raise ValueError(f'Property num_features are different for new_bn ({new_bn.num_features}) and bn ({bn.num_features})')
     merge_bn(layer=new_bn, bn=bn)
     return new_bn
