@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from qtransform.utils import load_checkpoint, save_checkpoint
 from pprint import PrettyPrinter
 from qtransform import device_singleton
-
+from qtransform.utils.helper import load_state_dict_proxy
 log = logging.getLogger(__name__)
 
 def run(cfg: DictConfig):
@@ -148,7 +148,8 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
             #TODO: investigate
             from brevitas import config
             config.IGNORE_MISSING_KEYS = True
-        model.load_state_dict(checkpoint['model_state_dict'])
+        load_state_dict_proxy(model, checkpoint['model_state_dict'])
+        #model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         metrics = {}
         
@@ -161,7 +162,9 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
     else:
         log.info(f"Starting new training")
         epochs_to_run = range(1, cfg.run.epochs + 1)
-
+    
+    #make sure we are on the target device
+    model = model.to(device_singleton.device)
         
     # training loop
     for epoch in epochs_to_run:

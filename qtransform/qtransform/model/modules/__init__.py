@@ -11,12 +11,14 @@ from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 from brevitas import nn as qnn
 from brevitas.nn import utils as qutils
 from brevitas.proxy import WeightQuantProxyFromInjector, BiasQuantProxyFromInjector
+from qtransform import device_singleton
 
 __all__ = ['EltwiseAdd']
 
 class EltwiseAdd(nn.Module):
     """Layer Wrapper for torch '+' operator to Replace with qnn.QuantEltwiseAdd Fake Layer that adds two intputs together."""
     def __init__(self):
+        #self.to(device_singleton.device)
         super().__init__()
 
     def forward(self, input, other):

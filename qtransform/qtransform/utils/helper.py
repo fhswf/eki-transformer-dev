@@ -58,6 +58,13 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
             log.warn("Modelcheckpint does not contain epoch information")
     return from_epoch,checkpoint
 
+def load_state_dict_proxy(model, checkpoint, **kwargs):
+    """same as torch load state dict, however this check env for extra params. """
+    strict = bool(int(os.environ.get("qtransform_load_state_strict", 1)))
+    if "strict" not in kwargs.keys():
+        kwargs.update({"strict": strict})
+    return model.load_state_dict(checkpoint, **kwargs)
+
 def save_checkpoint(cfg: DictConfig, 
     model: nn.Module, 
     optimizer, 
