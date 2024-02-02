@@ -12,6 +12,7 @@ from pprint import PrettyPrinter
 from qtransform import device_singleton
 from dataclasses import replace
 from qtransform.quantization.quant_bn import replace_bn, QuantBatchnorm1d
+from brevitas.nn.utils import merge_bn
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
@@ -60,7 +61,7 @@ class BrevitasQuantizer(Quantizer):
                     log.error(f'Passed model for quantization does not have submodule of name \"{layer_cfg.name}\". {error}')
                     raise ValueError
             #sublayer should now contain the layer to be quantized
-            quantized_layer: Module = BrevitasQuantizer.get_quantized_layer(layer=layer_to_be_quantized, layer_cfg=layer_cfg)
+            quantized_layer: Module = BrevitasQuantizer.get_quantized_layer(layer=layer_to_be_quantized, layer_cfg=layer_cfg, model=model)
             #replace current non-quantized layer with quantized layer
             quantized_model.get_submodule('.'.join(sublayer_names[:-1])).add_module(sublayer_names[-1], quantized_layer)
         #remember that model within config is quantized
@@ -80,9 +81,12 @@ class BrevitasQuantizer(Quantizer):
         #let the user know which layers were not quantized along their configs
         return (quantized_model, replace_layers_later)
     
-    def get_quantized_layer(layer: Module, layer_cfg: LayerQuantConfig) -> Module:
+    def get_quantized_layer(layer: Module, layer_cfg: LayerQuantConfig, model: Module = None) -> Module:
         """
-            Quantizes a layer as specified in the yaml config file for the corresponding model. 
+            Quantizes a layer as specified in the yaml config file for the corresponding model.
+
+            The model parameter is only necessary for merging a batchnorm layer into a previous layer as the layer to be merged into
+            has to be retrieved from the overarching model. 
         """
         #first of all, check if layer is quantized already
         if hasattr(qnn, layer.__class__.__name__):
@@ -97,12 +101,30 @@ class BrevitasQuantizer(Quantizer):
         layer_name: str = layer_cfg.name
         #use merge_bn for batchnorm, ignore brevitas classes
         if re.search(r'batchnorm', layer_type, re.IGNORECASE):
-            if layer_cfg.args.get("replace_bn", False):
-                log.debug(f'Replacing batchnorm')
+            merge_bn_name = layer_cfg.args.get('merge_bn', None)
+            if isinstance(merge_bn_name, str):
+                log.debug(f'Merging batchnorm "{layer_name}"')
+                #extract layer name from corresponding batchnorm transformer block
+                bn_layer_name = layer_name.split('.')[:-1]
+                bn_layer_name.append(merge_bn_name)
+                bn_layer_name: str = '.'.join(bn_layer_name)
+                try:
+                    assert isinstance(model, Module), f'When merging batchnorm into another layer, the model cannot be of type {type(model)}.'
+                    bn = model.get_submodule(bn_layer_name)
+                    merge_bn(bn, layer)
+                    #get_quantized_model expects the quantized layer to be returned, in this case the layer is unquantized
+                    #and the params are merged into another layer
+                    #TODO: maybe rewrite how get_quantized_model works
+                    return bn
+                except Exception as e:
+                    log.error(f'Layer could not be merged with merge_bn set to "{merge_bn_name}, reason: "', exc_info=True)
+
+            elif layer_cfg.args.get("replace_bn", False):
+                log.debug(f'Replacing batchnorm "{layer_name}')
                 #custom quantizers redundant when quantizing before export as default qparams are set to default
                 new_bn = QuantBatchnorm1d(layer.num_features, **quantizers)
                 bn: QuantBatchNorm1d = replace_bn(layer, new_bn, qat=True)
-                return bn
+                return bn 
             else:
                 #do nothing, TODO: implement merge_bn into previous layer
                 return layer

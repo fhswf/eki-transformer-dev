@@ -6,6 +6,8 @@ from typing import Optional, Union
 from brevitas.quant_tensor import QuantTensor
 from torch.nn import BatchNorm1d
 import torch
+from brevitas.quant_tensor import QuantTensor
+from typing import Union
 #test if a quantized layer can be implemented which basically scales the values along a tensor and adds a bias, thereby simulating batch normalization
 
 #TODO: maybe change tensor inplace
@@ -39,7 +41,7 @@ def custom_bn1d(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> to
 
     Output: tensor of shape [N,C] or [N,C,L], basically of the same size as the input tensor.
     """
-    if not isinstance(x, torch.Tensor) :
+    if not isinstance(x, Union[torch.Tensor, QuantTensor]) :
         raise TypeError('Input is not a tensor')
     elif not isinstance(weight, torch.Tensor):
         raise TypeError('Weight is not a tensor')
