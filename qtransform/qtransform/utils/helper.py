@@ -114,7 +114,9 @@ def write_to_pipe(cfg: DictConfig, content: str) -> None:
         log.debug(f'Creating named pipe "{pipe_name}"')
         os.mkfifo(pipe_name)
 
-    if not S_ISFIFO(os.stat(pipe_name).st_mode) and pipe_name != '/dev/null':
+    if pipe_name == '/dev/null': #avoid logging when output goes nowhere
+        return
+    elif not S_ISFIFO(os.stat(pipe_name).st_mode):
         log.error(f'Specified filepath "{pipe_name}" is not a pipe.')
     else:
         log.info(f'Writing content "{content}" into fifo "{pipe_name}". ' \

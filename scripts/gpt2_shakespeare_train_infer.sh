@@ -24,14 +24,14 @@ python -m ../qtransform run=train \
     run.epochs=1 run.max_iters=10 run.export=False \
     debug=True \
     pipe=${PIPE_NAME} 2>&1 >/dev/null & #in background to retrieve data from pipe
-#consume path name
+#consume path name, might contain brackets
 checkpoint=$(cat ${PIPE_NAME})
-if [[ -z ${checkpoint} ]]; then
+if [[ -z "${checkpoint}" ]]; then
     echo -e "checkpoint not set by previous process"
     exit 1
 fi
 
 #run inference, no need to pipe into fifo
-python -m ../qtransform run=infer run.from_checkpoint=${checkpoint}
+python -m ../qtransform run=infer run.from_checkpoint="${checkpoint}"
 rm -f ${PIPE_NAME}
 exit 0

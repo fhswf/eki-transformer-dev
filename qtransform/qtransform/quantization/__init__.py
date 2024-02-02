@@ -316,7 +316,9 @@ class LayerQuantConfig:
         if self.layer is None:
             log.error(f'Layer quantization config for {self.name} can not be applied for an empty layer')
             raise KeyError
-
+        #empty dict to avoid None checking every time
+        if self.args is None:
+            self.args = dict()
         #brevitas batchnorm normalizes along batch size (dim 0) instead of features (dim 1)
         #solution is to merge batchnorm into either the previous layer or into a custom BatchNorm layer
         #which performs simple scaling
@@ -370,8 +372,11 @@ class LayerQuantConfig:
                 self.quantizers[quantizer_name] = None
                 log.warning(f"setting quantizer {quantizer_name} for layer {self.name} to None as config is left empty")
                 continue
-            if not isinstance(quantizer_cfg, Union[Dict, DictConfig]):
-                log.error(f'Quantizer {quantizer_name:10s}\t within layer: {self.name} is not nested.')
+            #support for dataclasses.replace
+            if isinstance(quantizer_cfg, BaseQuant):
+                continue
+            elif not isinstance(quantizer_cfg, Union[Dict, DictConfig]):
+                log.error(f'Quantizer "{quantizer_name:10s}" within layer: {self.name} is not nested.')
             #get type of quantizer in order to construct specific quantargs instance
             assumed_quantizer_type = quantizer_cfg.get('type')
             if assumed_quantizer_type is None: #property not specified
@@ -530,10 +535,24 @@ class Quantizer(ABC):
 
     @staticmethod
     @abstractmethod
-    def get_quantized_model(quant_cfg: ModelQuantConfig, model: Module, inplace: bool = False) -> Module:
+    def get_quantized_model(quant_cfg: ModelQuantConfig, model: Module, inplace: bool = False) -> Tuple[Module, Union[ModelQuantConfig, None]]:
         """
             Prepares a model for QAT by applying qparams to the corresponding layers of the model specified in the
             quant_cfg. 
+        """
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def quantize_bn() -> Module:
+        """
+        Quantizes batchnorm by either replacing it with a simple BN implementation which applies a scale and bias
+        or by merging it into the previous layer. If the latter is considered, the number of input features of the previous layer 
+        and the batchnorm layer have to be the same.
+        TODO s: 
+            - merging into previous layer requires the previous layer, which is by default not included in replace_layers_later of get_quantized_model
+            - if batchnorm is replaced with a custom layer and the model is trained afterwards, the gamma and beta tensors are not trained by using the
+              running mean and standard deviation
         """
         pass
 
@@ -544,11 +563,6 @@ class Quantizer(ABC):
             Performs QAT on a model that has been prepared with get_quantized_model. During training,
             the qparams are calibrated in order to turn the weights into the quantized datatype. 
         """
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def export_model(model: Module, filepath: str) -> None:
         pass
 
 log = logging.getLogger(__name__)

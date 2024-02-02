@@ -98,7 +98,9 @@ def run(cfg: DictConfig):
         #if hasattr(log,"trace"): log.trace(model)
         #print(model)
         last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
-        #TODO: replace layers (batchnorm) with replace_layers_later. qparams are going to be set to their default values
+        #quantize last layers (batchnorm)
+        if replace_layers_later is not None:
+            quantizer.get_quantized_model(replace_layers_later, model)
     else:
         #if hasattr(log,"trace"): log.trace(model)
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)

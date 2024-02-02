@@ -8,10 +8,10 @@ from qtransform.classloader import get_data
 import re
 from typing import Dict, Tuple, List, Union
 import inspect
-from brevitas.export import export_qonnx
 from pprint import PrettyPrinter
 from qtransform import device_singleton
 from dataclasses import replace
+from qtransform.quantization.quant_bn import replace_bn, QuantBatchnorm1d
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
@@ -65,7 +65,6 @@ class BrevitasQuantizer(Quantizer):
             quantized_model.get_submodule('.'.join(sublayer_names[:-1])).add_module(sublayer_names[-1], quantized_layer)
         #remember that model within config is quantized
         quant_cfg.quantized = True if inplace else False
-
         #make quantization of layers to be replaced later easy by creating a new ModelQuantConfig instance
         #this should be particularly useful for quantizing batchnorm during export
         replace_layers_later: Dict[str, LayerQuantConfig] = {layer_cfg.name:layer_cfg for layer_cfg in [replace(x) for x in layer_cfgs if x.replace_later]}
@@ -81,7 +80,7 @@ class BrevitasQuantizer(Quantizer):
         #let the user know which layers were not quantized along their configs
         return (quantized_model, replace_layers_later)
     
-    def get_quantized_layer(layer: Module, layer_cfg: LayerQuantConfig):
+    def get_quantized_layer(layer: Module, layer_cfg: LayerQuantConfig) -> Module:
         """
             Quantizes a layer as specified in the yaml config file for the corresponding model. 
         """
@@ -96,6 +95,18 @@ class BrevitasQuantizer(Quantizer):
         quantizers = layer_cfg.get_custom_quantizers()
         if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
         layer_name: str = layer_cfg.name
+        #use merge_bn for batchnorm, ignore brevitas classes
+        if re.search(r'batchnorm', layer_type, re.IGNORECASE):
+            if layer_cfg.args.get("replace_bn", False):
+                log.warning(f'Replacing batchnorm')
+                #custom quantizers redundant when quantizing before export as default qparams are set to default
+                new_bn = QuantBatchnorm1d(layer.num_features, **quantizers)
+                bn: QuantBatchNorm1d = replace_bn(layer, new_bn, qat=True)
+                log.warning(f'{bn.weight}, {bn.bias}')
+                return bn
+            else:
+                #do nothing, TODO: implement merge_bn into previous layer
+                return layer
         #filter every class which contains name of layer to be quantized
         # -> MultiheadAttention: QuantMultiheadAttention, BatchNorm1d: BatchNorm1dQuantToScaleBias
         quantized_class_name = list(filter(lambda x: re.search(layer_type, x), QUANTIZED_CLASSES.keys()))
@@ -146,7 +157,3 @@ class BrevitasQuantizer(Quantizer):
             Unlike pytorch, no special function has to be called in order to calibrate the qparams and train the model.
         """
         return function(model, *args)
-
-    def export_model(model: Module, filepath: str) -> None:
-        #Idea: something along the lines of export_qonnx(model, export_path=filepath)
-        raise NotImplementedError

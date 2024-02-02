@@ -17,6 +17,17 @@ layers:
     transformer.ln_out:
       quantize: True
       layer_type: BatchNorm1d
+      quantizers:
+        weight:
+          default_quantizer: Int8WeightPerTensorFloat
+          args: 
+            bit_width: 4
+        bias:
+          default_quantizer: Int8Bias
+          args:
+            bit_width: 4
+      args:
+        replace_bn: True
     linear_out:
       quantize: True
       layer_type: Linear
