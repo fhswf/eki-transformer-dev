@@ -11,6 +11,7 @@ import inspect
 from brevitas.export import export_qonnx
 from pprint import PrettyPrinter
 from qtransform import device_singleton
+from dataclasses import replace
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant
 #idea: pass these configs from hydra conf to each layer and override default configs found in brevitas.nn.scale_int
@@ -66,9 +67,8 @@ class BrevitasQuantizer(Quantizer):
         quant_cfg.quantized = True if inplace else False
 
         #make quantization of layers to be replaced later easy by creating a new ModelQuantConfig instance
-        #TODO: this block has to be placed after replacing the layers because otherwise,
-        #      the replace_later field is going to be set to False for layers that should not be quantized
-        replace_layers_later: Dict[str, LayerQuantConfig] = {layer_cfg.name:layer_cfg for layer_cfg in [x for x in layer_cfgs if x.replace_later]}
+        #this should be particularly useful for quantizing batchnorm during export
+        replace_layers_later: Dict[str, LayerQuantConfig] = {layer_cfg.name:layer_cfg for layer_cfg in [replace(x) for x in layer_cfgs if x.replace_later]}
         for replace_layers_later_name in replace_layers_later.keys():
             replace_layers_later[replace_layers_later_name].replace_later = False
         #return None to avoid type checking empty ModelQuantConfig

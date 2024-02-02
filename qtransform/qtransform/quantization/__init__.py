@@ -487,7 +487,9 @@ class ModelQuantConfig:
         #layer_cfg is the quantization config for the last layer within submodules_list_string, so for the example
         #it would be mha
         for submodules_list_string, layer_cfg in layers.items():
+            #LayerQuantConfig does not have to be cleaned up
             if isinstance(layer_cfg, LayerQuantConfig):
+                self.layers[submodules_list_string] = layer_cfg
                 continue
             #generic typechecking for config
             if not isinstance(layer_cfg, Union[Dict, DictConfig]):
