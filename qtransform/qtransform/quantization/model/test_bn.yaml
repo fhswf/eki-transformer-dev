@@ -1,0 +1,18 @@
+cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
+throw_errors_on_duplicate : False #If the same layer has multiple configs within this file, pick the last one and throw warnings. Otherwise, throw an error and exit
+layers:
+transformer.layer.r'[0-9]+'.r'ln_[0-9]':
+  quantize: True
+  #it still is open whether a custom layer with their own weights and biases shoud entirely replace batchnorm (CustomBatchNorm1d)
+  #or the current params of the batchnorm layer should be merged into the previous layer
+  #depending on the option, the quantargs would be applied on different layers
+  layer_type: BatchNorm1d
+  quantizers:
+    weight:
+      default_quantizer: Int8WeightPerTensorFloat
+      args: 
+        bit_width: 4
+    bias:
+      default_quantizer: Int32Bias
+      args: 
+        bit_width: 4        
