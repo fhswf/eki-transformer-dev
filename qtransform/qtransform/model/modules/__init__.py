@@ -123,6 +123,19 @@ def merge_bn_mha(layer, bn, output_channel_dim=0):
     if (hasattr(layer, 'out_proj_bias_quant') and isinstance(layer.out_proj_bias_quant, BiasQuantProxyFromInjector)):
         layer.out_proj_bias_quant.init_tensor_quant()
 
+class LinearForBatchNorm(nn.Linear):
+    """
+    Very experimental linear layer that transposes a tensor of shape [N,C,L] / [C,L]
+    into shape [N,L,C] / [L,C], performs linear transformation on it and then transposes it back.
+    It probably is not useful as that would imply performing linear transformation on exactly one embedding
+    of each word and then adding the result together.
+    """
+    def __init__(self, num_features: int, bias= True, *args, **kwargs):
+        super().__init__(num_features, num_features, bias, *args, **kwargs)
+    
+    def forward(x):
+        return super().forward(x.transpose(-1,-2)).transpose(-1,-2)
+
 class CausalSelfAttention(nn.Module):
     """
     CausalSelfAttention. 
@@ -203,6 +216,20 @@ class MLP(nn.Module):
         x = self.dropout(x)
         return x
 
+#TODO: either replace or merge batchnorm, or both. should be configurable in yaml files somewhere
+CUSTOM_LN = False
+#dirty workaround to avoid circular import error and support preprocess_for_quantize from brevitas.graph.quantize 
+#qtransform.quantization.quant_bn could also be added into the fhswf-dev branch of brevitas
+#TODO: wait until meeting with brevitas team to see if development in main repo will add our requirements
+
+#from pkgutil import iter_modules
+#from os.path import join
+#import qtransform 
+#CustomBatchNorm1d = filter(lambda x: x.name == 'quant_bn', list(iter_modules([join(qtransform.__path__[0], 'quantization')])))
+from importlib import import_module
+quant_bn = import_module('qtransform.quantization.quant_bn')
+CustomBatchNorm1d = getattr(quant_bn, 'CustomBatchNorm1d')
+
 class TransformerBlock(nn.Module):
 
     def __init__(self, config):
@@ -210,8 +237,16 @@ class TransformerBlock(nn.Module):
         self.norm_size = None
         if config.norm_layer == "LayerNorm":
             self.norm_size = config.n_embd
+            #dummy layers which do nothing in order to merge with batchnorm layers
+            self.custom_ln1 = nn.Identity()
+            self.custom_ln2 = nn.Identity()
         elif config.norm_layer == "BatchNorm":
             self.norm_size = config.block_size
+            #at the start, should do the same as quantidentity
+            #after merging with batchnorm, should scale input to have a mean of 0 and a standard deviation of 1
+            #TODO: should they be trainable before merging?
+            self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if CUSTOM_LN else nn.Identity()
+            self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if CUSTOM_LN else nn.Identity()
         elif config.norm_layer == "None":
             self.norm_size = None
         else:

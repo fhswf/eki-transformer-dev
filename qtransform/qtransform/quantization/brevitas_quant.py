@@ -98,11 +98,10 @@ class BrevitasQuantizer(Quantizer):
         #use merge_bn for batchnorm, ignore brevitas classes
         if re.search(r'batchnorm', layer_type, re.IGNORECASE):
             if layer_cfg.args.get("replace_bn", False):
-                log.warning(f'Replacing batchnorm')
+                log.debug(f'Replacing batchnorm')
                 #custom quantizers redundant when quantizing before export as default qparams are set to default
                 new_bn = QuantBatchnorm1d(layer.num_features, **quantizers)
                 bn: QuantBatchNorm1d = replace_bn(layer, new_bn, qat=True)
-                log.warning(f'{bn.weight}, {bn.bias}')
                 return bn
             else:
                 #do nothing, TODO: implement merge_bn into previous layer

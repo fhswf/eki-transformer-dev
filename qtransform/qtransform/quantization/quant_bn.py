@@ -66,14 +66,19 @@ class CustomBatchNorm1d(TorchModule):
     _weight: torch.nn.Parameter
     _bias: torch.nn.Parameter
 
-    def __init__(self, num_features: int):
+    def __init__(self, num_features: int, requires_grad = True):
+        """
+        Dummy replacement layer for the params of BatchNorm1d. The pre-existing batchnorm layer can either be merged into this class
+        or completely replaced with it. Either way, the weight and bias parameters of this class are set to the calculated values from
+        brevitas.nn.utils.merge_bn. 
+        """
         if not isinstance(num_features, int) or num_features <= 0:
             raise AttributeError(f'num_features ({num_features}) not an acceptable value')
         TorchModule.__init__(self)
         self.num_features = num_features
         #do the same as identity
-        self.weight = torch.nn.Parameter(torch.ones(self.num_features))
-        self.bias = torch.nn.Parameter(torch.zeros(self.num_features))
+        self.weight = torch.nn.Parameter(torch.ones(self.num_features), requires_grad=requires_grad)
+        self.bias = torch.nn.Parameter(torch.zeros(self.num_features), requires_grad=requires_grad)
     
     @property
     def weight(self):
