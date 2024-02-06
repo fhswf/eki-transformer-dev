@@ -16,7 +16,7 @@ from datetime import datetime
 
 log = logging.getLogger(__name__)
 
-def run(cfg: DictConfig, *args):
+def run(cfg: DictConfig, **kwargs):
     """ exports a trained model to QONNX or others?"""
     log.info("================")
     log.info("Exporting Model")
@@ -32,6 +32,8 @@ def run(cfg: DictConfig, *args):
     _, checkpoint = load_checkpoint(cfg=cfg)
     from qtransform.model import get_model
     model = None
+    #either load model from checkpoint metadata or from hydra config
+    #depending on where export script is called (from train: hydra config, else: checkpoint metadata)
     if "model" in cfg and "cls" in cfg.model:
         model = get_model(cfg.model)
     elif "model_cfg" in checkpoint:
@@ -45,17 +47,26 @@ def run(cfg: DictConfig, *args):
         _run = cfg.run.running_model
     except errors.ConfigAttributeError:
         _run = False
+    #export script could have been called directly or from training script
+    #the model passed from the training script should be configured completely
+    #the model does not exist yet when calling the export script directly
     if  _run:
-        model = args[0]
+        model = kwargs["model"]
     else:
         quant_cfg = cfg.get('quantization')
+        replace_layers_later = None
         if quant_cfg and quant_cfg.quantize:    
             log.debug(f'Running quantized model')
             from qtransform.quantization import get_quantizer
             quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
             #add qat qparams (scale and zero)
-            model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+            model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+            #merge or replace batchnorm after loading their params, otherwise proceeed with default values
         model.load_state_dict(checkpoint['model_state_dict'])
+        if replace_layers_later is not None:
+            model, replace_layers_later = quantizer.get_quantized_model(replace_layers_later)
+        if replace_layers_later is not None:
+            log.warning(f'Layers {replace_layers_later.layers.keys()} could not be quantized during export.')
     #log.debug(f"Model structure: {model}")
     #log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
 

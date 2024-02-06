@@ -95,12 +95,10 @@ def run(cfg: DictConfig):
         quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         # TODO make this a decorator so it can return stuff
-        #if hasattr(log,"trace"): log.trace(model)
-        #print(model)
         last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
-        #quantize last layers (batchnorm)
+        #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 
         if replace_layers_later is not None:
-            quantizer.get_quantized_model(replace_layers_later, model)
+            model = quantizer.get_quantized_model(replace_layers_later)
     else:
         #if hasattr(log,"trace"): log.trace(model)
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
@@ -124,7 +122,8 @@ def run(cfg: DictConfig):
             OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
         else:
             OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
-        export.run(cfg, model)
+        kwargs = {"model": model}
+        export.run(cfg, **kwargs)
     else:
         #write checkpoint into fifo
         write_to_pipe(cfg, last_checkpoint)
@@ -190,7 +189,8 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
-            last_checkpoint = save_checkpoint(cfg=cfg, 
+            # last_checkpoint is the absolute filepath of the saved checkpoint
+            last_checkpoint: str = save_checkpoint(cfg=cfg, 
                 model=model, 
                 optimizer=optimizer, 
                 timestamp=timestamp, 

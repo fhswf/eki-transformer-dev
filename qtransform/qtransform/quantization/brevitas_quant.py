@@ -27,13 +27,16 @@ class BrevitasQuantizer(Quantizer):
         Quantizes a model based on a specified hydra configuration based on our fork of the brevitas framework (https://github.com/fhswf/brevitas), using
         the branch fhswf-dev. 
     """
-    def get_quantized_model(quant_cfg: ModelQuantConfig, inplace=False) -> Tuple[Module, Union[ModelQuantConfig, None]]:
+    def get_quantized_model(quant_cfg: ModelQuantConfig, inplace=False, suppress_logs = False) -> Tuple[Module, Union[ModelQuantConfig, None]]:
         log.info(f'Quantizing model')
         if quant_cfg is None:
             log.error(f'Quantization needs to have both config and model')
             raise KeyError
         model = quant_cfg.model
         #perform all property access operations with quantized model
+        if not isinstance(inplace, bool):
+            log.warning(f'Using wrong argument type for inplace (type {type(inplace)}. Assuming inplace=False)') if not suppress_logs else ""
+            inplace=False
         quantized_model: Module = model if inplace else deepcopy(model)
         #go through all submodules, then all layers within quant config
         #name -> sublayerquantargs -> name -> sublayerquantargs...
@@ -76,8 +79,9 @@ class BrevitasQuantizer(Quantizer):
             replace_layers_later = None
         else:
             replace_layers_later: ModelQuantConfig = ModelQuantConfig(quant_cfg.cls, replace_layers_later, device_singleton.device, model)
+            #logging "skipped" layers during export could be confusing
             log.info(f'Skipping quantization of layers {[x for x in replace_layers_later.layers.keys()]} as replace_later is set to True. ' \
-                'Call get_quantized_layer() explicitly at a time when the layer should be quantized.')
+                'Call get_quantized_layer() explicitly at a time when the layer should be quantized.') if not suppress_logs else ""
         #let the user know which layers were not quantized along their configs
         return (quantized_model, replace_layers_later)
     
