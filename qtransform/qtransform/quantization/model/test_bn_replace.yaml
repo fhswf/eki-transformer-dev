@@ -1,0 +1,39 @@
+cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
+throw_errors_on_duplicate : False #If the same layer has multiple configs within this file, pick the last one and throw warnings. Otherwise, throw an error and exit
+layers:
+  transformer.layer.r'[0-9]+'.ln_1: #r'ln_[0-9]':
+    quantize: True
+    #it still is open whether a custom layer with their own weights and biases shoud entirely replace batchnorm (CustomBatchNorm1d)
+    #or the current params of the batchnorm layer should be merged into the previous layer
+    #depending on the option, the quantargs would be applied on different layers
+    layer_type: BatchNorm1d
+    quantizers:
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
+        args: 
+          bit_width: 4
+      bias:
+        default_quantizer: Int32Bias
+        args: 
+          bit_width: 4
+    args:
+      replace_bn: True #replace with CustomBatchNorm1d, lose running_mean and running_var
+      #regex for batchnorm layers should be limited to only target one layer at a time in a single sublayer (ln_1 or ln_2)
+      #since each retrieved batchnorm layer is going to be merged with the same layer inside of its respective parent layer
+      merge_bn:  #name of the layer that batchnorm should be merged with. Default: None
+
+  transformer.layer.r'[0-9]+'.ln_2: #r'ln_[0-9]':
+    quantize: True
+    layer_type: BatchNorm1d
+    quantizers:
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
+        args: 
+          bit_width: 4
+      bias:
+        default_quantizer: Int32Bias
+        args: 
+          bit_width: 4
+    args:
+      replace_bn: True
+      merge_bn: 

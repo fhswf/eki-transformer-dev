@@ -1,7 +1,7 @@
 from copy import deepcopy
 from brevitas import nn as qnn
 from torch import device
-from torch.nn import Module, ModuleDict
+from torch.nn import Module, ModuleDict, Identity
 import logging
 from qtransform.quantization import Quantizer, ModelQuantConfig, LayerQuantConfig
 from qtransform.classloader import get_data
@@ -25,7 +25,8 @@ QUANTIZED_CLASSES = {x[0]:x[1] for x in inspect.getmembers(qnn,lambda x: inspect
 class BrevitasQuantizer(Quantizer):
     """
         Quantizes a model based on a specified hydra configuration based on our fork of the brevitas framework (https://github.com/fhswf/brevitas), using
-        the branch fhswf-dev. 
+        the branch fhswf-dev. It does this by replacing a torch layer with the corresponding brevitas layer (usually found by prepending the word Quant to
+        the layer name).
     """
     def get_quantized_model(quant_cfg: ModelQuantConfig, inplace=False, suppress_logs = False) -> Tuple[Module, Union[ModelQuantConfig, None]]:
         log.info(f'Quantizing model')
@@ -103,12 +104,14 @@ class BrevitasQuantizer(Quantizer):
         quantizers = layer_cfg.get_custom_quantizers()
         if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
         layer_name: str = layer_cfg.name
+
         #use merge_bn for batchnorm, ignore brevitas classes
         if re.search(r'batchnorm', layer_type, re.IGNORECASE):
-            merge_bn_name = layer_cfg.args.get('merge_bn', None)
-            if isinstance(merge_bn_name, str):
+            merge_bn_name = layer_cfg.args.get('merge_bn', '')
+            if isinstance(merge_bn_name, str) and len(merge_bn_name) > 0:
                 log.debug(f'Merging batchnorm "{layer_name}"')
                 #extract layer name from corresponding batchnorm transformer block
+                #batchnorm could therefore be merged with any layer name within the same depth of the model
                 bn_layer_name = layer_name.split('.')[:-1]
                 bn_layer_name.append(merge_bn_name)
                 bn_layer_name: str = '.'.join(bn_layer_name)
@@ -119,6 +122,7 @@ class BrevitasQuantizer(Quantizer):
                     #get_quantized_model expects the quantized layer to be returned, in this case the layer is unquantized
                     #and the params are merged into another layer
                     #TODO: maybe rewrite how get_quantized_model works
+                    #return qnn.QuantIdentity() #previous layer does the job of batchnorm now
                     return bn
                 except Exception as e:
                     log.error(f'Layer could not be merged with merge_bn set to "{merge_bn_name}, reason: "', exc_info=True)
@@ -130,8 +134,9 @@ class BrevitasQuantizer(Quantizer):
                 bn: QuantBatchNorm1d = replace_bn(layer, new_bn, qat=True)
                 return bn 
             else:
-                #do nothing, TODO: implement merge_bn into previous layer
+                log.warning(f'Quantization of batchnorm should be ')
                 return layer
+
         #filter every class which contains name of layer to be quantized
         # -> MultiheadAttention: QuantMultiheadAttention, BatchNorm1d: BatchNorm1dQuantToScaleBias
         quantized_class_name = list(filter(lambda x: re.search(layer_type, x), QUANTIZED_CLASSES.keys()))
