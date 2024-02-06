@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, Tuple
 from omegaconf import DictConfig, OmegaConf, open_dict
 import os
 import torch
@@ -180,12 +180,12 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
 
         metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
-        log.info(str(metrics))
 
         ## eval
-        #if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
-        #    eval_result = eval_model(cfg, device, model, eval_data)
-        #    # TODO log data
+        if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
+            losses, mean = eval_model(cfg, device, model, eval_data_loader)
+            log.info(f'AVERAGE EVAL LOSS FOR EPOCH {epoch}/{cfg.run.epochs}: {mean.item()}')
+        log.info(str(metrics))
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
@@ -243,27 +243,29 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     return last_loss    
 
 @torch.no_grad()
-def eval_model(cfg: DictConfig, device, model: nn.Module, evaldata: data.Dataset):
-    for i, vdata in enumerate(evaldata.loader):
-        vinputs, vlabels = vdata
-        voutputs = model(vinputs)
-        vloss = loss_fn(voutputs, vlabels)
-        running_vloss += vloss
-    avg_vloss = running_vloss / (i + 1)
-    return avg_loss, avg_vloss
+def eval_model(cfg: DictConfig, device, model: nn.Module, evaldata: data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Evaluates the accuracy of a model by feeding it input data during eval mode for a specified
+    number of batches. The number of batches is configurable by the eval_iters field inside of the train
+    hydra config.
 
-
-@torch.no_grad()
-def estimate_loss(cfg: DictConfig, model: nn.Module):
-    out = {}
+    The function returns two Tensors:
+        vlosses: The loss of every batch
+        avg_loss: The average of every vloss
+    """
     model.eval()
-    for split in ['train', 'val']:
-        losses = torch.zeros(eval_iters)
-        for k in range(eval_iters):
-            X, Y = get_batch(split)
-            with ctx:
-                logits, loss = model(X, Y)
-            losses[k] = loss.item()
-        out[split] = losses.mean()
+    vlosses = torch.zeros(cfg.run.eval_iters)
+    i = 0
+    while i < cfg.run.eval_iters:
+        vdata = next(iter(evaldata))
+        vinputs, vlabels = vdata
+        if cfg.model.calc_loss_in_model:
+            voutputs, vloss = model(vinputs, vlabels)
+        else:
+            voutputs = model(vinputs)
+            vloss = F.nll_loss(voutputs, vlabels)
+        vlosses[i] = vloss.item()
+        i += 1
+    avg_vloss = vlosses.mean()
     model.train()
-    return out
+    return vlosses, avg_vloss

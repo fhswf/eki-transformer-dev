@@ -12,10 +12,8 @@ save_epoch_interval: 1
 log_steps_interval : 10
 grad_clip : 0.7 # clip gradients at this value, or disable if :: 0.0
 
-## old stuff:
-
-validation_epoch_interval : 1000
-validation_iters : 200
+eval_epoch_interval : 1000 #perform eval after specified amount of epochs
+eval_iters: 200 #retrieve specified amount of batches for evaluation
 
 #moved optimizer stuff (lr, optimizer class, lr decay) to qtransform.optim
 
