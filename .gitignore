@@ -17,3 +17,5 @@ dist/
 **/*_epoch*
 #python virtual environment
 qtransform/eki
+#comments, todos, current project status etc.
+todos.md
