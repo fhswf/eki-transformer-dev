@@ -49,11 +49,11 @@ class TransformersTokenizer(Tokenizer):
         self.tokenizer.model_max_length = 1e30 #disable warning about max context
         self.meta.max_token_value = self.tokenizer.vocab_size
 
-    def encode(self, text) -> List[int]:
+    def encode(self, text, infer: bool = False) -> List[int]:
         #truncation is not performed as the tokens are appended into one continuous 1d memmap file
         #if truncation is performed, a large portion of the data is lost during tokenization
         tokens: list[int] = self.tokenizer(text)["input_ids"]
-        self.meta.num_tokens += len(tokens)
+        self.meta.num_tokens += len(tokens) if not infer else 0
         return tokens
 
     def decode(self, idx: List[int]) -> str:

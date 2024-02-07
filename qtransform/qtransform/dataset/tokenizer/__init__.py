@@ -102,10 +102,13 @@ class Tokenizer(ABC):
         self.memmap[offset: offset + len(tokens)] = tokens
 
     @abstractclassmethod
-    def encode(self, text: str) -> List[int]:
+    def encode(self, text: str, infer: bool = False) -> List[int]:
         """
             Tokenize a text and return the tokens in form of a list of integers.
             Unlike tokenize_memmap, the tokens are not written into a memmap file. 
+            Depending on whether infer is set to True or False, the vocabulary and the number of tokens
+            processed within the tokenizer are updated.
+            TODO: taking different actions depending on infer param could slow down tokenization process by a tiny margin
         """
         if not isinstance(text, str):
             log.error(f'Text to tokenize is not a string')

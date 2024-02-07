@@ -37,10 +37,10 @@ dataset:
     - ${dataset.module}
     - ${dataset.name}
   sizes:
-    train: ???
-    eval: ???
-    test: ???
-    bench: ???
+    train: 0.0 #all dataset splits are empty by default
+    eval: 0.0
+    test: 0.0
+    bench: 0.0
   tokenizer: 
       dtype: ${data.dtype}
       meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used

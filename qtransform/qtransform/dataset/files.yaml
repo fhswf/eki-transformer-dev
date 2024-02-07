@@ -5,8 +5,8 @@ module: files
 sizes: #sizes of dataset splits. if omited, assume empty sizes for splits
   train: 0.7
   eval: 0.1
-  test: 0.3
-  bench: 1.0
+  #test: 0.3
+  #bench: 1.0
 args:
   block_size: ${model.args.block_size}
   batches: 1000

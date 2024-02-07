@@ -78,8 +78,8 @@ def infer(cfg: DictConfig, device: Any):
     model.eval()
     model.to(device)
 
-    if torch.__version__ >= (2,0):
-        model = torch.compile(model) # requires PyTorch 2.0 (optional)
+    #if torch.__version__ >= (2,0):
+    #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
     # load tokenizer to decode tokens properly
     # tokenizer info saved in checkpoint or in hydra config
     from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
@@ -101,13 +101,15 @@ def infer(cfg: DictConfig, device: Any):
     if start.startswith('FILE:'):
         with open(start[5:], 'r', encoding='utf-8') as f:
             start = f.read()
-    #torch dynamo passes unknown tokens into the tokenizer for some reason
-    start_ids = encode(start)
+    start_ids = encode(start, infer=True)
     x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 
     # run generation
     for k in range(num_samples):
         y = generate(model, x, max_new_tokens, temperature=temperature, top_k=top_k)
+        log.debug(f'Uniquely generated tokens (sorted): {y.unique().sort()}')
+        #TODO: model could have larger vocabulary size than the tokenizer's max_token_value
+        #      for character tokenization, a sequence of <UNKNOWN> chars will be printed. for tiktoken, inference crashes 
         print(decode(y[0].tolist()))
         print('---------------')
 
