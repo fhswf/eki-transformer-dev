@@ -9,6 +9,6 @@ temperature: 0.8
 top_k: 200
 start: "\n" #generates text starting with #start (\n, "<|endoftext|>" or etc.) Can also specify a file, use as: "FILE:prompt.txt" where prompt.txt is absolute
 
-to_file: "" #write generated text into file. if empty, write onto stdout
+to_file: "" #absolute path of file to write infered text into. if empty, write onto stdout
 
 onnx_model:

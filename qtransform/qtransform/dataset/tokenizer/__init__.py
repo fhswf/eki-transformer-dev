@@ -156,7 +156,7 @@ class Tokenizer(ABC):
             if len(unsupported_keys) > 0:
                 log.warning(f'Metadata contains keys {unsupported_keys_dict}.'\
                     f'They are not supported in {self.tokenizer_cfg.module}. Removing them.')
-            meta = {x: meta[x] for x in meta if x not in keys}
+            meta = {x: meta[x] for x in meta if x not in unsupported_keys}
             meta["module"] = self.tokenizer_cfg.module
             self.meta =  replace(self.meta, **meta)
         elif isinstance(meta, Union[Dict, DictConfig]):

@@ -10,6 +10,7 @@ import tiktoken
 from torch.nn import functional as F
 from qtransform import device_singleton
 from dataclasses import dataclass
+from os.path import isfile
 
 @dataclass
 class InferConfig():
@@ -109,15 +110,22 @@ def infer(cfg: DictConfig, device: Any):
             start = f.read()
     start_ids = encode(start, infer=True)
     x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
-    # run generation
-    for k in range(num_samples):
-        y = generate(model, x, max_new_tokens, temperature=temperature, top_k=top_k)
-        log.debug(f'Uniquely generated tokens, sorted in ascending order: {y.unique().sort()}')
-        #TODO: model could have larger vocabulary size than the tokenizer's max_token_value
-        #      for character tokenization, a sequence of <UNKNOWN> chars will be printed. for tiktoken, inference crashes
-        print(decode(y[0].tolist()))
-        print('---------------')
+    to_file = cfg.run.get('to_file', '')
 
+    def write_inference() -> str:
+        # run generation
+        for k in range(num_samples):
+            y = generate(model, x, max_new_tokens, temperature=temperature, top_k=top_k)
+            log.debug(f'Uniquely generated tokens, sorted in ascending order: {y.unique().sort()}')
+            #TODO: model could have larger vocabulary size than the tokenizer's max_token_value
+            #      for character tokenization, a sequence of <UNKNOWN> chars will be printed. for tiktoken, inference crashes
+            return decode(y[0].tolist()) + '\n---------------\n'
+
+    if isfile(to_file):
+        with open(to_file, 'w') as file:
+            file.write(write_inference())
+    else:
+        print(write_inference())
 @torch.no_grad()
 def generate(model, idx, max_new_tokens, temperature=1.0, top_k=None):
     """
