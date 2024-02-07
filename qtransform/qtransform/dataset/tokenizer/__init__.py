@@ -151,9 +151,11 @@ class Tokenizer(ABC):
         if filepath is not None:
             meta = self._load_metadata(filepath)
             #keys not supported in metadata of tokenizer (e.g. fast encoding for tiktoken)
-            keys = set(meta.keys()) - set([x.name for x in fields(self.meta)])
-            keys_dict = {x:meta[x] for x in keys}
-            log.warning(f'Metadata contains keys {keys_dict}. They are not supported in {self.tokenizer_cfg.module}. Removing them.')
+            unsupported_keys = set(meta.keys()) - set([x.name for x in fields(self.meta)])
+            unsupported_keys_dict = {x:meta[x] for x in unsupported_keys}
+            if len(unsupported_keys) > 0:
+                log.warning(f'Metadata contains keys {unsupported_keys_dict}.'\
+                    f'They are not supported in {self.tokenizer_cfg.module}. Removing them.')
             meta = {x: meta[x] for x in meta if x not in keys}
             meta["module"] = self.tokenizer_cfg.module
             self.meta =  replace(self.meta, **meta)

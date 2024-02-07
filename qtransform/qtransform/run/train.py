@@ -40,13 +40,6 @@ def run(cfg: DictConfig):
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
-    from qtransform.model import get_model
-    model = get_model(cfg.model)
-    model.train()
-    #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
-    #this is a problem if a layer uses a non-named Tensor during the forward pass
-    model.to(device=device)
-
     from qtransform.dataset import get_data, get_loader, DatasetWrapper
     data_wrapper: DatasetWrapper = get_data(cfg.dataset)
     data_wrapper.load_dataset()
@@ -77,6 +70,18 @@ def run(cfg: DictConfig):
     data_wrapper.tokenizer.load_metadata(filepath=os.path.join(data_wrapper.tokenized_dir, cfg.dataset.tokenizer.meta_file))
     with open_dict(cfg.dataset.tokenizer):
         cfg.dataset.tokenizer["meta"] = data_wrapper.tokenizer.meta
+    
+    max_token_value = data_wrapper.tokenizer.meta.max_token_value
+    if max_token_value < cfg.model.args.vocab_size:
+        log.warning(f'Vocab size of model is larger than the tokenizer vocab. Setting vocab_size to: {max_token_value} to prevent errors during inference')
+        OmegaConf.update(cfg, "model.args.vocab_size", max_token_value, force_add=True)
+
+    from qtransform.model import get_model
+    model = get_model(cfg.model)
+    model.train()
+    #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
+    #this is a problem if a layer uses a non-named Tensor during the forward pass
+    model.to(device=device)
 
     from qtransform.optim import get_optim#, get_scheduler
     log.debug(f"optim config: {cfg.optim}")

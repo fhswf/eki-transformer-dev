@@ -57,5 +57,7 @@ def run(cfg : DictConfig):
     idict = {"input": np.asarray([769, 30, 123])}
 
     # use infer_shapes()
+    #TODO: shape mismatch (3,1) expected, got (1,1)
+    #      potentially due to q,k,v of mha
     odict = execute_onnx(model, idict)
     print(odict)

@@ -94,6 +94,12 @@ def infer(cfg: DictConfig, device: Any):
     encode = tokenizer.encode
     decode = tokenizer.decode
 
+
+    max_token_value = tokenizer.meta.max_token_value
+    if max_token_value < model_cfg.args.vocab_size:
+        log.warning(f'Vocab size of model is larger than the tokenizer vocab. '\
+            'This could lead to errors when the model predicts a token id that is not present within the vocab.')
+
     #load metadata, including vocabulary for character tokenization
     log.debug(checkpoint["tokenizer_cfg"]["meta"])
     tokenizer.load_metadata(meta=checkpoint["tokenizer_cfg"]["meta"])
@@ -103,13 +109,12 @@ def infer(cfg: DictConfig, device: Any):
             start = f.read()
     start_ids = encode(start, infer=True)
     x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
-
     # run generation
     for k in range(num_samples):
         y = generate(model, x, max_new_tokens, temperature=temperature, top_k=top_k)
-        log.debug(f'Uniquely generated tokens (sorted): {y.unique().sort()}')
+        log.debug(f'Uniquely generated tokens, sorted in ascending order: {y.unique().sort()}')
         #TODO: model could have larger vocabulary size than the tokenizer's max_token_value
-        #      for character tokenization, a sequence of <UNKNOWN> chars will be printed. for tiktoken, inference crashes 
+        #      for character tokenization, a sequence of <UNKNOWN> chars will be printed. for tiktoken, inference crashes
         print(decode(y[0].tolist()))
         print('---------------')
 
