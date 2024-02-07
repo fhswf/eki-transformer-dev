@@ -101,6 +101,7 @@ def infer(cfg: DictConfig, device: Any):
     if start.startswith('FILE:'):
         with open(start[5:], 'r', encoding='utf-8') as f:
             start = f.read()
+    #torch dynamo passes unknown tokens into the tokenizer for some reason
     start_ids = encode(start)
     x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
 

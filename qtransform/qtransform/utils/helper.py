@@ -66,7 +66,8 @@ def save_checkpoint(cfg: DictConfig,
     metrics:Dict, 
     epoch:int, 
     model_cfg: Any,
-    tokenizer_cfg: Any) -> str:
+    tokenizer_cfg: Any,
+    quant_cfg: Union[DictConfig, None] = None) -> str:
     """save torch model checkpoint from training, returns path to saved file."""
     
     chkpt_folder = get_default_chkpt_folder()
@@ -88,6 +89,7 @@ def save_checkpoint(cfg: DictConfig,
                 "model_cfg": model_cfg,
                 "tokenizer_cfg": tokenizer_cfg, 
                 "metrics": metrics,
+                "quant_cfg": quant_cfg, 
                 "quantized": True if cfg.get('quantization', {"quantize": False})["quantize"] is True else False
                 }, f=checkpoint_path)
         log.info(f"Model checkpoint saved to {checkpoint_path}")

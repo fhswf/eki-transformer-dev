@@ -123,13 +123,14 @@ def run(cfg: DictConfig, **kwargs):
     }
     #only write something into pipe if no errors occur
     try:
+        shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
         match cfg.run.export_fn:
             case "qonnx":
-                export_qonnx(model, torch.tensor(sample_tensor), export_path=model_path, **kwargs)
+                export_qonnx(model, shape, export_path=model_path, **kwargs)
             case "qcdq":
-                export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=model_path, **kwargs)
+                export_onnx_qcdq(model, shape, export_path=model_path, **kwargs)
             case "onnx":
-                export(model, torch.tensor(sample_tensor), model_path, **kwargs)
+                export(model, shape, model_path, **kwargs)
             case _:
                 log.error(f'Supported export functions: {ERROR_LOGS.keys()}')
                 raise ValueError()

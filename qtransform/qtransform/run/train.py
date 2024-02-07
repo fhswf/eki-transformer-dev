@@ -197,7 +197,8 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
                 epoch=epoch, 
                 metrics=metrics, 
                 model_cfg=cfg.model, 
-                tokenizer_cfg=cfg.dataset.tokenizer)
+                tokenizer_cfg=cfg.dataset.tokenizer,
+                quant_cfg = cfg.get('quantization', None))
 
         # advance learning rate
         scheduler.step()

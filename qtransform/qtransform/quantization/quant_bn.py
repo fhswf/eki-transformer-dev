@@ -65,8 +65,8 @@ class CustomBatchNorm1d(TorchModule):
     """
     Incredibly basic implementation of Batchnorm which normalizes by scaling the input tensor with its weight and adding a bias on each element.
     """
-    _weight: torch.nn.Parameter
-    _bias: torch.nn.Parameter
+    weight: torch.nn.Parameter
+    bias: torch.nn.Parameter
 
     def __init__(self, num_features: int, requires_grad = True):
         """
@@ -82,25 +82,11 @@ class CustomBatchNorm1d(TorchModule):
         self.weight = torch.nn.Parameter(torch.ones(self.num_features), requires_grad=requires_grad)
         self.bias = torch.nn.Parameter(torch.zeros(self.num_features), requires_grad=requires_grad)
     
-    @property
-    def weight(self):
-        return self._weight
-    
-    @weight.setter
-    def weight(self, value: torch.Tensor) -> None:
-        if not isinstance(value, torch.Tensor):
-            raise TypeError(f'Cannot set weight to type {type(value)}')
-        self._weight.data = check_shapes(value)
-
-    @property
-    def bias(self):
-        return self._bias
-    
-    @bias.setter
-    def bias(self, value: torch.Tensor) -> None:
-        if not isinstance(value, torch.Tensor):
-            raise TypeError(f'Cannot set bias to type {type(value)}')
-        self._bias.data = check_shapes(value)
+    def __setattr__(self, name: str, value) -> None:
+        if name == "weight" or name == "bias":
+            super().__setattr__(name, check_shapes(value))
+        else:
+            super().__setattr__(name, value)
 
     def forward(self, x):
         #without merging: multiply by one, add zero 
