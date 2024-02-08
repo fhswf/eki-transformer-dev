@@ -95,6 +95,26 @@ def save_checkpoint(cfg: DictConfig,
         log.info(f"Model checkpoint saved to {checkpoint_path}")
     return checkpoint_path
 
+import onnx
+import onnxruntime as ort
+from qonnx.core.modelwrapper import ModelWrapper
+# maybe only do this when it is required, for this howiever is always the case
+from onnx.shape_inference import infer_shapes
+
+def load_onnx_model(path: str) -> ModelWrapper:
+    """
+    Loads ONNX model from a filepath. 
+    """
+    if not isinstance(path, str):
+        log.error(f'Could not load ONNX model because: path {path} is not a string.')
+    if not os.path.isfile(path):
+        log.error(f'Could not load ONNX model because: path {path} is not a file.')
+    log.info(f'Loading ONNX model from "{path}"')
+    #qonnx lib also works with onnx models
+    model = ModelWrapper(path)    
+    infered_shapes = infer_shapes(model.model)
+    return ModelWrapper(infered_shapes)
+
 def write_to_pipe(cfg: DictConfig, content: str) -> None:
     """
     Write into a named pipe in order for other qtransform processes to access information from this current instance.

@@ -148,6 +148,10 @@ class Tokenizer(ABC):
             pickle.dump(asdict(self.meta), f)
 
     def load_metadata(self, filepath: str = None, meta: Dict = None):
+        """
+        Load metadata from a dictionary or from a file.
+        """
+        #TODO: tokenizer config contains meta file, here it is ignored. maybe refactor
         if filepath is not None:
             meta = self._load_metadata(filepath)
             #keys not supported in metadata of tokenizer (e.g. fast encoding for tiktoken)

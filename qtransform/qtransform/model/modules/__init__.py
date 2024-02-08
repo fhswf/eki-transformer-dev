@@ -189,8 +189,6 @@ class CausalSelfAttention(nn.Module):
         #    y = self.resid_dropout(self.c_proj(y))
         #else:
             #QuantMultiheadAttention does not have is_causal in constructor -> use attention mask instead
-            #TODO: in QuantMultiHeadAttention, q,k,v are only transposed if param batch_first is True. Investigate
-            #TODO number 2: error with incompatible sizes during forward pass in QuantMultiheadAttention
         y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
         return y
@@ -219,11 +217,6 @@ class MLP(nn.Module):
 #dirty workaround to avoid circular import error and support preprocess_for_quantize from brevitas.graph.quantize 
 #qtransform.quantization.quant_bn could also be added into the fhswf-dev branch of brevitas
 #TODO: wait until meeting with brevitas team to see if development in main repo will add our requirements
-
-#from pkgutil import iter_modules
-#from os.path import join
-#import qtransform 
-#CustomBatchNorm1d = filter(lambda x: x.name == 'quant_bn', list(iter_modules([join(qtransform.__path__[0], 'quantization')])))
 from importlib import import_module
 quant_bn = import_module('qtransform.quantization.quant_bn')
 CustomBatchNorm1d = getattr(quant_bn, 'CustomBatchNorm1d')

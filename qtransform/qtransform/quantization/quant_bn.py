@@ -41,9 +41,8 @@ def custom_bn1d(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> to
 
     Output: tensor of shape [N,C] or [N,C,L], basically of the same size as the input tensor.
     """
-    if not isinstance(x, Union[torch.Tensor, QuantTensor]) :
-        raise TypeError('Input is not a tensor')
-    elif not isinstance(weight, torch.Tensor):
+    #type checking x during torch.compile causes errors as x is not a static type (either Tensor or QuantTensor)
+    if not isinstance(weight, torch.Tensor):
         raise TypeError('Weight is not a tensor')
     elif not isinstance(bias, torch.Tensor):
         raise TypeError('Bias is not a Tensor')

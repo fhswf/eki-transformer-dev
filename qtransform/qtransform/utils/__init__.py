@@ -1,7 +1,7 @@
 import logging
-from qtransform.utils.helper import load_checkpoint, save_checkpoint
+from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, write_to_pipe
 __all__ = [
-    load_checkpoint, save_checkpoint
+    load_checkpoint, save_checkpoint, load_onnx_model, write_to_pipe
 ]
 
 
