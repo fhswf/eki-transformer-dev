@@ -13,9 +13,9 @@ start: "\n" #generates text starting with #start (\n, "<|endoftext|>" or etc.) C
 out_dir: '~'
 
 onnx_model: #absolute path of onnx model to run inference on. either use onnx_model or from_checkpoint
-#  path: 
-#  tokenizer: #specify tokenizer config manually as it cannot be saved in onnx model
-#    name:
-#    encoding: 
-#    meta_path: 
+  path: 
+  tokenizer: #specify tokenizer config manually as it cannot be saved in onnx model
+    name: tiktoken
+    encoding: gpt2
+    meta_path: #usually only necessary for character tokenization
 from_checkpoint:  #filename of checkpoint to load

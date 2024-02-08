@@ -34,7 +34,7 @@ class InferConfig():
 
     out_dir: str = None
 
-    onnx_model: str = None
+    onnx_model: dict = None
 
 def run(cfg : DictConfig):
     """ Inference """
@@ -75,15 +75,13 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
     """
     #if supplied, run inference on both onnx model and checkpoint
     models: List[ModelData] = list()
-    onnx_model_path = cfg.run.get('onnx_model', '')
+    onnx_model = cfg.run.get('onnx_model', '')
     from_checkpoint_path = cfg.run.get('from_checkpoint', '')
     #onnx checkpoint
-    if onnx_model_path != None:
-        model = load_onnx_model(onnx_model_path)
+    if onnx_model["path"] != None:
+        model = load_onnx_model(onnx_model["path"])
         #TODO: load tokenizer cfg from infer config
-        #tokenizer = get_tokenizer(tokenizer_cfg)
-        tokenizer = None
-        log.critical(f'TODO: load tokenizer for ONNX model HERE')
+        
         models.append(ModelData(type=InferType.ONNX, model=model, tokenizer=tokenizer))
     #torch checkpoint
     if from_checkpoint_path != None:
