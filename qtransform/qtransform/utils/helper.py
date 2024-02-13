@@ -11,7 +11,7 @@ from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
 from stat import S_ISFIFO
 log = logging.getLogger(__name__)
 
-def load_tokenizer_from_checkpoint(checkpoint)-> (Tokenizer, int):
+def load_tokenizer_from_checkpoint(checkpoint)-> tuple[Tokenizer, int]:
     tokenizer_cfg = checkpoint.get("tokenizer_cfg")
     if tokenizer_cfg is None:
         log.error(f'Tokenizer configuration neither specified in model checkpoint.')
