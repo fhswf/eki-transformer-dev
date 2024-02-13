@@ -256,7 +256,6 @@ class BaseQuant():
         
         
 #creating explicit classes in order to avoid future type collisions with Union[WeightQuantArgs, BiasQuantArgs, ActQuantArgs]
-#TODO: make BaseQuant contain generic Type of args e.g. BaseQuant[WeightQuantArgs]
 @dataclass
 class WeightQuant(BaseQuant):
     args: Optional[WeightQuantArgs] = None
@@ -274,6 +273,8 @@ from types import ModuleType
 import qtransform.quantization as package_self
 from re import search, subn, match, IGNORECASE
 
+
+
 @dataclass
 class LayerQuantConfig:
     #if a field is not wrapped within Optional[], it should be set
@@ -289,6 +290,8 @@ class LayerQuantConfig:
     replace_later: bool = False #merge layer with next layer if True
     args: Optional[Dict] = None # containts extra args for any class that we want to instantiate
 
+    LAYERNORM_WARN = True #warn user that quantizing layernorm is done with our implementation
+    
     def __post_init__(self):
         #check if layer should even be quantized
         try:
@@ -315,17 +318,17 @@ class LayerQuantConfig:
             raise KeyError
 
         #brevitas batchnorm normalizes along batch size (dim 0) instead of features (dim 1)
+        #solution is to merge batchnorm into either the previous layer or into a custom BatchNorm layer
+        #which performs simple scaling
         if match(r'batchnorm', self.layer_type, IGNORECASE):
             log.warning(f'Quantization for Batchnorm is performed by replacing it with a linear layer ' \
                 f'during export, thereby ignoring the config (for: {self.name}). ')
             self.replace_later = True
-            self.quantizers = {}
-            self.quantize = False        
-            return
-        #our fork implements quantization of layernorm, TODO: test
-        elif match(r'layernorm', self.layer_type, IGNORECASE):
+        #our brevitas fork implements quantization of layernorm, TODO: test
+        elif match(r'layernorm', self.layer_type, IGNORECASE) and self.LAYERNORM_WARN:
             log.warning(f'The quantization of layernorm was implemented by us as it did not exist ' \
-            'in the base repository of brevitas. Further behavior could be undefined.')
+            'in the base repository of brevitas. Further behavior could be undefined. Suppressing this warning.')
+            self.LAYERNORM_WARN = False
         #quick check if quantized class is suitable for layer (e.g. specify QuantLinear for LayerNorm layer)
         if not match(self.layer.__class__.__name__, self.layer_type, IGNORECASE):
             log.error(f'Quantizer class {self.layer_type} is unsuitable for layer "{self.name}" of type: {self.layer.__class__.__name__}')
@@ -484,9 +487,13 @@ class ModelQuantConfig:
         #layer_cfg is the quantization config for the last layer within submodules_list_string, so for the example
         #it would be mha
         for submodules_list_string, layer_cfg in layers.items():
+            #LayerQuantConfig does not have to be cleaned up
+            if isinstance(layer_cfg, LayerQuantConfig):
+                self.layers[submodules_list_string] = layer_cfg
+                continue
             #generic typechecking for config
             if not isinstance(layer_cfg, Union[Dict, DictConfig]):
-                log.error(f'Config for layer \"{submodules_list_string}\" has to be a dictionary, not {type(layer_cfg)}')
+                log.error(f'Config for layer \"{submodules_list_string}\" has to be a dictionary or of type LayerQuantConfig, not {type(layer_cfg)}')
                 raise TypeError
             elif layer_cfg.get('quantize') != True and layer_cfg.get('quantize') is not None:
                 continue

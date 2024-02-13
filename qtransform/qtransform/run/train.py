@@ -93,28 +93,39 @@ def run(cfg: DictConfig):
         log.debug(f'Running quantized model')
         from qtransform.quantization import get_quantizer
         quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
-        #add qat qparams (scale and zero)
-        model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+        model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         # TODO make this a decorator so it can return stuff
         #if hasattr(log,"trace"): log.trace(model)
         #print(model)
         last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
+        #TODO: replace layers (batchnorm) with replace_layers_later. qparams are going to be set to their default values
     else:
         #if hasattr(log,"trace"): log.trace(model)
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
-
     # maybe subsequent jobs can be managed by hydra in the future?
     # when this paradigm comes up more frequently we have to make this a thing ....
-    log.debug("done")
+    log.debug("Finished training model")
+    #write checkpoint into fifo if model is not exported, otherwise write path to onnx model into fifo
+    from qtransform.utils.helper import write_to_pipe
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
+        from hydra import compose
+        #load another entire hydra config with run=export, then override the current run config with export
+        #this saves having to re-initialize the globalhydra configuration and further redundant config steps
+        #(https://hydra.cc/docs/advanced/compose_api/ and https://github.com/facebookresearch/hydra/issues/440)
+        export_cfg = compose(config_name="config", overrides=["run=export"])
+        with open_dict(cfg):
+            cfg.run = export_cfg.run
         OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
-        #OmegaConf.update(cfg, "run.running_model", True, force_add=True)
+        OmegaConf.update(cfg, "run.running_model", True, force_add=True)
         if quant_cfg and quant_cfg.quantize:
             OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
         else:
             OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
         export.run(cfg, model)
+    else:
+        #write checkpoint into fifo
+        write_to_pipe(cfg, last_checkpoint)
         
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:

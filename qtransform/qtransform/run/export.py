@@ -23,7 +23,7 @@ def run(cfg: DictConfig, *args):
     log.info("================")
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
-
+    log.debug(f'Run config: {cfg.run}')
     model = None
 
     device_singleton.device = cfg.device
@@ -94,6 +94,10 @@ def export_select(cfg, model, input_dim, sample_tensor, suffix="", prefix="", pa
     filename = cfg.run.from_checkpoint.split("/")[-1] + suffix + ".onnx"
     if cfg.run.get("output"):
         filename = cfg.run.get("output") + suffix
+
+    #prepare_and_transform_for_export(cfg, model)
+
+
     # onnx export args    
     kwargs = {
             "input_names" :['input', 'offsets'],   # the model's input names
@@ -108,27 +112,52 @@ def export_select(cfg, model, input_dim, sample_tensor, suffix="", prefix="", pa
         raise NotImplementedError
         kwargs.update({"dynamic_axes": {'input' : {0 : 'batch_size'},  'output' : {0 : 'batch_size'} }})
 
+    #TODO: makedirs in ~/.qtransform directory deletes datasets 
+    #if not os.path.exists(root_path):
+    #    log.debug(f'Creating directory: "{root_path}')
+    #    os.makedirs(root_path.replace('~', os.path.expanduser('~')), exist_ok = True)
+    #elif not os.path.isdir(root_path):
+    #    log.error(f'root_path {root_path} is not a directory.')
+    #    raise ValueError()
+    root_path = cfg.run.get('root_path', os.path.abspath('.'))
+    model_name = f"{str(cfg.run.export_fn)}_{str(input_dim)}_" + filename
+    from qtransform.utils.introspection import concat_paths
+    model_path = concat_paths([root_path, model_name])
+
+    #by default, save onnx models into current directory
     export_folder = os.getcwd()
-    try: # sometimes hydra does smth odd ....
+    try: # in case hydra is not initlialized
         export_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", "exports")
     except:
         pass
 
     os.makedirs(export_folder, exist_ok=True)
-    log.info("exporting with " + f"{str(cfg.run.export_fn)} to folder export_folder")
 
-    if cfg.run.export_fn == "qonnx":
-        model.export(export_qonnx, sample_tensor, export_folder, kwargs)
+    log.info("exporting... " + model_name)
+    ERROR_LOGS = {
+        "qonnx": f'{export_qonnx.__module__}.{export_qonnx.__name__}',
+        "qcdq": f'{export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__}',
+        "onnx": f'{export.__module__}.{export.__name__}'
+    }
+
+    try:
+        match cfg.run.export_fn:
+            case "qonnx":
+                model.export(export_qonnx, sample_tensor, export_folder, kwargs)
+            case "qcdq":     
+                model.export(export_onnx_qcdq, sample_tensor, export_folder, kwargs)       
+            case "onnx":  
+                model.export(export, sample_tensor, export_folder, kwargs) 
+            case _:
+                log.error(f'Supported export functions: {ERROR_LOGS.keys()}')
+                raise ValueError()  
+    except Exception:
+        log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)
+        raise RuntimeError()
+    #write path to fifo
+    from qtransform.utils.helper import write_to_pipe
+    write_to_pipe(cfg, model_path)
     
-    elif cfg.run.export_fn == "qcdq":      
-        model.export(export_onnx_qcdq, sample_tensor, export_folder, kwargs)       
-        
-    elif cfg.run.export_fn == "onnx":  
-        model.export(export, sample_tensor, export_folder, kwargs)         
-
-    else:
-        log.error(f"export function {cfg.run.export_fn} not specified or found")
-        raise ModuleNotFoundError
     
 # old batch norm stuff
 def search_for_weight(model, module: nn.Module)->(bool, str):

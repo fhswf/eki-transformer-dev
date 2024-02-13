@@ -54,3 +54,7 @@ model:
 
 quantization:
   quantize: False
+
+#filepath of named pipe. currently, the path of saved checkpoints and (q)onnx models are written into it
+#by default, write into /dev/null
+pipe: /dev/null

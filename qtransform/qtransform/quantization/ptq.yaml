@@ -1,3 +1,8 @@
 quantize: True
-kind: ptq 
-type: BrevitasPTQQuantizer
+kind: ptq #post training quantization
+type: BrevitasQuantizer #unsure if a new Framework for ptq should be implemented
+
+defaults: 
+  - model: ???
+model:
+  dtype: ${data.dtype}
