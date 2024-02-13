@@ -44,6 +44,7 @@ class GPTConfig:
     transformer_active_func: str = 'ReLU' #specify which activation function to use in MLP (feed forwad neural network)
     norm_layer: str = 'BatchNorm' # note that this is a name for a adapter module in this repository und model.modules
     single_output: bool = False # use mini runtime optimization to only predict last token, saven on some runtime but poentially currupts onnx export
+    custom_ln: bool = False #use CustomBatchNorm1d before BatchNorm
 
 from dataclasses import fields
 class GPT(nn.Module):

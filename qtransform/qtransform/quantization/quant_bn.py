@@ -81,6 +81,7 @@ class CustomBatchNorm1d(TorchModule):
         factory_kwargs = {'device': device, 'dtype': dtype}
         super().__init__()
         self.num_features = num_features
+        self.requires_grad = requires_grad
         #do the same as identity
         self.weight = torch.nn.Parameter(torch.ones(self.num_features, **factory_kwargs), requires_grad=requires_grad)
         self.bias = torch.nn.Parameter(torch.zeros(self.num_features, **factory_kwargs), requires_grad=requires_grad)
@@ -89,7 +90,7 @@ class CustomBatchNorm1d(TorchModule):
         if name == "weight" or name == "bias":
             #make sure that weight and bias tensor are always of size (C, 1)
             #weird behavior that removes parameter if value is not wrapped around torch.nn.Parameter
-            super().__setattr__(name, torch.nn.Parameter(check_shapes(value)))
+            super().__setattr__(name, torch.nn.Parameter(check_shapes(value), requires_grad=self.requires_grad))
         else:
             super().__setattr__(name, value)
 

@@ -13,7 +13,7 @@ from qtransform.utils import load_checkpoint, load_onnx_model
 from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
 from dataclasses import dataclass
 from os.path import isdir, exists, join, expanduser
-
+from os import makedirs
 from qonnx.core.onnx_exec import execute_onnx
 from qonnx.core.modelwrapper import ModelWrapper
 from datetime import datetime
@@ -23,7 +23,7 @@ class InferConfig():
     command: str =  "infer"
 
     start: str = "\n"
-    model_dir: str = "models"
+    checkpoint_dir: str = "models"
     from_checkpoint: str = None #filename of checkpoint to load
     onnx_model: str = None
 
@@ -69,9 +69,9 @@ class ModelData():
 
 @dataclass
 class TokenizerConfig():
-    name: str = ""
-    encoding: str = ""
-    meta_path: str = ""
+    name: str = None
+    encoding: str = None
+    meta_path: str = None
 
 @dataclass
 class ONNXConfig():
@@ -80,8 +80,8 @@ class ONNXConfig():
     such as dataset info, tokenizers, epochs etc. Instead, the data has to be supplied within the infer config to make sure that the generated
     tokens of the model are decoded correctly.
     """
-    path: str = ""
     tokenizer: TokenizerConfig
+    path: str = None
 
     def __setattr__(self, name, value):
         if name == "tokenizer":
@@ -89,8 +89,8 @@ class ONNXConfig():
                 log.error(f'Attribute tokenizer of class ONNXConfig can only support Dicts or TokenizerConfig')
                 raise TypeError()
             if isinstance(value, Union[Dict, DictConfig]):
-                tokenizer = TokenizerConfig(**value)
-            self.tokenizer = tokenizer
+                value = TokenizerConfig(**value)
+        self.__dict__[name] = value
 
 
 def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
@@ -101,10 +101,10 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
     """
     #if supplied, run inference on both onnx model and checkpoint
     models: List[ModelData] = list()
-    onnx_model = ONNXConfig(cfg.run.get('onnx_model', dict()))
+    onnx_model = ONNXConfig(**cfg.run.get('onnx_model', dict()))
     from_checkpoint_path = cfg.run.get('from_checkpoint', '')
     #onnx checkpoint
-    if onnx_model["path"] != None:
+    if onnx_model.path != None:
         model = load_onnx_model(onnx_model["path"])
         #TODO: load tokenizer cfg from infer config
         from qtransform.dataset.tokenizer import __all__
@@ -208,7 +208,15 @@ def infer(cfg: DictConfig, device: Any):
         #inference yields generator in case something should be done before returning entire output
         gen_infer = write_inference(model_data)
         #write samples into file
-        if out_dir is not None and isdir(out_dir):
+        if out_dir is not None:
+            if not os.path.isabs(out_dir):
+                try:
+                    out_dir = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, out_dir)
+                except:
+                    out_dir = os.getcwd()
+            if not exists(out_dir):
+                log.debug(f'Creating infer dir: {out_dir}')
+                os.makedirs(out_dir, exist_ok= True )
             timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
             filename = "INFER_" + timestamp + "_" + model_data.type.name + ".out"
             out_path = join(out_dir.replace('~', expanduser('~')), filename)

@@ -239,8 +239,8 @@ class TransformerBlock(nn.Module):
             #after merging with batchnorm, should scale input to have a mean of 0 and a standard deviation of 1
             #TODO: should they be trainable before/ after merging?
             #      layers are not moved to cuda with model.to(device). for now, workaround by specifying device in constructor
-            self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False)
-            self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False)
+            self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
+            self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
         elif config.norm_layer == "None":
             self.norm_size = None
         else:
