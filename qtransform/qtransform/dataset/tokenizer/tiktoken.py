@@ -34,3 +34,9 @@ class TikTokenizer(Tokenizer):
 
     def decode(self, idx: List[int]) -> str:
         return self.encoder.decode(idx)
+    
+    def get_pad_token(self):
+        return "<|endoftext|>"
+    
+    def get_pad_id(self):
+        return self.encoder.max_token_value

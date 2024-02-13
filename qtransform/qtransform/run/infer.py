@@ -93,7 +93,7 @@ def infer(cfg: DictConfig, device: Any):
     tokenizer: Tokenizer = get_tokenizer(tokenizer_cfg)
     encode = tokenizer.encode
     decode = tokenizer.decode
-
+    
     #load metadata, including vocabulary for character tokenization
     log.debug(checkpoint["tokenizer_cfg"]["meta"])
     tokenizer.load_metadata(meta=checkpoint["tokenizer_cfg"]["meta"])

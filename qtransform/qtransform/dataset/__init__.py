@@ -369,7 +369,7 @@ class MemmapDataset(Dataset):
 
 def get_data(dataset_cfg: DictConfig) -> DatasetWrapper:
     import qtransform.dataset as package_self
-    dataset_wrapper: DatasetWrapper = classloader.get_data(log, package_self, dataset_cfg.wrapper, DatasetWrapper, args={"cfg": dataset_cfg})
+    dataset_wrapper: DatasetWrapper = classloader.find_clas_and_create_instance(log, package_self, dataset_cfg.wrapper, DatasetWrapper, args={"cfg": dataset_cfg})
     return dataset_wrapper
 
 def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:

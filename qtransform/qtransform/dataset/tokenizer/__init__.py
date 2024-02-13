@@ -1,7 +1,7 @@
 from dataclasses import dataclass, asdict, replace, fields
 from typing import Dict, List, Tuple, Union, Any
 from omegaconf import DictConfig, OmegaConf, open_dict
-from qtransform.classloader import get_data
+from qtransform.classloader import find_clas_and_create_instance
 import logging
 from qtransform.utils.introspection import concat_paths
 from abc import ABC, abstractclassmethod
@@ -120,6 +120,13 @@ class Tokenizer(ABC):
             log.error(f'idx is not a list')
             raise TypeError()
 
+    def get_pad_token(self):
+        """returns a token that can be used for padding. Such as EOF, EOT, PAD, unknown_token, or somthing like that."""
+        raise NotImplementedError
+    
+    def get_pad_id(self):
+        raise NotImplementedError
+    
     def save_metadata(self, filepath: str):
         """
             Saves metadata of a tokenized file as well as information about the tokenizer into filepath. 
@@ -198,5 +205,5 @@ def get_tokenizer(tokenizer_cfg: DictConfig, memmap: np.memmap = None) -> Tokeni
         return (functools.partial(tiktoken.core.Encoding, enc.name, pat_str=enc._pat_str, mergeable_ranks=enc._mergeable_ranks, special_tokens=enc._special_tokens), ())
     copyreg.pickle(tiktoken.core.Encoding, pickle_Encoding)
     log.debug(f'Attempting to retrieve tokenizer with cfg: {PrettyPrinter(indent=1).pformat(tokenizer_cfg)}')
-    tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.wrapper, Tokenizer, args={"tokenizer_cfg": tokenizer_cfg, "memmap": memmap})
+    tokenizer: Tokenizer = find_clas_and_create_instance(log, package_self, tokenizer_cfg.wrapper, Tokenizer, args={"tokenizer_cfg": tokenizer_cfg, "memmap": memmap})
     return tokenizer

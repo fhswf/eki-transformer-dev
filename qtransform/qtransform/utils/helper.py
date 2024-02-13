@@ -6,9 +6,19 @@ from omegaconf import DictConfig
 import torch
 import logging
 from torch import nn
+from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
+
 log = logging.getLogger(__name__)
 
-
+def load_tokenizer_from_checkpoint(checkpoint)-> (Tokenizer, int):
+    tokenizer_cfg = checkpoint.get("tokenizer_cfg")
+    if tokenizer_cfg is None:
+        log.error(f'Tokenizer configuration neither specified in model checkpoint.')
+        raise KeyError()
+    tokenizer: Tokenizer = get_tokenizer(tokenizer_cfg)
+    tokenizer.load_metadata(meta=checkpoint["tokenizer_cfg"]["meta"])
+    input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
+    return tokenizer, input_dim
 
 def get_default_chkpt_folder() -> str:
     """

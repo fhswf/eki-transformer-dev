@@ -5,7 +5,7 @@ from omegaconf import DictConfig, open_dict
 import logging
 import transformers
 from datasets import Dataset#, PreTrainedTokenizer, PreTrainedTokenizerFast
-from qtransform.classloader import get_data
+from qtransform.classloader import find_clas_and_create_instance
 from re import match, search, compile
 from qtransform.utils.introspection import get_classes
 import sys

@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict
 from omegaconf import DictConfig
 from qtransform.utils.helper import load_checkpoint
-from qtransform.classloader import get_data
+from qtransform.classloader import find_clas_and_create_instance
 from torch.onnx import export
 from datetime import datetime
 import torch

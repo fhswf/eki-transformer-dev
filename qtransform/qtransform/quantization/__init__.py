@@ -8,7 +8,7 @@ from omegaconf import DictConfig, OmegaConf
 import pprint 
 from typing import Any, List, Optional, Dict, Tuple, Union, get_args, get_origin #get_args: get raw type of wrapper -> Optional[str] is (), Dict[str, str] = (str, str)...
 from dataclasses import dataclass, fields
-from qtransform.classloader import get_data
+from qtransform.classloader import find_clas_and_create_instance
 from qtransform.utils.introspection import get_optional_type, concat_strings
 from enum import EnumMeta
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
@@ -557,5 +557,5 @@ def get_quantizer(_quant_cfg: DictConfig, model: Module) -> Tuple[Quantizer, Mod
     quant_cfg = ModelQuantConfig(**{**_quant_cfg.model, "model": model})
     if hasattr(log,"trace"): log.trace(f'Configured quantization config: {pprint.PrettyPrinter(indent=1).pformat(quant_cfg)}')
     #get_classes necessary, otherwise a circular import error will occur
-    quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer)
+    quantizer: Quantizer = find_clas_and_create_instance(log, package_self, _quant_cfg.type, Quantizer)
     return (quantizer, quant_cfg)

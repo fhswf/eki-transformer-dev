@@ -4,7 +4,7 @@ from torch import device
 from torch.nn import Module, ModuleDict
 import logging
 from qtransform.quantization import Quantizer, ModelQuantConfig, LayerQuantConfig
-from qtransform.classloader import get_data
+from qtransform.classloader import find_clas_and_create_instance
 import re
 from typing import Dict
 import inspect

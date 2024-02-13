@@ -3,7 +3,7 @@ from brevitas.graph import quantize
 from torch.nn import Module, ModuleDict
 import logging
 from qtransform.quantization import Quantizer, ModelQuantConfig
-from qtransform.classloader import get_data
+from qtransform.classloader import find_clas_and_create_instance
 from typing import Dict
 
 #brevitas allows tweaking the quantization hyperparameters for each layer with the parameter weight_quant

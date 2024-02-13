@@ -13,7 +13,7 @@
 from logging import getLogger
 from torch import optim
 from torch.nn import Module
-from qtransform.classloader import get_data
+from qtransform.classloader import find_clas_and_create_instance
 from inspect import signature
 from omegaconf import DictConfig, open_dict
 
@@ -42,7 +42,7 @@ def get_optim(model: Module, optim_cfg: DictConfig) -> optim.Optimizer:
     if optim_cfg.args.get("lr") is None and optim_cfg.args.learning_rate is not None:
         with open_dict(optim_cfg):
             optim_cfg.args.update({"lr": optim_cfg.args.pop("learning_rate")})
-    optimizer_cls = get_data(log, optim, optim_cfg.optimizer, optim.Optimizer)
+    optimizer_cls = find_clas_and_create_instance(log, optim, optim_cfg.optimizer, optim.Optimizer)
     #find out which args from config can be applied to optimizer
     init_args_cls = signature(optimizer_cls.__init__)
     applicable_cfg_args = set(optim_cfg.args.keys()) & set(init_args_cls.parameters.keys())

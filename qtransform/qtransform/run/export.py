@@ -6,7 +6,7 @@ from omegaconf import DictConfig
 import hydra
 import os
 from qtransform import device_singleton
-from qtransform.utils.helper import load_checkpoint
+from qtransform.utils.helper import get_default_chkpt_folder, load_checkpoint
 import torch
 from torch import nn
 from brevitas.export import export_onnx_qcdq, export_qonnx, export_brevitas_onnx
@@ -63,35 +63,20 @@ def run(cfg: DictConfig, *args):
     if cfg.run.get("output"):
         filename = cfg.run.get("output")
 
-    # what if we want to split the model during export?
-    # something dirty for now....
-    import qtransform
-    if isinstance(model, qtransform.model.gpt2split.GPT2Ensemble) and cfg.run.split==True:
-        log.info("Splitting model for export...")
+    from qtransform.utils.helper import load_tokenizer_from_checkpoint
+    tokenizer,input_dim = load_tokenizer_from_checkpoint(checkpoint)
 
-        input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
-        max_token_id = checkpoint['model_cfg']['args']['vocab_size']
-        sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
-        export_select(cfg, model.gpt2embdedding, input_dim, sample_tensor, "gpt2embdedding")
-        raise NotImplementedError
-        
-        input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
-        max_token_id = checkpoint['model_cfg']['args']['vocab_size']
-        sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
-        export_select(cfg, model.gpt2core, input_dim, sample_tensor, "gpt2core")
+    from qtransform.model.core import pipeline as qp
+    sample = "Oh, you are awake?"
+    preprocess_pipe= qp.preprocess_pipe(tokenizer,device_singleton.device, input_dim)
+    sample_tensor = preprocess_pipe(sample)
+    print(sample_tensor)
 
-        input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
-        max_token_id = checkpoint['model_cfg']['args']['vocab_size']
-        sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
-        export_select(cfg, model.gpt2nexttokenprediction, input_dim, sample_tensor, "gpt2nexttokenprediction")
-       
-    else:
-        input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
-        max_token_id = checkpoint['model_cfg']['args']['vocab_size']
-        sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
-        export_select(cfg, model, input_dim, sample_tensor, filename)
+    log.info("Calling Model for export...")
+    export_select(cfg, model, input_dim, sample_tensor)
+    pass
 
-def export_select(cfg, model, input_dim, sample_tensor, suffix=""):
+def export_select(cfg, model, input_dim, sample_tensor, suffix="", prefix="", path=""):
     """
         export function maps to torch onnx export:
         # Export the model
@@ -109,36 +94,43 @@ def export_select(cfg, model, input_dim, sample_tensor, suffix=""):
     filename = cfg.run.from_checkpoint.split("/")[-1] + suffix + ".onnx"
     if cfg.run.get("output"):
         filename = cfg.run.get("output") + suffix
+    # onnx export args    
     kwargs = {
             "input_names" :['input', 'offsets'],   # the model's input names
             "output_names" : ['output'],         # the model's output names
-            #"dynamic_axes" :{'input' : {0 : 'batch_size'},    # variable length axes
-            #                'output' : {0 : 'batch_size'}},
             "opset_version": cfg.run.opset_version,  
             "export_params": True,  
             "do_constant_folding": True
         }
-        #prepare_and_transform_for_export(cfg, model)
-    log.info("exporting... " + f"{str(cfg.run.export_fn)}_{str(input_dim)}_" + filename)
+    if input_dim is None:
+        log.error("Please use fixed input dim for onnx.")
+        #TODO ist not jsut batch size but also sequence length, but this requires the attention mask to be dynamic
+        raise NotImplementedError
+        kwargs.update({"dynamic_axes": {'input' : {0 : 'batch_size'},  'output' : {0 : 'batch_size'} }})
+
+    export_folder = os.getcwd()
+    try: # sometimes hydra does smth odd ....
+        export_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", "exports")
+    except:
+        pass
+
+    os.makedirs(export_folder, exist_ok=True)
+    log.info("exporting with " + f"{str(cfg.run.export_fn)} to folder export_folder")
+
     if cfg.run.export_fn == "qonnx":
-        try:
-            export_qonnx(model, torch.tensor(sample_tensor), export_path=f"qonnx_{str(input_dim)}_" + filename, **kwargs)
-        except Exception:
-            log.error(f"Export via {export_qonnx.__module__}.{export_qonnx.__name__} failed, reason", exc_info=True)
+        model.export(export_qonnx, sample_tensor, export_folder, kwargs)
     
-    if cfg.run.export_fn == "qcdq":             
-        try:
-            export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=f"onnx_qcdq_{str(input_dim)}_" + filename, **kwargs)
-        except:
-            log.error(f"Export via {export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__} failed, reason", exc_info=True)
+    elif cfg.run.export_fn == "qcdq":      
+        model.export(export_onnx_qcdq, sample_tensor, export_folder, kwargs)       
+        
+    elif cfg.run.export_fn == "onnx":  
+        model.export(export, sample_tensor, export_folder, kwargs)         
 
-    if cfg.run.export_fn == "onnx":           
-        try:
-            export(model, torch.tensor(sample_tensor), f"onnx_{str(input_dim)}-" + filename, **kwargs)
-        except:
-            log.error(f"Export via {export.__module__}.{export.__name__} failed, reason", exc_info=True)
-
-
+    else:
+        log.error(f"export function {cfg.run.export_fn} not specified or found")
+        raise ModuleNotFoundError
+    
+# old batch norm stuff
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None
     has_standart_weight = False

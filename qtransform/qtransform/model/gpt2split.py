@@ -1,4 +1,6 @@
 import logging
+import os
+from typing import Any, Callable
 log = logging.getLogger(__name__)
 
 import math
@@ -48,9 +50,15 @@ class QTransformModelGPTMixin():
         assert config.block_size is not None
         log.debug(f"Model config: {model.config}")
 
-    def prep_for_export(self):
-        """export function returning one or more onnx models"""
-        raise NotImplementedError
+    def export(self, export_fn: Callable, sample_tensor: torch.tensor, path: str, kwargs):
+        """export function returning one or more onnx models."""
+        path = os.path.join(path, self.__class__.__name__ + ".onnx")
+        log.info(f"using default export Method of Modelmixin, path: {path}")
+        try:
+            export_fn(self, sample_tensor, path, **kwargs)
+        except:
+            log.error(f"Export via {export_fn.__module__}.{export_fn.__name__} failed, reason", exc_info=True)
+        return path
     
     def get_model_number_of_params(self):
         """calculates rounded number of params"""
@@ -72,7 +80,7 @@ class GPT2Ensemble(nn.Module, QTransformModelGPTMixin):
         self.gpt2core = GPT2Core(config)
         self.gpt2nexttokenprediction = GPT2NextTokenPrediction(config)
 
-        # might unneccssary but we will leave it eher for now and ssee if it works 
+        # might unneccssary but we will leave it eher for now and see if it works 
         # https://paperswithcode.com/method/weight-tying
         if self.use_weight_tying:
             self.gpt2embdedding.wte.weight = self.gpt2nexttokenprediction.linear_out.weight
@@ -89,6 +97,18 @@ class GPT2Ensemble(nn.Module, QTransformModelGPTMixin):
         x = self.gpt2core(x)
         x = self.gpt2nexttokenprediction(x, targets)
         return x
+    
+    def export(self, export_fn: Callable, sample_tensor: torch.tensor, path: str, kwargs):
+        """export function returning one or more onnx models."""
+        path = os.path.join(path, self.__class__.__name__ + ".onnx")
+        if "split" in self.config and  self.config.split == True:
+            log.info(f"Split is configured for model {self.__class__.__name__}, splitting model for export")
+        log.info(f"using default export Method of Modelmixin, path: {path}")
+        try:
+            export_fn(self, sample_tensor, path, **kwargs)
+        except:
+            log.error(f"Export via {export_fn.__module__}.{export_fn.__name__} failed, reason", exc_info=True)
+        return path
 
 class GPT2Embdedding(nn.Module):
     def __init__(self, config: GPTConfig):
@@ -108,7 +128,6 @@ class GPT2Embdedding(nn.Module):
         b, t = x.size()
         assert t <= self.block_size, f"Cannot forward sequence of length {t}, block size is only {self.block_size}"
         pos = torch.arange(0, t, dtype=torch.long, device=x.device).unsqueeze(0) # shape (1, t)
-
         tok_emb = self.wte(x) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.wpe(pos) # position embeddings of shape (1, t, n_embd)
         x = self.emb_add(tok_emb, pos_emb)
