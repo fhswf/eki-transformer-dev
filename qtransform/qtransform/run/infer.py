@@ -67,6 +67,32 @@ class ModelData():
     model: Union[nn.Module, ModelWrapper]
     tokenizer: Tokenizer
 
+@dataclass
+class TokenizerConfig():
+    name: str = ""
+    encoding: str = ""
+    meta_path: str = ""
+
+@dataclass
+class ONNXConfig():
+    """
+    Boilerplate class to represent infer config for ONNX models as ONNX models cannot save generic metadata about the training process
+    such as dataset info, tokenizers, epochs etc. Instead, the data has to be supplied within the infer config to make sure that the generated
+    tokens of the model are decoded correctly.
+    """
+    path: str = ""
+    tokenizer: TokenizerConfig
+
+    def __setattr__(self, name, value):
+        if name == "tokenizer":
+            if not isinstance(value, Union[Dict, DictConfig, TokenizerConfig]):
+                log.error(f'Attribute tokenizer of class ONNXConfig can only support Dicts or TokenizerConfig')
+                raise TypeError()
+            if isinstance(value, Union[Dict, DictConfig]):
+                tokenizer = TokenizerConfig(**value)
+            self.tokenizer = tokenizer
+
+
 def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
     """
     Loads an ONNX model and a torch checkpoint from paths supplied in the infer config.
@@ -75,13 +101,14 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
     """
     #if supplied, run inference on both onnx model and checkpoint
     models: List[ModelData] = list()
-    onnx_model = cfg.run.get('onnx_model', '')
+    onnx_model = ONNXConfig(cfg.run.get('onnx_model', dict()))
     from_checkpoint_path = cfg.run.get('from_checkpoint', '')
     #onnx checkpoint
     if onnx_model["path"] != None:
         model = load_onnx_model(onnx_model["path"])
         #TODO: load tokenizer cfg from infer config
-        
+        from qtransform.dataset.tokenizer import __all__
+
         models.append(ModelData(type=InferType.ONNX, model=model, tokenizer=tokenizer))
     #torch checkpoint
     if from_checkpoint_path != None:
@@ -190,6 +217,7 @@ def infer(cfg: DictConfig, device: Any):
                 #inference params, start prompt written in hex and in plain character
                 file.write(f'num_samples: {num_samples}, max_new_tokens: {max_new_tokens}, temperature: {temperature}, top_k: {top_k}\n'\
                     f'start prompt: {[hex(ord(x)) for x in start]} ("{start}")\n')
+                file.write(f'----------- BEGIN INFERENCE -----------\n')
                 for i, text in enumerate(gen_infer):
                     log.info(f'Writing sample: {i}/{num_samples}')
                     file.write(text)

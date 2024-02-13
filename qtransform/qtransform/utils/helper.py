@@ -14,28 +14,28 @@ log = logging.getLogger(__name__)
 def get_default_chkpt_folder() -> str:
     """
         Returns the default directory where model checkpoints are stored if the path was not configured
-        by the user with the cfg variables "model_dir".
+        by the user with the cfg variables "checkpoint_dir".
     """
-    return os.path.join(os.getenv("HOME"), *__package__.split("."), "model_dir")
+    return os.path.join(os.getenv("HOME"), *__package__.split("."), "checkpoint_dir")
 
 def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
     """ load torch model checkpoint"""
-    #model_dir: specify custom path for checkpoints, otherwise use directory model_dir in qtransform/utils/model_dir
+    #checkpoint_dir: specify custom path for checkpoints, otherwise use directory checkpoint_dir in qtransform/utils/checkpoint_dir
     chkpt_folder = get_default_chkpt_folder()
     if "from_checkpoint" not in cfg.run:
         log.error(f'Key "from_checkpoint" not specified in run config, e.g. run.from_checkpoint="<path>"')
         raise KeyError()
-    #from_checkpoint is the absolute path to a file, ignore model_dir 
+    #from_checkpoint is the absolute path to a file, ignore checkpoint_dir 
     if os.path.isabs(cfg.run.from_checkpoint):
         chkpt_folder, from_checkpoint = os.path.split(cfg.run.from_checkpoint)
-    elif "model_dir" in cfg.run:
-        if os.path.isabs(cfg.run.model_dir):
-            chkpt_folder = cfg.run.model_dir
+    elif "checkpoint_dir" in cfg.run:
+        if os.path.isabs(cfg.run.checkpoint_dir):
+            chkpt_folder = cfg.run.checkpoint_dir
             from_checkpoint = cfg.run.from_checkpoint
         else:
             #outputs are stored in qtransform/outputs/
             try:
-                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
+                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.checkpoint_dir)
             except:
                 chkpt_folder = os.getcwd()
             from_checkpoint = cfg.run.from_checkpoint
@@ -71,12 +71,12 @@ def save_checkpoint(cfg: DictConfig,
     """save torch model checkpoint from training, returns path to saved file."""
     
     chkpt_folder = get_default_chkpt_folder()
-    if "model_dir" in cfg.run:
-        if os.path.isabs(cfg.run.model_dir):
-            chkpt_folder = cfg.run.model_dir
+    if "checkpoint_dir" in cfg.run:
+        if os.path.isabs(cfg.run.checkpoint_dir):
+            chkpt_folder = cfg.run.checkpoint_dir
         else:
             try:
-                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.model_dir)
+                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.checkpoint_dir)
             except:
                 chkpt_folder = os.getcwd()
     os.makedirs(chkpt_folder, exist_ok=True)
