@@ -63,11 +63,14 @@ def custom_bn1d(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> to
 class CustomBatchNorm1d(TorchModule):
     """
     Incredibly basic implementation of Batchnorm which normalizes by scaling the input tensor with its weight and adding a bias on each element.
+    At the start, this class does the exact same as a regular Identity layer, without keeping track of a running mean or standard deviaton.
+    Instead, normalization occurs when a preexisting batchnorm layer with the same input dimension is merged with replace_bn. 
+    This should however be done before export i.e. when the training process is finished. 
     """
     weight: torch.nn.Parameter
     bias: torch.nn.Parameter
 
-    def __init__(self, num_features: int, requires_grad = True):
+    def __init__(self, num_features: int, requires_grad = True, device: Union[torch.device, None] = None, dtype = None):
         """
         Dummy replacement layer for the params of BatchNorm1d. The pre-existing batchnorm layer can either be merged into this class
         or completely replaced with it. Either way, the weight and bias parameters of this class are set to the calculated values from
@@ -75,15 +78,18 @@ class CustomBatchNorm1d(TorchModule):
         """
         if not isinstance(num_features, int) or num_features <= 0:
             raise AttributeError(f'num_features ({num_features}) not an acceptable value')
-        TorchModule.__init__(self)
+        factory_kwargs = {'device': device, 'dtype': dtype}
+        super().__init__()
         self.num_features = num_features
         #do the same as identity
-        self.weight = torch.nn.Parameter(torch.ones(self.num_features), requires_grad=requires_grad)
-        self.bias = torch.nn.Parameter(torch.zeros(self.num_features), requires_grad=requires_grad)
+        self.weight = torch.nn.Parameter(torch.ones(self.num_features, **factory_kwargs), requires_grad=requires_grad)
+        self.bias = torch.nn.Parameter(torch.zeros(self.num_features, **factory_kwargs), requires_grad=requires_grad)
     
     def __setattr__(self, name: str, value) -> None:
         if name == "weight" or name == "bias":
-            super().__setattr__(name, check_shapes(value))
+            #make sure that weight and bias tensor are always of size (C, 1)
+            #weird behavior that removes parameter if value is not wrapped around torch.nn.Parameter
+            super().__setattr__(name, torch.nn.Parameter(check_shapes(value)))
         else:
             super().__setattr__(name, value)
 

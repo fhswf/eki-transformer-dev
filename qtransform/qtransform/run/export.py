@@ -72,7 +72,7 @@ def run(cfg: DictConfig, **kwargs):
 
     input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
     max_token_id = checkpoint['model_cfg']['args']['vocab_size']
-    sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
+    sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
 
     filename = cfg.run.from_checkpoint.split("/")[-1] + ".onnx"
     if cfg.run.get("output"):

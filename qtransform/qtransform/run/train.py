@@ -265,6 +265,8 @@ def eval_model(cfg: DictConfig, device, model: nn.Module, evaldata: data.DataLoa
     while i < cfg.run.eval_iters:
         vdata = next(iter(evaldata))
         vinputs, vlabels = vdata
+        vinputs = vinputs.to(device=device_singleton.device)
+        vlabels = vlabels.to(device=device_singleton.device)
         if cfg.model.calc_loss_in_model:
             voutputs, vloss = model(vinputs, vlabels)
         else:
