@@ -197,7 +197,9 @@ def infer(cfg: DictConfig, device: Any):
         log.info(f'Running inference from {model_type.name.upper()}.')
         for k in range(num_samples):
             y = generate(model_type, model, x, max_new_tokens, temperature=temperature, top_k=top_k)
-            log.debug(f'Uniquely generated tokens, sorted in ascending order: {y.unique().sort()}')
+            #i assume that sorting will take a long time which is redundant without debugging purposes
+            if cfg.debug:
+                log.debug(f'Uniquely generated tokens, sorted in ascending order: {y.unique().sort()}')
             #TODO: catch Panic Exception in case token ids do not appear in tokenizer vocab
             yield tokenizer.decode(y[0].tolist()) + '\n---------------\n'
 
@@ -207,7 +209,7 @@ def infer(cfg: DictConfig, device: Any):
         #inference yields generator in case something should be done before returning entire output
         gen_infer = write_inference(model_data)
         #write samples into file
-        if out_dir is not None:
+        if out_dir is not None and len(out_dir) > 0:
             if not isabs(out_dir):
                 try:
                     out_path = join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, out_dir)

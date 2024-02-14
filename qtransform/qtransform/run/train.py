@@ -216,23 +216,33 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     last_loss = 0
     running_loss = 0
     #cfg is entire hydra config
-    for i, data in enumerate(train_data):
-        optimizer.zero_grad()  # Zero your gradients for every batch
-        #token tensor of length block_size (context length)
-        inputs, labels = data
-        inputs = inputs.to(device_singleton.device)
-        labels = labels.to(device_singleton.device)
-        if cfg.model.calc_loss_in_model:
-            outputs, loss = model(inputs, labels)
-        else:
-            outputs = model(inputs)
-            loss = F.nll_loss(outputs, labels)
-        loss.backward()
-        #clip gradients to prevent vanishing/exploding gradient problem
-        # (https://neptune.ai/blog/understanding-gradient-clipping-and-how-it-can-fix-exploding-gradients-problem)
-        if isinstance(cfg.run.get("grad_clip"), float) and cfg.run.grad_clip > 0.0:
-            nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg.run.grad_clip)
-        optimizer.step()
+    gradient_accumulation_steps = cfg.run.get('gradient_accumulation_steps', 1)
+    if not isinstance(gradient_accumulation_steps, int):
+        gradient_accumulation_steps = 1
+    for i in range(cfg.run.max_iters):
+        loss = None #remember last loss of mini-batch
+        #break one iteration down into multiple batches to simulate a larger batch size
+        for micro_step in range(gradient_accumulation_steps):
+            #dataloaders iterate through entire dataset
+            #problematic if datasets are large (openwebtext ~21GB) and testing should be done
+            data = next(train_data)
+            #token tensor of length block_size (context length)
+            inputs, labels = data
+            inputs = inputs.to(device_singleton.device)
+            labels = labels.to(device_singleton.device)
+            if cfg.model.calc_loss_in_model:
+                outputs, loss = model(inputs, labels)
+            else:
+                outputs = model(inputs)
+                loss = F.nll_loss(outputs, labels)
+            loss.backward()
+            #clip gradients to prevent vanishing/exploding gradient problem
+            # (https://neptune.ai/blog/understanding-gradient-clipping-and-how-it-can-fix-exploding-gradients-problem)
+            if isinstance(cfg.run.get("grad_clip"), float) and cfg.run.grad_clip > 0.0:
+                nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg.run.grad_clip)
+            optimizer.step()
+
+        optimizer.zero_grad()  # Zero gradients after gradient accumulation
 
         running_loss += loss.item()
         if i % cfg.run.log_steps_interval == 0:
@@ -241,10 +251,6 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
         if mini_run and i>=200: # run for more than one data point
-            break
-        #dataloaders iterate through entire dataset
-        #problematic if datasets are large (openwebtext ~21GB) and testing should be done
-        elif i>= cfg.run.max_iters:
             break
     return last_loss    
 

@@ -10,7 +10,7 @@ start: "\n" #generates text starting with #start (\n, "<|endoftext|>" or etc.) C
 
 #path of directory create files containing the infered samples. if empty, write onto stdout. 
 #the file name is composed as: INFER_<datetime>_<ONNX or CHECKPOINT>.out
-out_dir: '~'
+out_dir: ''
 
 onnx_model: #absolute path of onnx model to run inference on. either use onnx_model or from_checkpoint
   path: 
