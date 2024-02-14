@@ -4,6 +4,7 @@ from .tokenizer import Tokenizer, Metadata
 import logging 
 from omegaconf import DictConfig
 from pprint import PrettyPrinter
+from typing import Union, Dict
 
 log = logging.getLogger(__name__)
 
@@ -15,16 +16,19 @@ __all__ = ['CharacterTokenizer', 'TikTokenizer', 'TransformersTokenizer']
 
 import qtransform.dataset.tokenizer as package_self
 
-def get_tokenizer(tokenizer_cfg: DictConfig, memmap: np.memmap = None) -> Tokenizer:
+def get_tokenizer(tokenizer_cfg: Union[DictConfig, Dict], memmap: np.memmap = None) -> Tokenizer:
     """
         Tokenizes a text based on the hydra configuration. It encodes a text based on the encoding property and saves the output with 
         the datatype dtype in a numpy array binary file. For some tokenizers like character encoding, the encoding property is ignored.
     """
+    if not isinstance(tokenizer_cfg, Union[DictConfig, Dict]):
+        log.error(f'Invalid type for tokenizer_cfg: {type(tokenizer_cfg)}')
+        raise TypeError()
     ## work around for issue https://github.com/openai/tiktoken/pull/181 and https://github.com/huggingface/datasets/issues/5536
     import copyreg, functools, tiktoken
     def pickle_Encoding(enc):
         return (functools.partial(tiktoken.core.Encoding, enc.name, pat_str=enc._pat_str, mergeable_ranks=enc._mergeable_ranks, special_tokens=enc._special_tokens), ())
     copyreg.pickle(tiktoken.core.Encoding, pickle_Encoding)
     log.debug(f'Attempting to retrieve tokenizer with cfg: {PrettyPrinter(indent=1).pformat(tokenizer_cfg)}')
-    tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.wrapper, Tokenizer, args={"tokenizer_cfg": tokenizer_cfg, "memmap": memmap})
+    tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.get("wrapper"), Tokenizer, args={"tokenizer_cfg": tokenizer_cfg, "memmap": memmap})
     return tokenizer

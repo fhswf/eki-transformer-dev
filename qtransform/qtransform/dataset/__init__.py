@@ -299,7 +299,6 @@ import torch
 
 class MemmapDataset(Dataset):
     
-    #TODO: is dtype necessary? since each file only contains the ids of tokens, not the actual embeddings
     def __init__(self, token_file: str, dtype: np.dtype, block_size: int, start: float=0.0, end: float = 1.0):
         """
             Creates a dataset which loads a numpy array from a file. 
@@ -362,9 +361,11 @@ class MemmapDataset(Dataset):
             index = self.length - self.block_size - 2
         offset = index + self.block_size
         #fixed dtype as torch embeddings need int64 tensor to work
-        inputs: torch.Tensor = torch.from_numpy(self.data[index:offset].astype(np.int64))
+        #inputs: torch.Tensor = torch.from_numpy(self.data[index:offset].astype(np.int64))
+        inputs: torch.Tensor = torch.as_tensor(self.data[index:offset].astype(np.int64))
         #labels are always the following word for each word within the context
-        labels : torch.Tensor = torch.from_numpy(self.data[index +1:offset+1].astype(np.int64))
+        #labels : torch.Tensor = torch.from_numpy(self.data[index +1:offset+1].astype(np.int64))
+        labels : torch.Tensor = torch.as_tensor(self.data[index +1:offset+1].astype(np.int64))
         return inputs, labels
 
 def get_data(dataset_cfg: DictConfig) -> DatasetWrapper:

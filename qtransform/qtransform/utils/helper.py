@@ -33,10 +33,12 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
             chkpt_folder = cfg.run.checkpoint_dir
             from_checkpoint = cfg.run.from_checkpoint
         else:
-            #outputs are stored in qtransform/outputs/
+            #outputs are stored in <current directory>/outputs/<checkpoint_dir>
             try:
                 chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.checkpoint_dir)
             except:
+                log.debug(f'Could not get cwd from hydra. Reason: ', exc_info=True)
+                log.debug(f'Using os.getcwd')
                 chkpt_folder = os.getcwd()
             from_checkpoint = cfg.run.from_checkpoint
     checkpoint_path = os.path.join(chkpt_folder, from_checkpoint)

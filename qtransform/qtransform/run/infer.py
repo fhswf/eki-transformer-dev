@@ -12,8 +12,8 @@ from qtransform import device_singleton
 from qtransform.utils import load_checkpoint, load_onnx_model
 from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
 from dataclasses import dataclass
-from os.path import isdir, exists, join, expanduser
-from os import makedirs
+from os.path import isdir, exists, join, expanduser, isabs
+from os import makedirs, getcwd, makedirs
 from qonnx.core.onnx_exec import execute_onnx
 from qonnx.core.modelwrapper import ModelWrapper
 from datetime import datetime
@@ -198,8 +198,7 @@ def infer(cfg: DictConfig, device: Any):
         for k in range(num_samples):
             y = generate(model_type, model, x, max_new_tokens, temperature=temperature, top_k=top_k)
             log.debug(f'Uniquely generated tokens, sorted in ascending order: {y.unique().sort()}')
-            #TODO: model could have larger vocabulary size than the tokenizer's max_token_value
-            #      for character tokenization, a sequence of <UNKNOWN> chars will be printed. for tiktoken, inference crashes
+            #TODO: catch Panic Exception in case token ids do not appear in tokenizer vocab
             yield tokenizer.decode(y[0].tolist()) + '\n---------------\n'
 
     out_dir = cfg.run.get('out_dir', '')
@@ -209,24 +208,25 @@ def infer(cfg: DictConfig, device: Any):
         gen_infer = write_inference(model_data)
         #write samples into file
         if out_dir is not None:
-            if not os.path.isabs(out_dir):
+            if not isabs(out_dir):
                 try:
-                    out_dir = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, out_dir)
+                    out_path = join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, out_dir)
                 except:
-                    out_dir = os.getcwd()
-            if not exists(out_dir):
-                log.debug(f'Creating infer dir: {out_dir}')
-                os.makedirs(out_dir, exist_ok= True )
+                    out_path = join(getcwd(), out_dir)
+            out_path = out_path.replace('~', expanduser('~'))
+            if not exists(out_path):
+                log.debug(f'Creating infer dir: {out_path}')
+                makedirs(out_path, exist_ok= True )
             timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
             filename = "INFER_" + timestamp + "_" + model_data.type.name + ".out"
-            out_path = join(out_dir.replace('~', expanduser('~')), filename)
+            out_path = join(out_path, filename)
             with open(out_path, 'w') as file:
                 log.info(f'Writing to file: "{out_path}"')
                 #inference params, start prompt written in hex and in plain character
                 file.write(f'num_samples: {num_samples}, max_new_tokens: {max_new_tokens}, temperature: {temperature}, top_k: {top_k}\n'\
                     f'start prompt: {[hex(ord(x)) for x in start]} ("{start}")\n')
                 file.write(f'----------- BEGIN INFERENCE -----------\n')
-                for i, text in enumerate(gen_infer):
+                for i, text in enumerate(gen_infer, start=1):
                     log.info(f'Writing sample: {i}/{num_samples}')
                     file.write(text)
                 log.info(f'Finished writing into file "{out_path}".')

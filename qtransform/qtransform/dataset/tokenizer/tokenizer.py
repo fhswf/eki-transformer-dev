@@ -45,7 +45,7 @@ class Tokenizer(ABC):
             raise TypeError()
         log.debug(f'Creating Tokenizer with parameters: {tokenizer_cfg}')
         self.tokenizer_cfg = tokenizer_cfg
-        self.meta = Metadata(max_token_value = 0, encoding = self.tokenizer_cfg.encoding, dtype=self.tokenizer_cfg.dtype, num_tokens=0)
+        self.meta = Metadata(max_token_value = 0, encoding = self.tokenizer_cfg.get("encoding"), dtype=self.tokenizer_cfg.get("dtype"), num_tokens=0)
         if self.tokenizer_cfg.get('meta_file') is None:
             with open_dict(self.tokenizer_cfg):
                 log.warning(f'Property meta_file omited in config. Assuming default: "meta.pkl"')
@@ -135,7 +135,7 @@ class Tokenizer(ABC):
             directory, file_name = os.path.split(filepath)
         else:
             directory = filepath
-            file_name = self.tokenizer_cfg.meta_file #by default: meta.pkl
+            file_name = self.tokenizer_cfg.get("meta_file") #by default: meta.pkl
         if not exists(directory):
             log.debug(f'Creating directory {directory}')
             os.makedirs(directory, exist_ok=True)
@@ -157,9 +157,9 @@ class Tokenizer(ABC):
             unsupported_keys_dict = {x:meta[x] for x in unsupported_keys}
             if len(unsupported_keys) > 0:
                 log.warning(f'Metadata contains keys {unsupported_keys_dict}.'\
-                    f'They are not supported in {self.tokenizer_cfg.module}. Removing them.')
+                    f'They are not supported in {self.tokenizer_cfg.get("module")}. Removing them.')
             meta = {x: meta[x] for x in meta if x not in unsupported_keys}
-            meta["module"] = self.tokenizer_cfg.module
+            meta["module"] = self.tokenizer_cfg.get("module")
             self.meta =  replace(self.meta, **meta)
         elif isinstance(meta, Union[Dict, DictConfig]):
             self.meta =  replace(self.meta, **meta)

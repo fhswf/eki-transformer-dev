@@ -10,6 +10,7 @@
 **/inputs/**
 **/input/**
 **.egg-info*
+**out_infer**
 qtransform/conf/conf.json
 build/
 dist/
