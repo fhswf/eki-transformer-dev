@@ -129,8 +129,13 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
         model = get_model(model_cfg)
         model.eval()
         model.to(device)
-        #if torch.__version__ >= (2,0):
-        #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
+        #TODO: maybe implement a generic type checking method
+        compile_model = cfg.run.get('compile', False)
+        if not isinstance(compile_model, bool):
+            log.warning(f'compile should be set to True or False, not {compile_model}. Defaulting to: False')
+            compile_model = False
+        if torch.__version__ >= (2,0) and compile_model:
+            model = torch.compile(model) # requires PyTorch 2.0 (optional)
         #tokenizer for model
         # tokenizer info saved in checkpoint or in hydra config
         tokenizer_cfg = checkpoint.get("tokenizer_cfg")
@@ -196,10 +201,11 @@ def infer(cfg: DictConfig, device: Any):
         x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
         log.info(f'Running inference from {model_type.name.upper()}.')
         for k in range(num_samples):
-            y = generate(model_type, model, x, max_new_tokens, temperature=temperature, top_k=top_k)
+            y: torch.Tensor = generate(model_type, model, x, max_new_tokens, temperature=temperature, top_k=top_k)
             #i assume that sorting will take a long time which is redundant without debugging purposes
             if cfg.debug:
-                log.debug(f'Uniquely generated tokens, sorted in ascending order: {y.unique().sort()}')
+                #log.debug(f'Uniquely generated tokens, sorted in ascending order: {y.unique().sort().values}')
+                log.debug(f'Highest predicted token: {torch.max(y)}')
             #TODO: catch Panic Exception in case token ids do not appear in tokenizer vocab
             yield tokenizer.decode(y[0].tolist()) + '\n---------------\n'
 

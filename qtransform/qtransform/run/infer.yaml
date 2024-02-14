@@ -7,6 +7,7 @@ max_new_tokens: 500
 temperature: 0.8
 top_k: 200
 start: "\n" #generates text starting with #start (\n, "<|endoftext|>" or etc.) Can also specify a file, use as: "FILE:prompt.txt" where prompt.txt is absolute
+compile: False #use torch.compile
 
 #path of directory create files containing the infered samples. if empty, write onto stdout. 
 #the file name is composed as: INFER_<datetime>_<ONNX or CHECKPOINT>.out
