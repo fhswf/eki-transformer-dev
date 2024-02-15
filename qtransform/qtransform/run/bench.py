@@ -4,7 +4,61 @@ import torch
 from omegaconf import DictConfig
 
 def run(cfg : DictConfig):
-    compare_bn()
+    #everything below is a copy paste from the training script. TODO: generalise run scripts
+    log.info("================")
+    log.info("Running Benchmarking")
+    log.info("================")
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+    log.info(f"time is: {timestamp}")
+
+    if "dataloader" not in cfg.dataset:
+        log.error(f"dataloder not specified for dataset: {cfg.dataset.name}. Use dataset=huggingface to get one automaticly.")
+
+    device_singleton.device = cfg.device
+    device = device_singleton.device
+    if device.type == 'cuda':
+        cuda_kwargs = {'pin_memory': True,}
+        #struct flag of dictconf prevents additional keys to be added (https://omegaconf.readthedocs.io/en/latest/usage.html#struct-flag)
+        with open_dict(cfg.dataset.dataloader):
+            cfg.dataset.dataloader.update(cuda_kwargs)
+    torch.manual_seed(cfg.seed)    
+    log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
+
+    from qtransform.dataset import get_data, get_loader, DatasetWrapper
+    data_wrapper: DatasetWrapper = get_data(cfg.dataset)
+    data_wrapper.load_dataset()
+    dataset_bench = data_wrapper.dataset_info.bench
+    if cfg.dataset.sizes.train >= 1.0:
+        log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
+    #check if batch_size batches are going to be performed
+    from torch.utils.data import Dataset
+    def check_dataset_size(name: str, dataset: Dataset):
+        batch_size = cfg.dataset.dataloader.batch_size
+        #model which is not an llm is loaded
+        if cfg.dataset.args.get('block_size') is None:
+            log.info(f'Model for dataset {name} presumably is not an LLM as the block size has not been specified')
+            return
+        block_size = cfg.dataset.args.block_size
+        if batch_size * block_size > len(dataset):
+            log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, causing the dataloader to skip batches. Maybe check the split size?')
+    check_dataset_size("bench", dataset_bench)
+
+    # copy paste ends here
+
+    #table printing from: https://learnpython.com/blog/print-table-in-python/
+    from tabulate import tabulate
+    #TODO: add training steps in checkpoint data, create meta file for onnx models containing tokenizer data and model structure
+    #TODO: attention is all you need paper has BLEU benchmark (https://en.wikipedia.org/wiki/BLEU)
+    table = [['Model', 'n_transformer_blocks', 'n_attn_heads', 'embd_dim', 'Train steps', 'Accuracy', 'PPL'], [1, 2222, 30, 500], [4, 55, 6777, 1]]
+    print(tabulate(table, headers='firstrow', tablefmt='simple_grid'))
+
+
+    
+
+def measure_accuracy():
+    #forward pass of a sample to the model, apply softmax to it, get the index with the highest value,
+    #compare it with the expected index. if exact, it is correct. otherwise incorrect.
+    pass
 
 from qtransform.quantization.quant_bn import replace_bn, QuantBatchnorm1d, CustomBatchNorm1d
 from qtransform.quantization.brevitas_quant import BrevitasQuantizer
