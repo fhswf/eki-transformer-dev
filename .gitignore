@@ -16,6 +16,7 @@ build/
 dist/
 *.onnx
 **/*_epoch*
+**/log.txt
 #python virtual environment
 qtransform/eki
 #comments, todos, current project status etc.
