@@ -227,7 +227,7 @@ class DatasetWrapper(ABC):
             self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
         #bench
         if self.dataset_sizes.bench > 0.0:
-            self.dataset_info.test = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.bench)
+            self.dataset_info.bench = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.bench)
         #test
         if self.dataset_sizes.test > 0.0:
             #for now, use last percent of dataset for testing

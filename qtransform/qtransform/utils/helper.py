@@ -41,6 +41,9 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
                 log.debug(f'Using os.getcwd')
                 chkpt_folder = os.getcwd()
             from_checkpoint = cfg.run.from_checkpoint
+    else:
+        log.error(f'Neither absolute path to checkpoint nor "run.checkpoint_dir" was specified')
+        raise RuntimeError()
     checkpoint_path = os.path.join(chkpt_folder, from_checkpoint)
     if not os.path.isfile(checkpoint_path):
             log.error(f"Checkpoint {checkpoint_path} is not a file")
