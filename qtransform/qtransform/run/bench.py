@@ -60,8 +60,9 @@ def run(cfg : DictConfig):
     models: List[ModelData] = load_model(cfg, device)
     accuracy_models = torch.zeros(len(models), cfg.run.num_samples)
     perplexity = torch.zeros(len(models), cfg.run.num_samples)
-    for i, model in enumerate(models):
-        if model.type != InferType.CHECKPOINT:
+    for i, model_data in enumerate(models):
+        model_data.model.eval()
+        if model_data.type != InferType.CHECKPOINT:
             log.warning(f'Benchmarking for ONNX models not implemented yet.')
             continue
         for j, data in enumerate(bench_dataloader):
@@ -70,7 +71,7 @@ def run(cfg : DictConfig):
             inputs, labels = data
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)
-            output = forward_pass(model.type, model.model, inputs)
+            output = forward_pass(model_data.type, model_data.model, inputs)
             if isinstance(output, tuple):
                 logits = outputs[0]
             else:
