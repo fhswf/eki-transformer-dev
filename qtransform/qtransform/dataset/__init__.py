@@ -222,9 +222,14 @@ class DatasetWrapper(ABC):
         #eval
         if self.dataset_sizes.eval > 0.0:
             percentage_eval = round(self.dataset_sizes.eval * 100)
-            #eval data is subset of training data, choose random starting point
-            eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
-            self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+            #eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
+            eval_start = self.dataset_sizes.train
+            if not isinstance(eval_start, float) or eval_start <= 0.0:
+                log.error(f'Cannot eval without training data (train size specified was: {eval_start})')
+                raise ValueError()
+            eval_end = min(1.0, eval_start + self.dataset_sizes.eval)
+            #self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+            self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_end)
         #bench
         if self.dataset_sizes.bench > 0.0:
             self.dataset_info.bench = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.bench)
