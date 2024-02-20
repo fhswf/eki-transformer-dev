@@ -5,8 +5,7 @@ type: huggingface
 sizes: 
   train: 0.3
   eval: 0.05
-  #test: 0.05 #currently, pipeline only performs either train and eval, test or bench
-  #bench: 0.3
+  bench: 0.3
 args:
   block_size: ${model.args.block_size}
   cache_dir: #directorry where cached datasets are stored. default: ~/.cache/huggingface

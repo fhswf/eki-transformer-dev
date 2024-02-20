@@ -83,14 +83,13 @@ def run(cfg: DictConfig):
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model.to(device=device)
 
-    from qtransform.optim import get_optim#, get_scheduler
+    from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
     #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
     optimizer = get_optim(model=model, optim_cfg=cfg.optim)
     log.debug(f'Configured optimizer ({type(optimizer)}): {optimizer}')
-    # TODO dynamic scheduler
-    scheduler = lr_scheduler.StepLR(optimizer, step_size=1)
-
+    scheduler = get_scheduler(optimizer=optimizer, scheduler_cfg = cfg.optim.scheduler) #lr_scheduler.StepLR(optimizer, step_size=1)
+    log.debug(f'Scheduler: {scheduler}')
     last_checkpoint = None
     # lets go
     quant_cfg = cfg.get('quantization')

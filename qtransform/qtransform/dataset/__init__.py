@@ -27,7 +27,6 @@ class DatasetSizes:
     """
     train: float = 0.0 #size of training data
     eval: float = 0.0 #size of the subset of training data to check if model is overfitting
-    test: float = 0.0
     bench: float = 0.0 
 
     def __post_init__(self):
@@ -233,10 +232,6 @@ class DatasetWrapper(ABC):
         #bench
         if self.dataset_sizes.bench > 0.0:
             self.dataset_info.bench = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.bench)
-        #test
-        if self.dataset_sizes.test > 0.0:
-            #for now, use last percent of dataset for testing
-            self.dataset_info.test = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
         
     def get_hf_num_proc(self, rows: int) -> int:
         """

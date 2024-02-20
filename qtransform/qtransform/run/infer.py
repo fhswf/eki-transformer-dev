@@ -124,11 +124,12 @@ def infer(cfg: DictConfig, device: Any):
                     f'start prompt: {[hex(ord(x)) for x in start]} ("{start}")\n')
                 file.write(f'----------- BEGIN INFERENCE -----------\n')
                 for i, text in enumerate(gen_infer, start=1):
-                    log.info(f'Writing sample: {i}/{num_samples}')
                     file.write(text)
+                    log.info(f'Writing sample: {i}/{num_samples}')
                 log.info(f'Finished writing into file "{out_path}".')
         else:
-            for text in gen_infer:
+            for i, text in enumerate(gen_infer, start=1):
+                log.info(f'Generating sample: {i}/{num_samples}')
                 print(text)
 
 

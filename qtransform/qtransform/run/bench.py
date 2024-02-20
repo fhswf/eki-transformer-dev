@@ -103,7 +103,10 @@ def measure_perplexity(logits: torch.Tensor, labels: torch.Tensor):
 
 def measure_accuracy(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
     """
-    Measures how many token predictions of a logit and label are correct. It does this for the entire sample, not only for the last token.
+    Measures how many token predictions of a logit and label are correct. It does so by retrieving the index of the highest prediction in
+    the logit and compares it with the labels. If labels is of shape [N,C], it checks if the index at the logit tensor's highest prediction
+    is 1. If labels is of shape [C], it checks if the index is equal to the label's value.
+    It does this for the entire sample, not only for the last token.
     """
     #forward pass of a sample to the model, apply softmax to it, get the index with the highest value (predicted token),
     #compare it with the expected index. if exact, it is correct. otherwise incorrect.
