@@ -5,7 +5,6 @@ schedulers:
     args: #parameters of class
       step_size: 1
       gamma: 0.1
-milestones: #specify after what epoch each scheduler should step. order of entries reflect order of schedulers
-#  - 0
+milestones: #specify after what epoch each scheduler should step. order of entries reflect order of schedulers. if only one scheduler is used, leave empty
 warmup_iters: 100 #currently does nothing.
 min_lr : 6e-5 # currently does nothing.   minimum learning rate, should be ~: learning_rate/10 per Chinchilla

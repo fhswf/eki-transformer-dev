@@ -65,9 +65,13 @@ def get_scheduler(optimizer: optim.Optimizer, scheduler_cfg: DictConfig) -> lr_s
         scheduler_class = getattr(lr_scheduler, name)
         schedulers.append(scheduler_class(**{"optimizer": optimizer, **args}))
     milestones = scheduler_cfg.get('milestones', list())
+    if milestones is None:
+        milestones = list()
     if not isinstance(milestones, Union[list, ListConfig]):
         log.error(f'Milestones are not a list, but of type: {type(scheduler_cfg)}.')
         raise TypeError()
+    if len(schedulers) == 1:
+        milestones = list() #ignore milestones
     #alternative: ConcatScheduler (https://pytorch.org/ignite/generated/ignite.handlers.param_scheduler.create_lr_scheduler_with_warmup.html)
     scheduler =  lr_scheduler.SequentialLR(optimizer, schedulers, milestones)
     return scheduler

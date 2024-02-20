@@ -1,12 +1,12 @@
 import logging
-from typing import Any, Tuple
+from typing import Any, Tuple, Union
 from omegaconf import DictConfig, OmegaConf, open_dict
 import os
 import torch
 from torch import nn
 from torch import optim
 from torch.optim import lr_scheduler
-from torch.utils import data
+from torch.utils import data as torch_data #prevent naming conflict with data from dataloaders
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import torch.nn.functional as F
@@ -132,7 +132,7 @@ def run(cfg: DictConfig):
         #write checkpoint into fifo
         write_to_pipe(cfg, last_checkpoint)
         
-def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.DataLoader, eval_data_loader: data.DataLoader,
+def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
     #print(model)
@@ -182,12 +182,14 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
     # training loop
     for epoch in epochs_to_run:
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
-
-        metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
+        #dataloader always returns the same tensors after each epoch because it is casted inside of function call
+        #therefore, cast it before training
+        #TODO: find a more elegant solution, maybe by manipulating its seed with a torch.Generator?
+        metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
 
         ## eval
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
-            losses, mean = eval_model(cfg, device, model, eval_data_loader)
+            losses, mean = eval_model(cfg, device, model, iter(eval_data_loader))
             log.info(f'AVERAGE EVAL LOSS FOR EPOCH {epoch}/{cfg.run.epochs}: {mean.item()}')
         log.info(str(metrics))
 
@@ -208,7 +210,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: data.Dat
         scheduler.step()
     return last_checkpoint
 
-def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.DataLoader,
+def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],
            optimizer: optim.Optimizer, mini_run: bool=False) -> Any:
     """ training loop over steps/batches """
     model.train() #if it was quantized, it could have been set to eval
@@ -216,6 +218,10 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     running_loss = 0
     #cfg is entire hydra config
     gradient_accumulation_steps = cfg.run.get('gradient_accumulation_steps', 1)
+    #dataloader already iterable, refer to TODO from train function for randomness in samples
+    if isinstance(train_data, torch_data.DataLoader):
+        log.debug(f'Casting dataloader to iterable.')
+        train_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(train_data)
     if not isinstance(gradient_accumulation_steps, int):
         gradient_accumulation_steps = 1
     for i in range(1, cfg.run.max_iters+1):
@@ -224,7 +230,7 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
         for micro_step in range(gradient_accumulation_steps):
             #dataloaders iterate through entire dataset
             #problematic if datasets are large (openwebtext ~21GB) and testing should be done
-            data = next(iter(train_data))
+            data = next(train_data)
             #token tensor of length block_size (context length)
             inputs, labels = data
             inputs = inputs.to(device_singleton.device)
@@ -253,7 +259,8 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: data.
     return last_loss    
 
 @torch.no_grad()
-def eval_model(cfg: DictConfig, device, model: nn.Module, evaldata: data.DataLoader) -> Tuple[torch.Tensor, torch.Tensor]:
+def eval_model(cfg: DictConfig, device, model: nn.Module, 
+            eval_data: Union[torch_data.DataLoader, torch_data.dataloader._MultiProcessingDataLoaderIter]) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Evaluates the accuracy of a model by feeding it input data during eval mode for a specified
     number of batches. The number of batches is configurable by the eval_iters field inside of the train
@@ -265,9 +272,12 @@ def eval_model(cfg: DictConfig, device, model: nn.Module, evaldata: data.DataLoa
     """
     model.eval()
     vlosses = torch.zeros(cfg.run.eval_iters)
-    i = 0
+    i = 0    
+    if isinstance(eval_data, torch_data.DataLoader):
+        log.debug(f'Casting eval dataloader to iterable.')
+        eval_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(eval_data)
     while i < cfg.run.eval_iters:
-        vdata = next(iter(evaldata))
+        vdata = next(eval_data)
         vinputs, vlabels = vdata
         vinputs = vinputs.to(device=device_singleton.device)
         vlabels = vlabels.to(device=device_singleton.device)
