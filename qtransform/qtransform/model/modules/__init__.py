@@ -62,10 +62,7 @@ class BatchNorm(nn.BatchNorm1d):
             input = torch.cat((input, padding), dim=1)
         input = super().forward(input, *args, **kwargs)
         #remove padding
-        #torch.repeat not supported by FINN compiler 
-        #index = torch.arange(c).reshape(c,1).repeat((n,1,l))
-        #index.to(device=input.device)
-        #return torch.gather(input=input, dim=1, index=index)
+        #input tensor of shape [N,C,L] gets padded to shape [N, F, L] (F >= C) and then unpadded to shape [N,C,L] 
         return input[:,None:c]
 
 

@@ -178,7 +178,8 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         log.info(f"Starting new training")
         epochs_to_run = range(1, cfg.run.epochs + 1)
 
-        
+    if cfg.optim.scheduler.warmup_epochs > epochs_to_run.stop -1:
+        log.warning(f'Warmup epochs are larger than epochs to run, causing scheduler to never adjust learning rate.')
     # training loop
     for epoch in epochs_to_run:
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
@@ -205,9 +206,10 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
                 model_cfg=cfg.model, 
                 tokenizer_cfg=cfg.dataset.tokenizer,
                 quant_cfg = cfg.get('quantization', None))
-
         # advance learning rate
         scheduler.step()
+        new_lr = scheduler.get_last_lr()[0]
+        log.debug(f'New learning rate: {new_lr}')
     return last_checkpoint
 
 def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],

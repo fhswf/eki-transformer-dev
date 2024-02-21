@@ -53,11 +53,11 @@ def get_scheduler(optimizer: optim.Optimizer, scheduler_cfg: DictConfig) -> lr_s
     #warmup_scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
     schedulers = list()
     schedulers_cfg = scheduler_cfg.get('schedulers', list())
-    if not isinstance(schedulers_cfg, Union[list, ListConfig]):
-        log.error(f'Schedulers are not a list, but {type(scheduler_cfg)}')
+    if not isinstance(schedulers_cfg, Union[dict, DictConfig]):
+        log.error(f'Schedulers are not a dict, but {type(scheduler_cfg)}')
         raise TypeError()
     #get torch scheduler from config
-    for scheduler in schedulers_cfg:
+    for scheduler in schedulers_cfg.values():
         name = scheduler.get('name')
         args = scheduler.get('args')
         log.debug(f'Going through scheduler: {name} with args: {args}')
