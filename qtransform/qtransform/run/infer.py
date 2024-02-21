@@ -2,7 +2,7 @@ import logging
 from typing import Any, Dict, Union, List
 from dataclasses import dataclass
 from qtransform import device_singleton
-log = logging. getLogger(__name__)
+log = logging.getLogger(__name__)
 from omegaconf import DictConfig, open_dict
 from torch import nn
 import torch
@@ -12,6 +12,8 @@ from os.path import isdir, exists, join, expanduser, isabs
 from os import makedirs, getcwd, makedirs
 from datetime import datetime
 from . import generate, load_model, ModelData
+import matplotlib.pyplot as plt
+import numpy as np
 
 @dataclass
 class InferConfig():
@@ -119,14 +121,13 @@ def infer(cfg: DictConfig, device: Any):
             out_path = join(out_path, filename)
             with open(out_path, 'w') as file:
                 log.info(f'Writing to file: "{out_path}"')
-                #inference params, start prompt written in hex and in plain character
+                #check if highest token is within tokenizer vocab
                 file.write(f'num_samples: {num_samples}, max_new_tokens: {max_new_tokens}, temperature: {temperature}, top_k: {top_k}\n'\
                     f'start prompt: {[hex(ord(x)) for x in start]} ("{start}")\n')
                 file.write(f'----------- BEGIN INFERENCE -----------\n')
                 for i, text in enumerate(gen_infer, start=1):
                     log.info(f'Generating sample: {i}/{num_samples}')
                     file.write(text)
-                    log.info(f'Writing sample: {i}/{num_samples}')
                 log.info(f'Finished writing into file "{out_path}".')
         else:
             for i, text in enumerate(gen_infer, start=1):

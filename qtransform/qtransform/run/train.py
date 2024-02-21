@@ -240,13 +240,16 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union
             else:
                 outputs = model(inputs)
                 loss = F.nll_loss(outputs, labels)
+            loss /= gradient_accumulation_steps #make all mini-batches account as one large batch
             loss.backward()
-            #clip gradients to prevent vanishing/exploding gradient problem
-            # (https://neptune.ai/blog/understanding-gradient-clipping-and-how-it-can-fix-exploding-gradients-problem)
-            if isinstance(cfg.run.get("grad_clip"), float) and cfg.run.grad_clip > 0.0:
-                nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg.run.grad_clip)
+        #clip gradients to prevent vanishing/exploding gradient problem
+        # (https://neptune.ai/blog/understanding-gradient-clipping-and-how-it-can-fix-exploding-gradients-problem)
+        if isinstance(cfg.run.get("grad_clip"), float) and cfg.run.grad_clip > 0.0:
+            #nn.utils.clip_grad_value_(model.parameters(), clip_value=cfg.run.grad_clip)
+            #karpathy uses norm gradient clipping which scales the pre-existing gradients with the grad_clip value
+            nn.utils.clip_grad_norm_(model.parameters(), cfg.run.grad_clip)
         optimizer.step()
-        optimizer.zero_grad()  # Zero gradients after gradient accumulation
+        optimizer.zero_grad(set_to_none=True)  # Zero gradients after gradient accumulation
         running_loss += loss.item()
         #log loss
         if i % cfg.run.log_steps_interval == 0:
