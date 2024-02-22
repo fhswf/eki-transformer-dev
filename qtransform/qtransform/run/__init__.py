@@ -27,6 +27,7 @@ class ModelData():
     type: InferType 
     model: Union[nn.Module, ModelWrapper]
     tokenizer: Tokenizer
+    name: str
 
 @dataclass
 class TokenizerConfig():
@@ -62,13 +63,14 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
     Loads an ONNX model and a torch checkpoint from paths supplied in the infer config.
     The function returns a dictionary with the loaded models, ready to be used for inference.
     The dictionary contains the keys "onnx" for ONNX models and "checkpoint" for torch checkpoints.
-    TODO: determine how many models/checkpoints can be loaded in one run process and if loading both models
-    and checkpoints is a good idea.
+    It is not advised to specify both onnx models and checkpoints due to memory usage.
     """
     #if supplied, run inference on both onnx model and checkpoint
     models: List[ModelData] = list()
     onnx_model = ONNXConfig(**cfg.run.get('onnx_model', dict()))
     from_checkpoint_path = cfg.run.get('from_checkpoint', '')
+    if from_checkpoint_path != None and onnx_model.path != None:
+        log.warning(f'Specified both onnx models and checkpoints to load. Expect high memory consumption.')
     #onnx checkpoint
     if onnx_model.path != None:
         log.critical(f'Inference for ONNX models not implemented yet')
@@ -78,7 +80,7 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
         #TODO: load tokenizer cfg from infer config
         from qtransform.dataset.tokenizer import __all__
 
-        models.append(ModelData(type=InferType.ONNX, model=model, tokenizer=tokenizer))
+        models.append(ModelData(type=InferType.ONNX, model=model, tokenizer=tokenizer, name= onnx_model.path))
     #torch checkpoint
     if from_checkpoint_path != None:
         #load model from checkpoint
@@ -119,7 +121,7 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
         log.debug(tokenizer_cfg["meta"])
         tokenizer.load_metadata(meta=tokenizer_cfg["meta"])
 
-        models.append(ModelData(type=InferType.CHECKPOINT, model=model, tokenizer=tokenizer))
+        models.append(ModelData(type=InferType.CHECKPOINT, model=model, tokenizer=tokenizer, name = from_checkpoint_path))
     else:
         log.warning(f'Path to checkpoint "{from_checkpoint_path}" is not a file.')
     if len(models) == 0:

@@ -20,11 +20,15 @@ class SchedulerCfg:
     name: str
     args: Dict[str, Any]
 
-def get_scheduler(optimizer: optim.Optimizer, scheduler_cfg: DictConfig) -> lr_scheduler.LRScheduler:
+def get_scheduler(optimizer: optim.Optimizer, scheduler_cfg: DictConfig) -> Union[None, lr_scheduler.LRScheduler]:
     """
     Creates a SequentialLR scheduler from a given optimizer along with optional schedulers. The schedulers along their params are specified
     in the hydra config. The order in which the schedulers are called is specified by the order of appearance in the hydra config.
-    Example of scheduler config: 
+    
+    Args: optimizer: the torch optimizer which contains the learning rate
+          scheduler_cfg: The config containing the schedulers and their parameters
+    
+    Example of scheduler_cfg: 
 
       decay_lr : True
       warmup_iters : 100
@@ -39,6 +43,9 @@ def get_scheduler(optimizer: optim.Optimizer, scheduler_cfg: DictConfig) -> lr_s
         - name: StepLR
           args:
             step_size: 1
+    
+    Returns: LRScheduler if decay_lr is True
+             None if decay_lr is False
     """
     log.debug(f'Getting scheduler')
     #warmup scheduler from mkohler's answer in https://stackoverflow.com/questions/65343377/adam-optimizer-with-warmup-on-pytorch

@@ -13,7 +13,7 @@ import torch.nn.functional as F
 from qtransform.utils import load_checkpoint, save_checkpoint
 from pprint import PrettyPrinter
 from qtransform import device_singleton
-
+from time import time
 log = logging.getLogger(__name__)
 
 def run(cfg: DictConfig):
@@ -88,7 +88,7 @@ def run(cfg: DictConfig):
     #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
     optimizer = get_optim(model=model, optim_cfg=cfg.optim)
     log.debug(f'Configured optimizer ({type(optimizer)}): {optimizer}')
-    scheduler = get_scheduler(optimizer=optimizer, scheduler_cfg = cfg.optim.scheduler) #lr_scheduler.StepLR(optimizer, step_size=1)
+    scheduler = get_scheduler(optimizer=optimizer, scheduler_cfg = cfg.optim.scheduler)
     log.debug(f'Scheduler: {scheduler}')
     last_checkpoint = None
     # lets go
@@ -207,8 +207,9 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
                 tokenizer_cfg=cfg.dataset.tokenizer,
                 quant_cfg = cfg.get('quantization', None))
         # advance learning rate
-        scheduler.step()
-        new_lr = scheduler.get_last_lr()[0]
+        if scheduler is not None:
+            scheduler.step()
+            new_lr = scheduler.get_last_lr()[0]
         log.debug(f'New learning rate: {new_lr}')
     return last_checkpoint
 
@@ -226,6 +227,7 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union
         train_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(train_data)
     if not isinstance(gradient_accumulation_steps, int):
         gradient_accumulation_steps = 1
+    train_batch_time = time.time()
     for i in range(1, cfg.run.max_iters+1):
         loss = None #remember last loss of mini-batch
         #break one iteration down into multiple batches to simulate a larger batch size
@@ -235,6 +237,7 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union
             data = next(train_data)
             #token tensor of length block_size (context length)
             inputs, labels = data
+            log.critical(f'{inputs.size()}, {labels.size()}')
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)
             if cfg.model.calc_loss_in_model:
@@ -256,11 +259,13 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union
         #log loss
         if i % cfg.run.log_steps_interval == 0:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
-            log.info(f'  batch {i} loss: {last_loss}')
+            log.info(f'  batch {i} loss: {last_loss}. time: {(time.time() - train_batch_time)*1000:.2f}ms')
+            train_batch_time = time.time()
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
         if mini_run and i>=200: # run for more than one data point
             break
+
     return last_loss    
 
 @torch.no_grad()

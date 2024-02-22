@@ -3,10 +3,10 @@ log = logging. getLogger(__name__)
 import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig, open_dict
-from . import forward_pass, load_model, ModelData, InferType
+from . import forward_pass, load_model, ModelData, InferType, generate
 from qtransform import device_singleton
 from qtransform.dataset import get_loader
-from typing import Union
+from typing import Union, Tuple
 from datetime import datetime
 
 TABLE_HEADERS = ['Model', 'n_transformer_blocks', 'n_attn_heads', 'embd_dim', 'Train steps', 'Accuracy', 'PPL', 'params']
@@ -60,8 +60,12 @@ def run(cfg : DictConfig):
     models: List[ModelData] = load_model(cfg, device)
     accuracy_models = torch.zeros(len(models), cfg.run.num_samples)
     perplexity = torch.zeros(len(models), cfg.run.num_samples)
+    accuracy = torch.zeros(len(models), cfg.run.num_samples)
     for i, model_data in enumerate(models):
-        model_data.model.eval()
+        if isinstance(model_data.model, torch.nn.Module):
+            model_data.model.eval()
+            #TODO: add training steps in checkpoint data, create meta file for onnx models containing tokenizer data and model structure
+            #meta = model_data.model.config
         if model_data.type != InferType.CHECKPOINT:
             log.warning(f'Benchmarking for ONNX models not implemented yet.')
             continue
@@ -76,17 +80,13 @@ def run(cfg : DictConfig):
                 logits = outputs[0]
             else:
                 logits = output
-            perplexity[i][j] = measure_perplexity(logits, labels)
-            #accuracy = measure_accuracy(logits, labels)
-    log.info(f'')
-    #table printing from: https://learnpython.com/blog/print-table-in-python/
-    from tabulate import tabulate
-    print(tabulate([['avg_ppl'],[perplexity.mean()]],headers='firstrow', tablefmt='simple_grid'))
-    #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
-    #TODO: add training steps in checkpoint data, create meta file for onnx models containing tokenizer data and model structure
-    #TODO: attention is all you need paper has BLEU benchmark (https://en.wikipedia.org/wiki/BLEU)
-    #table = [TABLE_HEADERS, None]
-    #print(tabulate(table, headers='firstrow', tablefmt='simple_grid'))
+            probs = F.softmax(logits, dim=-1)
+            perplexity[i][j] = measure_perplexity(probs, labels)
+            accuracy[i][j] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs, device=device)
+        #table printing from: https://learnpython.com/blog/print-table-in-python/
+        #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
+        from tabulate import tabulate
+        print(tabulate([['path', 'avg_ppl', 'acc'],[model_data.name, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid'))
 
 
     
@@ -101,19 +101,38 @@ def measure_perplexity(logits: torch.Tensor, labels: torch.Tensor):
     #(https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html)
     return torch.exp(F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-1))#F.cross_entropy(logits, labels))
 
-def measure_accuracy(logits: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs: torch.Tensor = None, device: torch.device = None) -> float:
     """
-    Measures how many token predictions of a logit and label are correct. It does so by retrieving the index of the highest prediction in
-    the logit and compares it with the labels. If labels is of shape [N,C], it checks if the index at the logit tensor's highest prediction
-    is 1. If labels is of shape [C], it checks if the index is equal to the label's value.
-    It does this for the entire sample, not only for the last token.
+    Measures how many token predictions of a logit and label are correct. It does so by either generating text based on the start of the label tensor and then
+    comparing the result with the actual values within labels or by directly comparing the results if inputs is specified.
+    
+    Arguments: inputs: softmaxed probability distribution of words 
+               labels: actually occuring words
+
+    Inputs is either of shape: [N, C, V] or [C, V] with N: batches, C: context, V: vocab_size
+    Labels is either of shape: [N, C] or [C] with N: batches, C: context
     """
-    #forward pass of a sample to the model, apply softmax to it, get the index with the highest value (predicted token),
-    #compare it with the expected index. if exact, it is correct. otherwise incorrect.
-    assert logits.size() == labels.size(), f'Size of logits {logits.size()} and labels {labels.size()} are not identical'
-    probs = F.softmax(logits, dim=1)
-    prediction = torch.multinomial(probs, num_samples=1)
-    accuracy = pred.eq(labels)
+    if inputs is None:
+        #input contains complete batches of samples from dataset, cut a small portion (at max half of tokens) and generate text
+        N, C = labels.size()
+        prompt_length = torch.randint(low=1, high=C//2, size=(1,)).item()
+        log.debug(f'Begin measuring accuracy with prompt_length: {prompt_length}')
+        accuracy_batch = torch.zeros(N).to(device=device)
+        for i, batch in enumerate(labels):
+            #generate function expects a batch size of 1
+            logits = generate(model_type, model, batch[:prompt_length].unsqueeze(dim=0), max_new_tokens = C - prompt_length)
+            #log.critical(f'{logits}, {labels[i].unsqueeze(dim=0)}')
+            #then, compare tokens with label
+            _, accuracy = labels[i].unsqueeze(dim=0).eq(logits).unique(return_counts=True)
+            log.debug(f'{accuracy}')
+            #input prompt is always going to be correct
+            accuracy = (accuracy[1] - prompt_length) / (C - prompt_length) * 100
+            accuracy_batch[i] = accuracy
+        return accuracy_batch.mean().item()
+    #entries ordered as: False, True
+    _, accuracy =  inputs.max(dim=-1).indices.eq(labels).unique(return_counts=True)
+    #if length is one, then accuracy only contains false values
+    accuracy = accuracy[1] / (accuracy[0] + accuracy[1]) * 100 if len(accuracy) == 2 else 0.0
     return accuracy
 
 from qtransform.quantization.quant_bn import replace_bn, QuantBatchnorm1d, CustomBatchNorm1d

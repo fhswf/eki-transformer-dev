@@ -366,7 +366,14 @@ class MemmapDataset(Dataset):
         #labels are always the following word for each word within the context
         #labels : torch.Tensor = torch.from_numpy(self.data[index +1:offset+1].astype(np.int64))
         labels : torch.Tensor = torch.as_tensor(self.data[index +1:offset+1].astype(np.int64))
+
         return inputs, labels
+
+        """ix = torch.randint(len(self) - self.block_size, (1,))
+        x = torch.from_numpy((self.data[ix:ix+self.block_size]).astype(np.int64))
+        y = torch.from_numpy((self.data[ix+1:ix+1+self.block_size]).astype(np.int64))
+        return x, y"""
+
 
 def get_data(dataset_cfg: DictConfig) -> DatasetWrapper:
     import qtransform.dataset as package_self
