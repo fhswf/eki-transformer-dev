@@ -227,7 +227,7 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union
         train_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(train_data)
     if not isinstance(gradient_accumulation_steps, int):
         gradient_accumulation_steps = 1
-    train_batch_time = time.time()
+    train_batch_time = time()
     for i in range(1, cfg.run.max_iters+1):
         loss = None #remember last loss of mini-batch
         #break one iteration down into multiple batches to simulate a larger batch size
@@ -237,13 +237,13 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union
             data = next(train_data)
             #token tensor of length block_size (context length)
             inputs, labels = data
-            log.critical(f'{inputs.size()}, {labels.size()}')
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)
             if cfg.model.calc_loss_in_model:
                 outputs, loss = model(inputs, labels)
             else:
-                outputs = model(inputs)
+                outputs, _ = model(inputs)
+                #TODO: debug nll_loss
                 loss = F.nll_loss(outputs, labels)
             loss /= gradient_accumulation_steps #make all mini-batches account as one large batch
             loss.backward()
@@ -259,8 +259,8 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union
         #log loss
         if i % cfg.run.log_steps_interval == 0:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
-            log.info(f'  batch {i} loss: {last_loss}. time: {(time.time() - train_batch_time)*1000:.2f}ms')
-            train_batch_time = time.time()
+            log.info(f'  batch {i} loss: {last_loss}. time: {(time() - train_batch_time)*1000:.2f}ms')
+            train_batch_time = time()
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
         if mini_run and i>=200: # run for more than one data point
