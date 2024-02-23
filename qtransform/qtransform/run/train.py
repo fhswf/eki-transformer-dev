@@ -13,11 +13,8 @@ import torch.nn.functional as F
 from qtransform.utils import load_checkpoint, save_checkpoint
 from pprint import PrettyPrinter
 from qtransform import device_singleton
-<<<<<<< HEAD
 from qtransform.utils.helper import load_state_dict_proxy
-=======
 from time import time
->>>>>>> 73459a1f0c171d2be17e46f566d8ecf4b292c637
 log = logging.getLogger(__name__)
 
 def run(cfg: DictConfig):
