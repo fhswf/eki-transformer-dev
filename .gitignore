@@ -10,10 +10,14 @@
 **/inputs/**
 **/input/**
 **.egg-info*
+**out_infer**
 qtransform/conf/conf.json
 build/
 dist/
 *.onnx
 **/*_epoch*
+**/log.txt
 #python virtual environment
 qtransform/eki
+#comments, todos, current project status etc.
+todos.md

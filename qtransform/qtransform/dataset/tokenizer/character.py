@@ -9,6 +9,8 @@ from dataclasses import dataclass, asdict
 
 log = logging.getLogger(__name__)
 
+UNKNOWN_CHAR = "<UNKNOWN>"
+
 #for now, metadata is only used for character tokenization
 @dataclass
 class CharacterMetadata(Metadata):
@@ -18,9 +20,9 @@ class CharacterMetadata(Metadata):
 
     def __post_init__(self):
         if not isinstance(self.itos, Dict):
-            self.itos = {0: "<UNKNOWN>"}
+            self.itos = {0: UNKNOWN_CHAR}
         if not isinstance(self.stoi, Dict):
-            self.stoi = {"<UNKNOWN>": 0}
+            self.stoi = {UNKNOWN_CHAR: 0}
 
 class CharacterTokenizer(Tokenizer):
 
@@ -43,14 +45,15 @@ class CharacterTokenizer(Tokenizer):
         return ''.join([self.meta.itos[i] if i in self.meta.itos else self.meta.itos[0] for i in l]) # decoder: take a list of integers, output a string
 
 
-    def encode(self, text: str) -> List[int]:
-        #only update vocab with new characters
-        new_tokens = set(text) - set(self.meta.stoi.keys()) 
-        #remember the token of previous characters, start counting at max_token_value
-        #merge encoding and training together as vocab is expanded during encoding process
-        self.meta.stoi.update({ ch:i for i,ch in enumerate(new_tokens, self.meta.max_token_value + 1) })
-        self.meta.itos.update({ i:ch for i,ch in enumerate(new_tokens, self.meta.max_token_value + 1) })
-        self.meta.max_token_value = len(self.meta.itos.keys()) - 1 #tokens start at 0
-        self.meta.num_tokens += len(text)
+    def encode(self, text: str, infer: bool = False) -> List[int]:
+        if not infer:
+            #only update vocab with new characters
+            new_tokens = set(text) - set(self.meta.stoi.keys()) 
+            #remember the token of previous characters, start counting at max_token_value
+            #merge encoding and training together as vocab is expanded during encoding process
+            self.meta.stoi.update({ ch:i for i,ch in enumerate(new_tokens, self.meta.max_token_value + 1) })
+            self.meta.itos.update({ i:ch for i,ch in enumerate(new_tokens, self.meta.max_token_value + 1) })
+            self.meta.max_token_value = len(self.meta.itos.keys()) - 1 #tokens start at 0
+            self.meta.num_tokens += len(text)
         #unknown tokens are saved in the vocabulary during encoding
-        return [self.meta.stoi[c] for c in text]
+        return [self.meta.stoi[c] if c in self.meta.stoi else self.meta.stoi[UNKNOWN_CHAR] for c in text]

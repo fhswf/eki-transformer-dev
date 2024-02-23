@@ -5,7 +5,6 @@ from omegaconf import DictConfig
 import logging
 from numpy import array, dtype
 from dataclasses import dataclass, asdict
-
 log = logging.getLogger(__name__)
 
 @dataclass
@@ -27,9 +26,9 @@ class TikTokenizer(Tokenizer):
             raise ValueError()
         self.meta.max_token_value = self.encoder.max_token_value
 
-    def encode(self, text) -> List[int]:
+    def encode(self, text, infer: bool = False) -> List[int]:
         tokens = self.encoder.encode_ordinary(text)
-        self.meta.num_tokens += len(tokens) #only relevant for memmap indexing
+        self.meta.num_tokens += len(tokens) if not infer else 0 #only relevant for memmap indexing
         return tokens
 
     def decode(self, idx: List[int]) -> str:

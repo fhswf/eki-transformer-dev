@@ -1,3 +1,3 @@
-shuffle: True
+shuffle: True #TODO: shuffling causes entire dataset to be reorganized (problematic for openwebtext)
 num_workers: 2
 batch_size : 12

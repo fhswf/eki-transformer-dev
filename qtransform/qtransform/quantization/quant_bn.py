@@ -6,6 +6,8 @@ from typing import Optional, Union
 from brevitas.quant_tensor import QuantTensor
 from torch.nn import BatchNorm1d
 import torch
+from brevitas.quant_tensor import QuantTensor
+from typing import Union
 #test if a quantized layer can be implemented which basically scales the values along a tensor and adds a bias, thereby simulating batch normalization
 
 #TODO: maybe change tensor inplace
@@ -14,6 +16,7 @@ def check_shapes(tensor: torch.Tensor) -> torch.Tensor:
     Checks if a tensor is of shape [C], [N,C] or [C,N] with N = 1 and C >= 1.
     If tensor is of a different shape, a ValueError will be thrown.
     The returning tensor will be of shape [C, 1].
+    This is done in order to multiply each row of an input tensor with each index of the weight tensor.
     """
     shape_tensor = tensor.size()
     if len(shape_tensor) == 1:
@@ -38,60 +41,59 @@ def custom_bn1d(x: torch.Tensor, weight: torch.Tensor, bias: torch.Tensor) -> to
 
     Output: tensor of shape [N,C] or [N,C,L], basically of the same size as the input tensor.
     """
-    if not isinstance(x, torch.Tensor) :
-        raise TypeError('Input is not a tensor')
-    elif not isinstance(weight, torch.Tensor):
+    #type checking x during torch.compile causes errors as x is not a static type (either Tensor or QuantTensor)
+    if not isinstance(weight, torch.Tensor):
         raise TypeError('Weight is not a tensor')
     elif not isinstance(bias, torch.Tensor):
         raise TypeError('Bias is not a Tensor')
-
+    if weight.size()[0] != bias.size()[0]:
+        raise ValueError(f'Weight and bias have different sizes (weight: {weight.size()}, bias: {bias.size()})')
     weight = check_shapes(weight)
     bias = check_shapes(bias)
     x_size = x.size()
     if len(x_size) > 3:
         raise ValueError(f'Input tensor is too large (expected size 2 or 3, got: {len(x.size)})')
     #multiplication will expand the number of rows by the amount of rows in weight
-    #problematic during inference as words will be artificially inserted
+    #problematic during inference as words will be artificially inserted if prompt size is less than weight.size() words
     C_x = x_size[0] if len(x_size) == 2 else x_size[1]
-    out = x * weight[C_x] + bias[C_x]
-    #only return the original amount of rows from x of output tensor
-    return out[:,None:C_x] if len(x_size) == 3 else out[:C_x]
+    if C_x > weight.size()[0]:
+        raise ValueError(f'num_features of input tensor ({C_x}) too large for weight tensor ({weight.size()[0]})')
+    return x * weight[:C_x] + bias[:C_x]
 
 class CustomBatchNorm1d(TorchModule):
     """
     Incredibly basic implementation of Batchnorm which normalizes by scaling the input tensor with its weight and adding a bias on each element.
+    At the start, this class does the exact same as a regular Identity layer, without keeping track of a running mean or standard deviaton.
+    Instead, normalization occurs when a preexisting batchnorm layer with the same input dimension is merged with replace_bn. 
+    This should however be done before export i.e. when the training process is finished. 
     """
-    _weight: torch.nn.Parameter
-    _bias: torch.nn.Parameter
+    weight: torch.nn.Parameter
+    bias: torch.nn.Parameter
 
-    def __init__(self, num_features: int):
+    def __init__(self, num_features: int, requires_grad = True, device: Union[torch.device, None] = None, dtype = None):
+        """
+        Dummy replacement layer for the params of BatchNorm1d. The pre-existing batchnorm layer can either be merged into this class
+        or completely replaced with it. Either way, the weight and bias parameters of this class are set to the calculated values from
+        brevitas.nn.utils.merge_bn. 
+        """
         if not isinstance(num_features, int) or num_features <= 0:
             raise AttributeError(f'num_features ({num_features}) not an acceptable value')
-        TorchModule.__init__(self)
+        factory_kwargs = {'device': device, 'dtype': dtype, "requires_grad": requires_grad}
+        super().__init__()
         self.num_features = num_features
+        self.requires_grad = requires_grad
         #do the same as identity
-        self.weight = torch.nn.Parameter(torch.ones(self.num_features))
-        self.bias = torch.nn.Parameter(torch.zeros(self.num_features))
+        self.weight = torch.nn.Parameter(torch.ones(self.num_features, **factory_kwargs), requires_grad=requires_grad)
+        self.bias = torch.nn.Parameter(torch.zeros(self.num_features, **factory_kwargs), requires_grad=requires_grad)
     
-    @property
-    def weight(self):
-        return self._weight
-    
-    @weight.setter
-    def weight(self, value: torch.Tensor) -> None:
-        if not isinstance(value, torch.Tensor):
-            raise TypeError(f'Cannot set weight to type {type(value)}')
-        self._weight.data = check_shapes(value)
-
-    @property
-    def bias(self):
-        return self._bias
-    
-    @bias.setter
-    def bias(self, value: torch.Tensor) -> None:
-        if not isinstance(value, torch.Tensor):
-            raise TypeError(f'Cannot set bias to type {type(value)}')
-        self._bias.data = check_shapes(value)
+    def __setattr__(self, name: str, value) -> None:
+        if name == "weight" or name == "bias":
+            #make sure that weight and bias tensor are always of size (C, 1)
+            #weird behavior that removes parameter if value is not wrapped around torch.nn.Parameter
+            #not sure if requires_grad needs to be set within both parameter and tensor
+            super().__setattr__(name, torch.nn.Parameter(check_shapes(value).requires_grad(self.requires_grad), requires_grad=self.requires_grad))
+        else:
+            super().__setattr__(name, value)
 
     def forward(self, x):
         #without merging: multiply by one, add zero 
@@ -145,11 +147,11 @@ def replace_bn(bn: BatchNorm1d, new_bn: CustomBatchNorm1d = None, qat: bool = Tr
     """
     if not isinstance(bn, BatchNorm1d):
         raise TypeError(f'Cannot merge non-batchnorm layer ({type(bn)}).')
-    if not isinstance(new_bn, CustomBatchNorm1d):
-        raise TypeError(f'Cannot merge batchnorm into non CustomBatchNorm1d layer (type: {type(new_bn)}).')
     if new_bn is None:
         new_bn = QuantBatchnorm1d(bn.num_features) if qat else CustomBatchNorm1d(bn.num_features)
-    elif new_bn.num_features != bn.num_features:
+    if not isinstance(new_bn, CustomBatchNorm1d):
+        raise TypeError(f'Cannot merge batchnorm into non CustomBatchNorm1d layer (type: {type(new_bn)}).')
+    if new_bn.num_features != bn.num_features:
         raise ValueError(f'Property num_features are different for new_bn ({new_bn.num_features}) and bn ({bn.num_features})')
     merge_bn(layer=new_bn, bn=bn)
     return new_bn

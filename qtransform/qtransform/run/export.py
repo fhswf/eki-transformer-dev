@@ -16,14 +16,14 @@ from datetime import datetime
 
 log = logging.getLogger(__name__)
 
-def run(cfg: DictConfig, *args):
+def run(cfg: DictConfig, **kwargs):
     """ exports a trained model to QONNX or others?"""
     log.info("================")
     log.info("Exporting Model")
     log.info("================")
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
-
+    log.debug(f'Run config: {cfg.run}')
     model = None
 
     device_singleton.device = cfg.device
@@ -32,6 +32,8 @@ def run(cfg: DictConfig, *args):
     _, checkpoint = load_checkpoint(cfg=cfg)
     from qtransform.model import get_model
     model = None
+    #either load model from checkpoint metadata or from hydra config
+    #depending on where export script is called (from train: hydra config, else: checkpoint metadata)
     if "model" in cfg and "cls" in cfg.model:
         model = get_model(cfg.model)
     elif "model_cfg" in checkpoint:
@@ -45,23 +47,32 @@ def run(cfg: DictConfig, *args):
         _run = cfg.run.running_model
     except errors.ConfigAttributeError:
         _run = False
+    #export script could have been called directly or from training script
+    #the model passed from the training script should be configured completely
+    #the model does not exist yet when calling the export script directly
     if  _run:
-        model = args[0]
+        model = kwargs["model"]
     else:
         quant_cfg = cfg.get('quantization')
+        replace_layers_later = None
         if quant_cfg and quant_cfg.quantize:    
             log.debug(f'Running quantized model')
             from qtransform.quantization import get_quantizer
             quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
             #add qat qparams (scale and zero)
-            model = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+            model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+            #merge or replace batchnorm after loading their params, otherwise proceeed with default values
         model.load_state_dict(checkpoint['model_state_dict'])
+        if replace_layers_later is not None:
+            model, replace_layers_later = quantizer.get_quantized_model(replace_layers_later)
+        if replace_layers_later is not None:
+            log.warning(f'Layers {replace_layers_later.layers.keys()} could not be quantized during export.')
     #log.debug(f"Model structure: {model}")
     #log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
 
     input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
     max_token_id = checkpoint['model_cfg']['args']['vocab_size']
-    sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int)
+    sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
 
     filename = cfg.run.from_checkpoint.split("/")[-1] + ".onnx"
     if cfg.run.get("output"):
@@ -91,25 +102,44 @@ def run(cfg: DictConfig, *args):
         "do_constant_folding": True
     }
     #prepare_and_transform_for_export(cfg, model)
-    log.info("exporting... " + f"{str(cfg.run.export_fn)}_{str(input_dim)}_" + filename)
-    if cfg.run.export_fn == "qonnx":
-        try:
-            export_qonnx(model, torch.tensor(sample_tensor), export_path=f"qonnx_{str(input_dim)}_" + filename, **kwargs)
-        except Exception:
-            log.error(f"Export via {export_qonnx.__module__}.{export_qonnx.__name__} failed, reason", exc_info=True)
-   
-    if cfg.run.export_fn == "qcdq":             
-        try:
-            export_onnx_qcdq(model, torch.tensor(sample_tensor), export_path=f"onnx_qcdq_{str(input_dim)}_" + filename, **kwargs)
-        except:
-            log.error(f"Export via {export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__} failed, reason", exc_info=True)
+    #by default, save onnx models into current directory
+    root_path = cfg.run.get('root_path', os.path.abspath('.'))
+    #TODO: makedirs in ~/.qtransform directory deletes datasets 
+    #if not os.path.exists(root_path):
+    #    log.debug(f'Creating directory: "{root_path}')
+    #    os.makedirs(root_path.replace('~', os.path.expanduser('~')), exist_ok = True)
+    #elif not os.path.isdir(root_path):
+    #    log.error(f'root_path {root_path} is not a directory.')
+    #    raise ValueError()
+    model_name = f"{str(cfg.run.export_fn)}_{str(input_dim)}_" + filename
+    from qtransform.utils.introspection import concat_paths
+    model_path = concat_paths([root_path, model_name])
 
-    if cfg.run.export_fn == "onnx":           
-        try:
-            export(model, torch.tensor(sample_tensor), f"onnx_{str(input_dim)}-" + filename, **kwargs)
-        except:
-            log.error(f"Export via {export.__module__}.{export.__name__} failed, reason", exc_info=True)
-
+    log.info("exporting... " + model_name)
+    ERROR_LOGS = {
+        "qonnx": f'{export_qonnx.__module__}.{export_qonnx.__name__}',
+        "qcdq": f'{export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__}',
+        "onnx": f'{export.__module__}.{export.__name__}'
+    }
+    #only write something into pipe if no errors occur
+    try:
+        shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
+        match cfg.run.export_fn:
+            case "qonnx":
+                export_qonnx(model, shape, export_path=model_path, **kwargs)
+            case "qcdq":
+                export_onnx_qcdq(model, shape, export_path=model_path, **kwargs)
+            case "onnx":
+                export(model, shape, model_path, **kwargs)
+            case _:
+                log.error(f'Supported export functions: {ERROR_LOGS.keys()}')
+                raise ValueError()
+    except Exception:
+        log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)
+        raise RuntimeError()
+    #write path to fifo
+    from qtransform.utils.helper import write_to_pipe
+    write_to_pipe(cfg, model_path)
 
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None

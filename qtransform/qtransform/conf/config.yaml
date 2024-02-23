@@ -12,6 +12,7 @@ defaults:
   - model: 
   - dataset: 
   - optim: default
+  - optim/scheduler: default
   - run: ???
   - quantization: None
   - override hydra/job_logging: perlevel
@@ -37,10 +38,9 @@ dataset:
     - ${dataset.module}
     - ${dataset.name}
   sizes:
-    train: ???
-    eval: ???
-    test: ???
-    bench: ???
+    train: 0.0 #all dataset splits are empty by default
+    eval: 0.0
+    bench: 0.0
   tokenizer: 
       dtype: ${data.dtype}
       meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
@@ -54,3 +54,7 @@ model:
 
 quantization:
   quantize: False
+
+#filepath of named pipe. currently, the path of saved checkpoints and (q)onnx models are written into it
+#by default, write into /dev/null
+pipe: /dev/null

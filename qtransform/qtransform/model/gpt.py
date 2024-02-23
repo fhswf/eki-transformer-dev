@@ -45,6 +45,7 @@ class GPTConfig:
     norm_layer: str = 'BatchNorm' # note that this is a name for a adapter module in this repository und model.modules
     single_output: bool = False # use mini runtime optimization to only predict last token, saven on some runtime but poentially currupts onnx export
     use_weight_tying: bool = True # same weights for input emb and outputi proj https://paperswithcode.com/method/weight-tying
+    custom_ln: bool = False #use CustomBatchNorm1d before BatchNorm
 
 from dataclasses import fields
 class GPT(nn.Module):
@@ -140,6 +141,8 @@ class GPT(nn.Module):
         pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0) # shape (1, t)
 
         # forward the GPT model itself
+        #TODO: add padding for FINN support
+        
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
         x = self.transformer.emb_add(tok_emb, pos_emb)
@@ -157,6 +160,8 @@ class GPT(nn.Module):
             # if we are given some desired targets also calculate the loss
             logits = self.linear_out(x)
             if targets is not None:
+                #squeeze batch and block_size dimension together, retain non-softmaxed word probabilities
+                #logits become a 1d tensor, containing the index of the next word
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
 
         return logits, loss

@@ -16,7 +16,7 @@ from torch.nn import Module
 from qtransform.classloader import get_data
 from inspect import signature
 from omegaconf import DictConfig, open_dict
-
+from .scheduler import get_scheduler
 log = getLogger(__name__)
 
 

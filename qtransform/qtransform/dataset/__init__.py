@@ -27,7 +27,6 @@ class DatasetSizes:
     """
     train: float = 0.0 #size of training data
     eval: float = 0.0 #size of the subset of training data to check if model is overfitting
-    test: float = 0.0
     bench: float = 0.0 
 
     def __post_init__(self):
@@ -222,16 +221,17 @@ class DatasetWrapper(ABC):
         #eval
         if self.dataset_sizes.eval > 0.0:
             percentage_eval = round(self.dataset_sizes.eval * 100)
-            #eval data is subset of training data, choose random starting point
-            eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
-            self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+            #eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
+            eval_start = self.dataset_sizes.train
+            if not isinstance(eval_start, float) or eval_start <= 0.0:
+                log.error(f'Cannot eval without training data (train size specified was: {eval_start})')
+                raise ValueError()
+            eval_end = min(1.0, eval_start + self.dataset_sizes.eval)
+            #self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
+            self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_end)
         #bench
         if self.dataset_sizes.bench > 0.0:
-            self.dataset_info.test = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.bench)
-        #test
-        if self.dataset_sizes.test > 0.0:
-            #for now, use last percent of dataset for testing
-            self.dataset_info.test = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start= 1.0 - self.dataset_sizes.test)
+            self.dataset_info.bench = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.bench)
         
     def get_hf_num_proc(self, rows: int) -> int:
         """
@@ -299,7 +299,6 @@ import torch
 
 class MemmapDataset(Dataset):
     
-    #TODO: is dtype necessary? since each file only contains the ids of tokens, not the actual embeddings
     def __init__(self, token_file: str, dtype: np.dtype, block_size: int, start: float=0.0, end: float = 1.0):
         """
             Creates a dataset which loads a numpy array from a file. 
@@ -362,10 +361,19 @@ class MemmapDataset(Dataset):
             index = self.length - self.block_size - 2
         offset = index + self.block_size
         #fixed dtype as torch embeddings need int64 tensor to work
-        inputs: torch.Tensor = torch.from_numpy(self.data[index:offset].astype(np.int64))
+        #inputs: torch.Tensor = torch.from_numpy(self.data[index:offset].astype(np.int64))
+        inputs: torch.Tensor = torch.as_tensor(self.data[index:offset].astype(np.int64))
         #labels are always the following word for each word within the context
-        labels : torch.Tensor = torch.from_numpy(self.data[index +1:offset+1].astype(np.int64))
+        #labels : torch.Tensor = torch.from_numpy(self.data[index +1:offset+1].astype(np.int64))
+        labels : torch.Tensor = torch.as_tensor(self.data[index +1:offset+1].astype(np.int64))
+
         return inputs, labels
+
+        """ix = torch.randint(len(self) - self.block_size, (1,))
+        x = torch.from_numpy((self.data[ix:ix+self.block_size]).astype(np.int64))
+        y = torch.from_numpy((self.data[ix+1:ix+1+self.block_size]).astype(np.int64))
+        return x, y"""
+
 
 def get_data(dataset_cfg: DictConfig) -> DatasetWrapper:
     import qtransform.dataset as package_self
