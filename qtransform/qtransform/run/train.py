@@ -82,8 +82,8 @@ def run(cfg: DictConfig):
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model.to(device=device)
-    if torch.__version__ >= (2,0) and cfg.run.compile:
-        model = torch.compile(model) # requires PyTorch 2.0 (optional)
+    #if torch.__version__ >= (2,0) and cfg.run.compile:
+    #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
 
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
@@ -146,7 +146,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         log.warn("cfg.run.epochs is 0, performing mini training dry run")
         mini_run = True
 
-    if "from_checkpoint" in cfg.run and cfg.run.from_checkpoint:
+    if "from_checkpoint" in cfg.run and isinstance(cfg.run.from_checkpoint, str):
         log.info(f"Resuming training from {cfg.run.from_checkpoint}")
         from_epoch, checkpoint = load_checkpoint(cfg)
         log.info(f"Epoch is {from_epoch}, running for {cfg.run.epochs}")
@@ -212,7 +212,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         if scheduler is not None:
             scheduler.step()
             new_lr = scheduler.get_last_lr()[0]
-        log.debug(f'New learning rate: {new_lr}')
+            log.debug(f'New learning rate: {new_lr}')
     return last_checkpoint
 
 def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],

@@ -101,7 +101,7 @@ def infer(cfg: DictConfig, device: Any):
     #infer for onnx and checkpoint
     for model_data in models:
         if isinstance(model_data.model, nn.Module):
-            if torch.__version__ >= (2,0) and cfg.run.compile:
+            if torch.__version__ >= (2,0) and cfg.run.compile: 
                 model = torch.compile(model) # requires PyTorch 2.0 (optional)
             model_data.model.eval()
         #inference yields generator in case something should be done before returning entire output
