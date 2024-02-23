@@ -39,10 +39,7 @@ def run(cfg : DictConfig):
     log.info("=================")
     log.info("Running Inference")
     log.info("=================")
-    #cuda does not work as some unnamed tensors are still on cpu
-    #TODO: find them and make them parameters
-    #device_singleton.device = cfg.device
-    device_singleton.device = 'cpu'
+    device_singleton.device = cfg.device
     device = device_singleton.device
 
     torch.manual_seed(cfg.seed)
@@ -103,6 +100,10 @@ def infer(cfg: DictConfig, device: Any):
     out_dir = cfg.run.get('out_dir', '')
     #infer for onnx and checkpoint
     for model_data in models:
+        if isinstance(model_data.model, nn.Module):
+            if torch.__version__ >= (2,0) and cfg.run.compile:
+                model = torch.compile(model) # requires PyTorch 2.0 (optional)
+            model_data.model.eval()
         #inference yields generator in case something should be done before returning entire output
         gen_infer = write_inference(model_data)
         #write samples into file
@@ -133,5 +134,3 @@ def infer(cfg: DictConfig, device: Any):
             for i, text in enumerate(gen_infer, start=1):
                 log.info(f'Generating sample: {i}/{num_samples}')
                 print(text)
-
-

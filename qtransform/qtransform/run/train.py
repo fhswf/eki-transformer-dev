@@ -82,6 +82,8 @@ def run(cfg: DictConfig):
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model.to(device=device)
+    if torch.__version__ >= (2,0) and cfg.run.compile:
+        model = torch.compile(model) # requires PyTorch 2.0 (optional)
 
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
