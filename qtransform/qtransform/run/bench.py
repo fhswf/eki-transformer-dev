@@ -9,7 +9,7 @@ from qtransform.dataset import get_loader
 from typing import List, Union, Tuple
 from datetime import datetime
 from torch.profiler import profile, record_function, ProfilerActivity
-from qonnx.core.modelwrapper import ModelWrapper
+from tabulate import tabulate
 
 TABLE_HEADERS = ['Model', 'n_transformer_blocks', 'n_attn_heads', 'embd_dim', 'Train steps', 'Accuracy', 'PPL', 'params']
 
@@ -57,24 +57,28 @@ def run(cfg : DictConfig):
     # copy paste ends here
 
     #TODO: infer model config (block size)
-
+    row_limit = cfg.run.row_limit
+    if not isinstance(row_limit, int):
+        log.warning(f'row_limit should be a number. defaulting to 10.')
+        row_limit = 10
+    elif row_limit < 1:
+        row_limit = 10
     #load model
     models: List[ModelData] = load_model(cfg, device)
     #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
     activities = ProfilerActivity.CPU if device.type == 'cpu' else ProfilerActivity.CUDA 
     for i, model_data in enumerate(models):
         with profile(activities=[activities], profile_memory=True, record_shapes=True) as prof:
-            with record_function(f'benchmark {model_data.type.name}'):
-                print(benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader))
-        print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
+            with record_function(f'BENCHMARK: {model_data.type.name}'):
+                log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')
+        log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
 
 def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
-    accuracy_models = torch.zeros(cfg.run.num_samples)
     perplexity = torch.zeros(cfg.run.num_samples)
     accuracy = torch.zeros(cfg.run.num_samples)
     counter = 0
-    other_perplexity = torch.zeros(1)
-    other_accuracy = torch.zeros(1)
+    #other_perplexity = torch.zeros(1)
+    #other_accuracy = torch.zeros(1)
     if isinstance(model_data.model, torch.nn.Module):
         model_data.model.eval()
         #TODO: add training steps in checkpoint data, create meta file for onnx models containing tokenizer data and model structure
@@ -83,9 +87,11 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
         log.warning(f'Benchmarking for ONNX models not implemented yet.')
         return None
     
-    for j, data in enumerate(bench_dataloader):
+    #TODO: for some reason, script gets killed due to insufficient memory
+    #      cache gets cleared and data from dataloader alongside outputs are deleted, not sure why error still persists
+    for i, data in enumerate(bench_dataloader):
         counter += 1
-        if j >= cfg.run.num_samples:
+        if i >= cfg.run.num_samples:
             break
         inputs, labels = data
         inputs = inputs.to(device_singleton.device)
@@ -99,17 +105,18 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
         probs = F.softmax(logits, dim=-1)
         del output
         del logits
-        #perplexity[i][j] = measure_perplexity(probs, labels)
-        #accuracy[i][j] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
-        other_perplexity += measure_perplexity(probs, labels)
-        other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+        perplexity[i] = measure_perplexity(probs, labels)
+        #accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+        #other_perplexity += measure_perplexity(probs, labels)
+        #other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+        del probs
         del labels
+        del data
         torch.cuda.empty_cache()
     #table printing from: https://learnpython.com/blog/print-table-in-python/
     #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
-    from tabulate import tabulate
-        #print(tabulate([['path', 'avg_ppl', 'acc_in_%'],[model.name, perplexity[i].mean(), accuracy[i].mean()]],headers='firstrow', tablefmt='simple_grid'))
-    return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_data.name, other_perplexity / counter, other_accuracy / counter]],headers='firstrow', tablefmt='simple_grid')
+    return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_data.name, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid')
+    #return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_data.name, other_perplexity / counter, other_accuracy / counter]],headers='firstrow', tablefmt='simple_grid')
 
     
 """
@@ -157,62 +164,3 @@ def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs:
     #if length is one, then accuracy only contains false values
     accuracy = accuracy[1] / (accuracy[0] + accuracy[1]) * 100 if len(accuracy) == 2 else 0.0
     return accuracy
-
-from qtransform.quantization.quant_bn import replace_bn, QuantBatchnorm1d, CustomBatchNorm1d
-from qtransform.quantization.brevitas_quant import BrevitasQuantizer
-from qtransform.quantization import LayerQuantConfig
-"""
-TODO: not sure at what step batchnorm layers should be merged.
-      if batchnorm is merged before training while training from scratch, the default values would be merged 
-      if batchnorm is merged before training during ptq, it would make sense but batchnorm could potentially stay in the model
-      if batchnorm is merged before training during ptq, the qparams would be learned during training 
-      if batchnorm is merged after training during qat, the trained values from batchnorm would be merged but the qparams would be default
-      if batchnorm is merged after training during ptq, qparams would still have their default values
-
-      based on this, it would make the most sense to merge before training during ptq
-      that could make the previous quantization during qat possibly redundant
-
-"""
-def compare_bn():
-    """
-    Compares the custom implementation of BatchNorm1d within qtransform with torch's batchnorm.
-    TODO: it would be best to pass a BatchNorm layer that had its gamma and beta tensors trained
-          to have that, a transformer model would have to be trained
-    """
-    #inputs comparable to a small gpt2 model for fpgas during training
-    n,c,l = (12,64, 256)
-    size = torch.Size([n,c,l])
-    torch_bn = torch.nn.BatchNorm1d(c)
-    torch_bn.train()
-    iters = 100
-    #feed some dummy values to adjust the mean and standard deviation
-    compare_loss(torch_bn, torch.nn.Identity(), size, iters)
-    custom_bn = CustomBatchNorm1d(c)
-    custom_bn = replace_bn(bn=torch_bn, new_bn=custom_bn, qat=False)
-    #make some space for more results
-    loss_fn = lambda x: compare_loss(torch_bn, custom_bn, size, 10).unsqueeze(0)
-    result = compare_loss(torch_bn, custom_bn, size, 10).unsqueeze(0)
-    torch_bn.eval()
-    #TODO: actually benchmark this on a trained model
-    for i in range(iters):
-        result = torch.cat((result, compare_loss(torch_bn, custom_bn, size, 10).unsqueeze(0)), dim=0)
-    log.info(f'Average loss when merging batchnorm: {result.mean()}')
-
-
-def compare_loss(layer1: torch.nn.Module, layer2: torch.nn.Module, shape: torch.Size, iters: int) -> torch.Tensor:
-    """
-    Compares the result of two layers by passing random values with a specified shape into both layers and 
-    calculating the mean from the difference of their outputs (out_layer1 - out_layer2). 
-    This process is repeated iters times, returning a 1d Tensor which contains the results.
-
-    This function should be useful for comparing the accuracy of outputs for quantized and non-quantized layers or
-    custom implementations of layers such as MultiheadAttention, BatchNorm, LayerNorm etc.
-    """
-    result: torch.Tensor = torch.zeros(iters)
-    for i in range(iters):
-        #random input: TODO: maybe load dataset or something
-        input = torch.randn(shape)
-        out_l1 = layer1(input)
-        out_l2 = layer2(input)
-        result[i] = (out_l1 - out_l2).abs().mean()
-    return result

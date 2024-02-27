@@ -60,6 +60,7 @@ class BatchNorm(nn.BatchNorm1d):
             #input tensor should always be three dimensional
             padding = torch.zeros(n, self.num_features - c, l).to(device=input.device)
             input = torch.cat((input, padding), dim=1)
+            del padding
         input = super().forward(input, *args, **kwargs)
         #remove padding
         #input tensor of shape [N,C,L] gets padded to shape [N, F, L] (F >= C) and then unpadded to shape [N,C,L] 

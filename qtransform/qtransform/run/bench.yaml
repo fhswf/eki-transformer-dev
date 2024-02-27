@@ -5,7 +5,7 @@ out_dir: ''
 
 checkpoint_dir: models
 from_checkpoint: 
-
+row_limit: 10 #amount of rows (torch operations) to display on resource profiler
 onnx_model: #absolute path of onnx model to run inference on. either use onnx_model or from_checkpoint
   path: 
   tokenizer: #specify tokenizer config manually as it cannot be saved in onnx model
