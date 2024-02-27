@@ -14,6 +14,7 @@ from os import makedirs, getcwd, makedirs
 from datetime import datetime
 from . import generate, load_model, ModelData
 import numpy as np
+from qtransform.dataset.tokenizer.tokenizer import Tokenizer
 
 @dataclass
 class InferConfig():
@@ -104,6 +105,13 @@ def infer(cfg: DictConfig, device: Any):
             if torch.__version__ >= (2,0) and cfg.run.compile: 
                 model = torch.compile(model) # requires PyTorch 2.0 (optional)
             model_data.model.eval()
+
+        if cfg.debug:
+            #ignore our inference, use karpathy's 
+            start_ids = tokenizer.encode(start, infer=True)
+            x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+            sample(model_data.model, tokenizer=model_data.tokenizer, start_ids=x)
+            continue
         #inference yields generator in case something should be done before returning entire output
         gen_infer = write_inference(model_data)
         #write samples into file
@@ -134,3 +142,14 @@ def infer(cfg: DictConfig, device: Any):
             for i, text in enumerate(gen_infer, start=1):
                 log.info(f'Generating sample: {i}/{num_samples}')
                 print(text)
+
+
+def sample(model: torch.nn.Module, tokenizer: Tokenizer, start_ids: torch.Tensor):
+    """karpathy implementation"""
+    # run generation
+    with torch.no_grad():
+        with ctx:
+            for k in range(num_samples):
+                y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+                print(tokenizer.decode(y[0].tolist()))
+                print('---------------')

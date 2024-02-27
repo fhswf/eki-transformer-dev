@@ -20,3 +20,5 @@ onnx_model: #absolute path of onnx model to run inference on. either use onnx_mo
     encoding: gpt2
     meta_path: #usually only necessary for character tokenization
 from_checkpoint:  #filename of checkpoint to load
+
+debug: False #use karpathy's inference
