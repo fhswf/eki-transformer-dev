@@ -15,8 +15,8 @@ from logging import getLogger
 log = getLogger(__name__)
 
 class InferType(Enum):
-    ONNX = 1
-    CHECKPOINT = 2
+    ONNX = 0
+    CHECKPOINT = 1
 
 @dataclass
 class ModelData():
@@ -125,7 +125,7 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
     else:
         log.warning(f'Path to checkpoint "{from_checkpoint_path}" is not a file.')
     if len(models) == 0:
-        log.error(f'Could not load models with fields "onnx_model": {onnx_model_path}, "from_checkpoint": {from_checkpoint_path}')
+        log.error(f'Could not load models with fields "onnx_model": {onnx_model.path}, "from_checkpoint": {from_checkpoint_path}')
         raise ValueError()
     
     return models
@@ -140,7 +140,7 @@ def forward_pass(model_type: InferType, model: Union[nn.Module, ModelWrapper], i
     logits = None
     match model_type:
         case InferType.ONNX:
-            idict = {"input": idx.numpy()}
+            idict = {"input": idx_cond.numpy()}
             # use infer_shapes()
             #forward pass of gpt model returns the non-softmaxed token predictions
             odict = execute_onnx(model, idict)

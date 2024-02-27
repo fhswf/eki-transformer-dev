@@ -6,8 +6,10 @@ from omegaconf import DictConfig, open_dict
 from . import forward_pass, load_model, ModelData, InferType, generate
 from qtransform import device_singleton
 from qtransform.dataset import get_loader
-from typing import Union, Tuple
+from typing import List, Union, Tuple
 from datetime import datetime
+from torch.profiler import profile, record_function, ProfilerActivity
+from qonnx.core.modelwrapper import ModelWrapper
 
 TABLE_HEADERS = ['Model', 'n_transformer_blocks', 'n_attn_heads', 'embd_dim', 'Train steps', 'Accuracy', 'PPL', 'params']
 
@@ -58,36 +60,56 @@ def run(cfg : DictConfig):
 
     #load model
     models: List[ModelData] = load_model(cfg, device)
-    accuracy_models = torch.zeros(len(models), cfg.run.num_samples)
-    perplexity = torch.zeros(len(models), cfg.run.num_samples)
-    accuracy = torch.zeros(len(models), cfg.run.num_samples)
+    #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
+    activities = ProfilerActivity.CPU if device.type == 'cpu' else ProfilerActivity.CUDA 
     for i, model_data in enumerate(models):
-        if isinstance(model_data.model, torch.nn.Module):
-            model_data.model.eval()
-            #TODO: add training steps in checkpoint data, create meta file for onnx models containing tokenizer data and model structure
-            #meta = model_data.model.config
-        if model_data.type != InferType.CHECKPOINT:
-            log.warning(f'Benchmarking for ONNX models not implemented yet.')
-            continue
-        for j, data in enumerate(bench_dataloader):
-            if j >= cfg.run.num_samples:
-                break
-            inputs, labels = data
-            inputs = inputs.to(device_singleton.device)
-            labels = labels.to(device_singleton.device)
-            output = forward_pass(model_data.type, model_data.model, inputs)
-            if isinstance(output, tuple):
-                logits = outputs[0]
-            else:
-                logits = output
-            probs = F.softmax(logits, dim=-1)
-            perplexity[i][j] = measure_perplexity(probs, labels)
-            accuracy[i][j] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs, device=device)
-        #table printing from: https://learnpython.com/blog/print-table-in-python/
-        #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
-        from tabulate import tabulate
-        print(tabulate([['path', 'avg_ppl', 'acc'],[model_data.name, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid'))
+        with profile(activities=[activities], profile_memory=True, record_shapes=True) as prof:
+            with record_function(f'benchmark {model_data.type.name}'):
+                print(benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader))
+        print(prof.key_averages().table(sort_by="cpu_time_total", row_limit=10))
 
+def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
+    accuracy_models = torch.zeros(cfg.run.num_samples)
+    perplexity = torch.zeros(cfg.run.num_samples)
+    accuracy = torch.zeros(cfg.run.num_samples)
+    counter = 0
+    other_perplexity = torch.zeros(1)
+    other_accuracy = torch.zeros(1)
+    if isinstance(model_data.model, torch.nn.Module):
+        model_data.model.eval()
+        #TODO: add training steps in checkpoint data, create meta file for onnx models containing tokenizer data and model structure
+        #meta = model_data.model.config
+    if model_data.type != InferType.CHECKPOINT:
+        log.warning(f'Benchmarking for ONNX models not implemented yet.')
+        return None
+    
+    for j, data in enumerate(bench_dataloader):
+        counter += 1
+        if j >= cfg.run.num_samples:
+            break
+        inputs, labels = data
+        inputs = inputs.to(device_singleton.device)
+        labels = labels.to(device_singleton.device)
+        output = forward_pass(model_data.type, model_data.model, inputs)
+        del inputs
+        if isinstance(output, tuple):
+            logits = output[0]
+        else:
+            logits = output
+        probs = F.softmax(logits, dim=-1)
+        del output
+        del logits
+        #perplexity[i][j] = measure_perplexity(probs, labels)
+        #accuracy[i][j] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+        other_perplexity += measure_perplexity(probs, labels)
+        other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+        del labels
+        torch.cuda.empty_cache()
+    #table printing from: https://learnpython.com/blog/print-table-in-python/
+    #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
+    from tabulate import tabulate
+        #print(tabulate([['path', 'avg_ppl', 'acc_in_%'],[model.name, perplexity[i].mean(), accuracy[i].mean()]],headers='firstrow', tablefmt='simple_grid'))
+    return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_data.name, other_perplexity / counter, other_accuracy / counter]],headers='firstrow', tablefmt='simple_grid')
 
     
 """
@@ -101,7 +123,7 @@ def measure_perplexity(logits: torch.Tensor, labels: torch.Tensor):
     #(https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html)
     return torch.exp(F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-1))#F.cross_entropy(logits, labels))
 
-def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs: torch.Tensor = None, device: torch.device = None) -> float:
+def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs: torch.Tensor = None) -> float:
     """
     Measures how many token predictions of a logit and label are correct. It does so by either generating text based on the start of the label tensor and then
     comparing the result with the actual values within labels or by directly comparing the results if inputs is specified.
@@ -115,6 +137,7 @@ def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs:
     if inputs is None:
         #input contains complete batches of samples from dataset, cut a small portion (at max half of tokens) and generate text
         N, C = labels.size()
+        device = labels.device()
         prompt_length = torch.randint(low=1, high=C//2, size=(1,)).item()
         log.debug(f'Begin measuring accuracy with prompt_length: {prompt_length}')
         accuracy_batch = torch.zeros(N).to(device=device)

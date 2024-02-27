@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from qtransform import device_singleton
 log = logging.getLogger(__name__)
 from omegaconf import DictConfig, open_dict
+import hydra
 from torch import nn
 import torch
 import tiktoken
@@ -12,7 +13,6 @@ from os.path import isdir, exists, join, expanduser, isabs
 from os import makedirs, getcwd, makedirs
 from datetime import datetime
 from . import generate, load_model, ModelData
-import matplotlib.pyplot as plt
 import numpy as np
 
 @dataclass
