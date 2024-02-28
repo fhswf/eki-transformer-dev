@@ -66,6 +66,7 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
 
 def save_checkpoint(cfg: DictConfig, 
     model: nn.Module, 
+    dataset: str, 
     optimizer, 
     timestamp:datetime, 
     metrics:Dict, 
@@ -86,7 +87,7 @@ def save_checkpoint(cfg: DictConfig,
                 chkpt_folder = os.getcwd()
     os.makedirs(chkpt_folder, exist_ok=True)
     if epoch % cfg.run.save_epoch_interval == 0:
-        checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{timestamp}__epoch:{epoch}')
+        checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{dataset}_{timestamp}__epoch:{epoch}')
         torch.save(obj={
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),

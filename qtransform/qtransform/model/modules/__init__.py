@@ -206,6 +206,10 @@ class TransformerBlock(nn.Module):
             #self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
         elif config.norm_layer == "None":
             self.norm_size = None
+        elif config.norm_layer == "InstanceNorm":
+            #TODO: test InstanceNorm
+            log.error(f'InstanceNorm not implemented yet')
+            raise NotImplementedError()
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
         if self.norm_size:

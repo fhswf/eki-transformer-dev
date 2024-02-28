@@ -15,6 +15,7 @@ from pprint import PrettyPrinter
 from qtransform import device_singleton
 from time import time
 log = logging.getLogger(__name__)
+from torch.profiler import profile, record_function, ProfilerActivity
 
 def run(cfg: DictConfig):
     """ launches training with provided config"""
@@ -188,7 +189,19 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         #dataloader always returns the same tensors after each epoch because it is casted inside of function call
         #therefore, cast it before training
         #TODO: find a more elegant solution, maybe by manipulating its seed with a torch.Generator?
-        metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
+        if cfg.run.profile.active:
+            activities = [ProfilerActivity.CPU]
+            if device.type == 'cuda':
+                activities.append(ProfilerActivity.CUDA)
+            row_limit = cfg.run.profile.row_limit
+            if not isinstance(row_limit, int):
+                row_limit = 10
+            with profile(activities=activities, **cfg.run.profile.args) as prof:
+                with record_function(f'TRAIN EPOCH {epoch}'):
+                    metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
+            log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
+        else:
+            metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
 
         ## eval
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
@@ -202,6 +215,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
             last_checkpoint: str = save_checkpoint(cfg=cfg, 
                 model=model, 
                 optimizer=optimizer, 
+                dataset=cfg.dataset.name,
                 timestamp=timestamp, 
                 epoch=epoch, 
                 metrics=metrics, 
@@ -215,8 +229,12 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
             log.debug(f'New learning rate: {new_lr}')
     return last_checkpoint
 
-def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],
-           optimizer: optim.Optimizer, mini_run: bool=False) -> Any:
+def train_one_epoch(cfg: DictConfig, 
+        device, 
+        model: nn.Module, 
+        train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],
+        optimizer: optim.Optimizer, 
+        mini_run: bool=False) -> Any:
     """ training loop over steps/batches """
     model.train() #if it was quantized, it could have been set to eval
     last_loss = 0
