@@ -98,7 +98,7 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
             log.warning(f'Behavior might be unexpected as checkpoint possibly contains quantized params.')
         from qtransform.model import get_model
         model = get_model(model_cfg)
-        model.eval()
+        model.load_state_dict(checkpoint["model_state_dict"])
         model.to(device)
         #TODO: maybe implement a generic type checking method
         compile_model = cfg.run.get('compile', False)

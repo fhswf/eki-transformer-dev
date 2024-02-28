@@ -35,6 +35,8 @@ class InferConfig():
     onnx_model: dict = None
     compile: bool = True
 
+    debug: bool = False
+
 def run(cfg : DictConfig):
     """ Inference """
     log.info("=================")
@@ -144,12 +146,12 @@ def infer(cfg: DictConfig, device: Any):
                 print(text)
 
 
-def sample(model: torch.nn.Module, tokenizer: Tokenizer, start_ids: torch.Tensor):
+def sample(model: torch.nn.Module, tokenizer: Tokenizer, infer_cfg: InferConfig):
     """karpathy implementation"""
     # run generation
     with torch.no_grad():
         with ctx:
-            for k in range(num_samples):
-                y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            for k in range(infer_cfg.num_samples):
+                y = model.generate(x, max_new_tokens = infer_cfg.max_new_tokens, temperature=infer_cfg.temperature, top_k=infer_cfg.top_k)
                 print(tokenizer.decode(y[0].tolist()))
                 print('---------------')

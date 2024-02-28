@@ -152,9 +152,9 @@ class CausalSelfAttention(nn.Module):
 
             """
             N, C, L = x.size()
-            #due to inference, input features can be lower than specified max context length which causes problem during attention calculation
-            #TODO: with torch version 2.0, output becomes nan when model is in eval mode. outside of causalselfattention, mha does not return nan
+            #TODO: with torch version 2.0, output becomes nan when model is in eval mode. outside of CausalSelfAttention, mha does not return nan
             #      tensors during eval mode
+            #due to inference, input features can be lower than specified max context length which causes problem during attention calculation
             y, weights = self.mha(x, x, x, attn_mask=self.bias[:C,:C], need_weights=False, is_causal=False) # Q, K, V, attn_mask y
         y = self.resid_dropout(self.c_proj(y))
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
