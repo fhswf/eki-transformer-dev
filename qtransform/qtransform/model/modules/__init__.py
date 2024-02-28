@@ -221,12 +221,39 @@ class TransformerBlock(nn.Module):
         self.attn = CausalSelfAttention(config)
         self.mlp = MLP(config)
 
+    def quant_bn_forward(self, batch: torch.Tensor, ln: qnn.BatchNorm1dToQuantScaleBias):
+        """
+        Passes a batch of dimension [N,C,L] to BatchNorm1dToQuantScaleBias which expects tensors of size [C,L].
+        Each sample of the batch is normalized and then concatted into a tensor of the original shape. 
+        TODO: unsure if this should be placed in forward pass of BatchNorm1dToQuantScaleBias in our brevitas fork or here
+        """
+        if not isinstance(ln, qnn.BatchNorm1dToQuantScaleBias):
+            raise TypeError(f'Passed quantized BatchNorm layer is of type {type(ln)}, not BatchNorm1dToQuantScaleBias')
+        #batch is one sample
+        if len(x.size()) != 3:
+            return ln(x).unsqueeze(0)
+        batches = torch.zeros(x.size())
+        #pass each sample of batch one by one and concat it
+        for i, sample in enumerate(x):
+            batches[i] = ln(x)
+        return batches
+
     def forward(self, x):
         if self.norm_size:
             #x = self.custom_ln1(x)
-            x = self.residual1(x, self.attn(self.ln_1(x)))
+            #brevitas batchnorm does not support batches
+            #TODO: unsure if brevitas batchnorm applies padding for smaller inputs
+            if isinstance(self.ln_1, qnn.BatchNorm1dToQuantScaleBias):
+                x = self.quant_bn_forward(x, self.ln_1)
+            else:
+                x = self.ln_1(x)
+            x = self.residual1(x, self.attn(x))
             #x = self.custom_ln2(x)
-            x = self.residual2(x, self.mlp(self.ln_2(x)))
+            if isinstance(self.ln_2, qnn.BatchNorm1dToQuantScaleBias):
+                x = self.quant_bn_forward(x, self.ln_2)
+            else:
+                x = self.ln_2(x)
+            x = self.residual2(x, self.mlp(x))
             #x = x + self.attn(self.ln_1(x))
             #x = x + self.mlp(self.ln_2(x))
         else:

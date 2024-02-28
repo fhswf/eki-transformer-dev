@@ -230,6 +230,9 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union
     if not isinstance(gradient_accumulation_steps, int):
         gradient_accumulation_steps = 1
     train_batch_time = time()
+    #avoid printing out loss of zero 
+    if cfg.run.max_iters < cfg.run.log_steps_interval:
+        cfg.run.log_steps_interval = cfg.run.max_iters
     for i in range(1, cfg.run.max_iters+1):
         loss = None #remember last loss of mini-batch
         #break one iteration down into multiple batches to simulate a larger batch size
