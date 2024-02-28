@@ -84,57 +84,6 @@ class QuantGELU(QuantNLAL):
             return_quant_tensor=return_quant_tensor,
             **kwargs)
 
-#TODO: torch attention generates poor results during inference, karpathy's mha from scratch does not.
-
-class KarpathyCausalSelfAttention(nn.Module):
-
-    def __init__(self, config):
-        super().__init__()
-        assert config.n_embd % config.n_head == 0
-        # key, query, value projections for all heads, but in a batch
-        self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-        # output projection
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
-        # regularization
-        self.attn_dropout = nn.Dropout(config.dropout)
-        self.resid_dropout = nn.Dropout(config.dropout)
-        self.n_head = config.n_head
-        self.n_embd = config.n_embd
-        self.dropout = config.dropout
-        # flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0
-        self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
-        if not self.flash:
-            print("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.0")
-            # causal mask to ensure that attention is only applied to the left in the input sequence
-            self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
-                                        .view(1, 1, config.block_size, config.block_size))
-
-    def forward(self, x):
-        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
-
-        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-
-        # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, T) -> (B, nh, T, T)
-        if self.flash:
-            # efficient attention using Flash Attention CUDA kernels
-            y = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=None, dropout_p=self.dropout if self.training else 0, is_causal=True)
-        else:
-            # manual implementation of attention
-            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-            att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
-            att = F.softmax(att, dim=-1)
-            att = self.attn_dropout(att)
-            y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side"""
-        y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
-        # output projection
-        y = self.resid_dropout(self.c_proj(y))
-        return y
-
 class CausalSelfAttention(nn.Module):
     """
     CausalSelfAttention. 
@@ -204,6 +153,8 @@ class CausalSelfAttention(nn.Module):
             """
             N, C, L = x.size()
             #due to inference, input features can be lower than specified max context length which causes problem during attention calculation
+            #TODO: with torch version 2.0, output becomes nan when model is in eval mode. outside of causalselfattention, mha does not return nan
+            #      tensors during eval mode
             y, weights = self.mha(x, x, x, attn_mask=self.bias[:C,:C], need_weights=False, is_causal=False) # Q, K, V, attn_mask y
         y = self.resid_dropout(self.c_proj(y))
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
@@ -247,16 +198,12 @@ class TransformerBlock(nn.Module):
             self.norm_size = config.n_embd
             #dummy layers which do nothing in order to merge with batchnorm layers
             #that also means including some bloat layers
-            self.custom_ln1 = nn.Identity()
-            self.custom_ln2 = nn.Identity()
+            #self.custom_ln1 = nn.Identity()
+            #self.custom_ln2 = nn.Identity()
         elif config.norm_layer == "BatchNorm":
             self.norm_size = config.block_size
-            #should do the same as quantidentity as long as requires_grad is set to False
-            #after merging with batchnorm, should scale input to have a mean of 0 and a standard deviation of 1
-            #TODO: should they be trainable before/ after merging?
-            #      layers are not moved to cuda with model.to(device). for now, workaround by specifying device in constructor
-            self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
-            self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
+            #self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
+            #self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
         elif config.norm_layer == "None":
             self.norm_size = None
         else:
@@ -276,9 +223,9 @@ class TransformerBlock(nn.Module):
 
     def forward(self, x):
         if self.norm_size:
-            x = self.custom_ln1(x)
+            #x = self.custom_ln1(x)
             x = self.residual1(x, self.attn(self.ln_1(x)))
-            x = self.custom_ln2(x)
+            #x = self.custom_ln2(x)
             x = self.residual2(x, self.mlp(self.ln_2(x)))
             #x = x + self.attn(self.ln_1(x))
             #x = x + self.mlp(self.ln_2(x))
