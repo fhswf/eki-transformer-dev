@@ -63,12 +63,12 @@ class GPT(nn.Module):
         self.norm_size = None
         if config.norm_layer == "LayerNorm":
             self.norm_size = config.n_embd
-        elif config.norm_layer == "BatchNorm":
+        elif config.norm_layer in ["BatchNorm", "InstanceNorm"]:
             self.norm_size = config.block_size
         elif config.norm_layer == "None":
             self.norm_size = None
         else:
-            raise AttributeError("can determine model for norm layer: " + config.norm_layer)
+            raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
         
         if self.norm_size:
             ln_out = getattr(custom_nn, config.norm_layer, None)

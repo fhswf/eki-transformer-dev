@@ -66,7 +66,13 @@ class BatchNorm(nn.BatchNorm1d):
         #input tensor of shape [N,C,L] gets padded to shape [N, F, L] (F >= C) and then unpadded to shape [N,C,L] 
         return input[:,None:c]
 
-
+class InstanceNorm(nn.InstanceNorm1d):
+    """
+    Boilerplate class to enable specifying InstanceNorm instead of InstanceNorm1d
+    """
+    def __init__(self,num_features, eps=1e-5, momentum=0.1, affine=False, track_running_stats=False):
+        super().__init__(num_features=num_features, eps=eps, momentum=momentum, affine=affine, track_running_stats=track_running_stats)
+        
 class QuantGELU(QuantNLAL):
     """Does not work so well"""
     def __init__(
@@ -200,16 +206,12 @@ class TransformerBlock(nn.Module):
             #that also means including some bloat layers
             #self.custom_ln1 = nn.Identity()
             #self.custom_ln2 = nn.Identity()
-        elif config.norm_layer == "BatchNorm":
+        elif config.norm_layer in ["BatchNorm", "InstanceNorm"]:
             self.norm_size = config.block_size
             #self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
             #self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
         elif config.norm_layer == "None":
             self.norm_size = None
-        elif config.norm_layer == "InstanceNorm":
-            #TODO: test InstanceNorm
-            log.error(f'InstanceNorm not implemented yet')
-            raise NotImplementedError()
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
         if self.norm_size:
@@ -234,7 +236,7 @@ class TransformerBlock(nn.Module):
         if not isinstance(ln, qnn.BatchNorm1dToQuantScaleBias):
             raise TypeError(f'Passed quantized BatchNorm layer is of type {type(ln)}, not BatchNorm1dToQuantScaleBias')
         #batch is one sample
-        if len(x.size()) != 3:
+        if len(x.size()) == 2:
             return ln(x).unsqueeze(0)
         batches = torch.zeros(x.size())
         #pass each sample of batch one by one and concat it
