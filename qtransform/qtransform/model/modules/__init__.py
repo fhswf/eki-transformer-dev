@@ -4,13 +4,12 @@ from torch import nn
 from torch.nn import functional as F
 from qtransform.model import modules as custom_nn
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 from brevitas.inject.defaults import Uint8ActPerTensorFloat
 from brevitas.nn.quant_layer import ActQuantType
 from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 from brevitas import nn as qnn
-from brevitas.nn import utils as qutils
-from brevitas.proxy import WeightQuantProxyFromInjector, BiasQuantProxyFromInjector
+from brevitas.quant_tensor import QuantTensor
 
 __all__ = ['EltwiseAdd']
 
@@ -72,7 +71,7 @@ class InstanceNorm(nn.InstanceNorm1d):
     """
     def __init__(self,num_features, eps=1e-5, momentum=0.1, affine=False, track_running_stats=False):
         super().__init__(num_features=num_features, eps=eps, momentum=momentum, affine=affine, track_running_stats=track_running_stats)
-        
+
 class QuantGELU(QuantNLAL):
     """Does not work so well"""
     def __init__(
@@ -105,7 +104,7 @@ class CausalSelfAttention(nn.Module):
         self.flash = config.flash
         self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         self.resid_dropout = nn.Dropout(config.dropout)
-        #since synthesis cannot use is_causal due to bool dtype and brevitas mha does not have is_causal in constructor
+        #since synthesis cannot use is_causal due to bool dtype and brevitas mha does not have is_causal in forward pass function
         bias = torch.ones(config.block_size, config.block_size).tril(diagonal=0)
         #torch.mha uses torch.nn.functional.scaled_dot_product_attention, attention mask is added (plus operation) to attention
         #meaning: explicitly use negative infinity to prevent adding zero instead of masking that value during softmax
@@ -143,7 +142,6 @@ class CausalSelfAttention(nn.Module):
         if False:
             pass
         else:
-            #QuantMultiheadAttention does not have is_causal in constructor -> use attention mask instead
             """
             from scaled dot product attention:
                 L: context, S: embedding dimension
@@ -161,7 +159,7 @@ class CausalSelfAttention(nn.Module):
             #TODO: with torch version 2.0, output becomes nan when model is in eval mode. outside of CausalSelfAttention, mha does not return nan
             #      tensors during eval mode
             #due to inference, input features can be lower than specified max context length which causes problem during attention calculation
-            y, weights = self.mha(x, x, x, attn_mask=self.bias[:C,:C], need_weights=False, is_causal=False) # Q, K, V, attn_mask y
+            y, weights = self.mha(x, x, x, attn_mask=self.bias[:C,:C], need_weights=False) # Q, K, V, attn_mask y
         y = self.resid_dropout(self.c_proj(y))
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
         return y
@@ -226,8 +224,10 @@ class TransformerBlock(nn.Module):
         self.residual2 = custom_nn.EltwiseAdd()
         self.attn = CausalSelfAttention(config)
         self.mlp = MLP(config)
+        #necessary for quantized batchnorm to create quanttensor from tensor
+        self.identity = torch.nn.Identity()
 
-    def quant_bn_forward(self, batch: torch.Tensor, ln: qnn.BatchNorm1dToQuantScaleBias):
+    def quant_bn_forward(self, batch: Union[torch.Tensor, QuantTensor], ln: qnn.BatchNorm1dToQuantScaleBias):
         """
         Passes a batch of dimension [N,C,L] to BatchNorm1dToQuantScaleBias which expects tensors of size [C,L].
         Each sample of the batch is normalized and then concatted into a tensor of the original shape. 
@@ -236,14 +236,43 @@ class TransformerBlock(nn.Module):
         if not isinstance(ln, qnn.BatchNorm1dToQuantScaleBias):
             raise TypeError(f'Passed quantized BatchNorm layer is of type {type(ln)}, not BatchNorm1dToQuantScaleBias')
         #batch is one sample
-        if len(x.size()) == 2:
-            return ln(x).unsqueeze(0)
-        batches = torch.zeros(x.size())
-        #pass each sample of batch one by one and concat it
-        for i, sample in enumerate(x):
-            batches[i] = ln(x)
-        return batches
-
+        if len(batch.size()) == 2:
+            return ln(batch).unsqueeze(0)
+        #dropout layer (from gpt model) returns quanttensor instead of regular tensor, iterating does not work with quanttensor
+        #TODO: unsure if this would break the qonnx export
+        if isinstance(batch, QuantTensor):
+            device = batch.value.device
+            N,C,L = batch.size()
+            samples = batch.value.chunk(N) #unsure if inplace forward pass of quanttensor value will lead to undefined behavior
+            out = torch.zeros(N,C,L).to(device)
+        else:
+            #samples = batch.chunk(batch.size()[0])
+            #out = torch.zeros(batch.size())
+            #in place modification of tensors
+            samples = batch
+            out = samples
+        for i, sample in enumerate(samples):
+            #chunking batch returns input of shape [1, C, L], BatchNorm1dToQuantScaleBias then returns tensor of shape [1,C,C,L]
+            #first dimension can be squeezed together, tensors of second dimension are all the same
+            #therefore, take the first "batch"
+            """
+            TODO: when out tensor is set to device, this error occurs: 
+            
+                RuntimeError: Output 1 of UnbindBackward0 is a view and its base or another view of its base has been modified inplace. 
+                This view is the output of a function that returns multiple views. Such functions do not allow the output views to be modified inplace. 
+                You should replace the inplace operation by an out-of-place one.
+            """
+            x = ln(sample)
+            #quanttensor value is read only
+            out[i] = x.squeeze(dim=0)[0] if isinstance(x, torch.Tensor) else x.value.squeeze(dim=0)[0]
+        #dirty workaround to make batchnorm work, since output tensor is not quantized yet
+        if isinstance(self.identity, torch.nn.Identity):
+            self.identity = qnn.QuantIdentity()
+            #somehow infer on which device model should be
+            self.identity.to(device=self.attn.bias.device)
+        out.to(samples[0].device)
+        out = self.identity(out)
+        return out
     def forward(self, x):
         if self.norm_size:
             #x = self.custom_ln1(x)

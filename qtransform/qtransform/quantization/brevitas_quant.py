@@ -134,8 +134,8 @@ class BrevitasQuantizer(Quantizer):
                 bn: QuantBatchnorm1d = replace_bn(layer, new_bn, qat=True)
                 return bn 
             else:
-                log.warning(f'Quantization of batchnorm should be ')
-                return layer
+                log.debug(f'Quantizing batchnorm {layer_name}')
+                layer_type = "BatchNorm1d"
 
         #filter every class which contains name of layer to be quantized
         # -> MultiheadAttention: QuantMultiheadAttention, BatchNorm1d: BatchNorm1dQuantToScaleBias

@@ -101,6 +101,7 @@ def run(cfg: DictConfig):
         from qtransform.quantization import get_quantizer
         quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+        model.to(device=device)
         # TODO make this a decorator so it can return stuff
         last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
         #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 

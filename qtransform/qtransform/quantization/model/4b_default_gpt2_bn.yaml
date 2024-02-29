@@ -27,7 +27,7 @@ layers:
           args:
             bit_width: 4
       args:
-        replace_bn: True
+        replace_bn: False
     linear_out:
       quantize: True
       layer_type: Linear
