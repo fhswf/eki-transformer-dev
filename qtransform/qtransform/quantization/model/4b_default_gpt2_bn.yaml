@@ -1,132 +1,135 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
 throw_errors_on_duplicate : False #If the same layer has multiple configs within this file, pick the last one and throw warnings. Otherwise, throw an error and exit
 layers:
-    transformer.r'w[tp]e': 
-      quantize: True
-      layer_type: Embedding
-      quantizers: 
-        weight: 
-          #type: weight
-          #order of overriding: default_quantizer, then template, then args
-          default_quantizer: Int8WeightPerTensorFloat
-          args:
-            bit_width: 4
-    transformer.dropout: 
-      quantize: True
-      layer_type: Dropout #no quantizers for dropout possible, what is the default behavior then?
-    transformer.ln_out:
-      quantize: True
-      layer_type: BatchNorm1d
-      quantizers:
-        weight:
-          default_quantizer: Int8WeightPerTensorFloat
-          args: 
-            bit_width: 4
-        bias:
-          default_quantizer: Int8Bias
-          args:
-            bit_width: 4
-      args:
-        replace_bn: False
-    linear_out:
-      quantize: True
-      layer_type: Linear
-      quantizers: 
-        weight:
-          default_quantizer: Int8WeightPerTensorFloat
-          args:
-            bit_width: 4
-        bias:
-          default_quantizer: Int8Bias
-          args:
-            bit_width: 4
-    #transformer heads
-    transformer.layer.r'[0-9]+'.r'ln_[0-9]':
-      quantize: True
-      layer_type: BatchNorm1d
-    #Feed forward neural network
-    transformer.layer.r'[0-9]+'.mlp.r'c_.+':
-      quantize: True
-      layer_type: Linear
-      quantizers: 
-        weight:
-          default_quantizer: Int8WeightPerTensorFloat
-          args:
-            bit_width: 4
-        #error: input scale required. kind of weird as the quant config is the same as the linear_out layer
-        #bias:
-        #  default_quantizer: Int8Bias
-        #  args:
-        #    bit_width: 4
+  transformer.r'w[tp]e': 
+    quantize: True
+    layer_type: Embedding
+    quantizers: 
+      weight: 
+        #type: weight
+        #order of overriding: default_quantizer, then template, then args
+        default_quantizer: Int8WeightPerTensorFloat
+        args:
+          bit_width: 4
+  transformer.dropout: 
+    quantize: True
+    layer_type: Dropout #no quantizers for dropout possible, what is the default behavior then?
+  transformer.ln_out:
+    quantize: True
+    layer_type: BatchNorm1d
+    quantizers:
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
+        args: 
+          bit_width: 4
+      bias:
+        default_quantizer: Int8Bias
+        args:
+          bit_width: 4
+    args:
+      replace_bn: False
+  linear_out:
+    quantize: True
+    layer_type: Linear
+    quantizers: 
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
+        args:
+          bit_width: 4
+      bias:
+        default_quantizer: Int8Bias
+        args:
+          bit_width: 4
+  #transformer heads
+  transformer.layer.r'[0-9]+'.r'ln_[0-9]':
+    quantize: True
+    layer_type: BatchNorm1d
+  #Feed forward neural network
+  transformer.layer.r'[0-9]+'.mlp.r'c_.+':
+    quantize: True
+    layer_type: Linear
+    quantizers: 
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
+        args:
+          bit_width: 4
+      #error: input scale required. kind of weird as the quant config is the same as the linear_out layer
+      #bias:
+      #  default_quantizer: Int8Bias
+      #  args:
+      #    bit_width: 4
 
-    transformer.layer.r'[0-9]+'.mlp.active:
-      quantize: True
-      layer_type: ReLU #no GeLU for brevitas currently
-      quantizers:
-        act:
-          default_quantizer: Int8ActPerTensorFloat
-          args:
-            bit_width: 4
-        input:
-          default_quantizer: Int8ActPerTensorFloat
-          args:
-            bit_width: 4
-      
-    transformer.layer.r'[0-9]+'.mlp.dropout:
-      quantize: True
-      layer_type: Dropout
+  transformer.layer.r'[0-9]+'.mlp.active:
+    quantize: True
+    layer_type: ReLU #no GeLU for brevitas currently
+    quantizers:
+      act:
+        default_quantizer: Int8ActPerTensorFloat
+        args:
+          bit_width: 4
+      input:
+        default_quantizer: Int8ActPerTensorFloat
+        args:
+          bit_width: 4
     
-    #Multi Head attention, all default args except bit width of 4
-    transformer.layer.r'[0-9]+'.attn.r'.+dropout':
-      quantize: True
-      layer_type: Dropout
+  transformer.layer.r'[0-9]+'.mlp.dropout:
+    quantize: True
+    layer_type: Dropout
+  
+  #Multi Head attention, all default args except bit width of 4
+  transformer.layer.r'[0-9]+'.attn.r'.+dropout':
+    quantize: True
+    layer_type: Dropout
 
-    transformer.layer.r'[0-9]+'.attn.mha: 
-      quantize: True
-      layer_type: MultiheadAttention
-      quantizers:
-        in_proj_input_quant:
-          default_quantizer: Int8ActPerTensorFloat
-          args: 
+  transformer.layer.r'[0-9]+'.attn.mha: 
+    quantize: True
+    layer_type: MultiheadAttention
+    quantizers:
+      in_proj_input_quant:
+        default_quantizer: Int8ActPerTensorFloat
+        args: 
+          bit_width: 4
+      in_proj_weight_quant:
+        default_quantizer: Int8WeightPerTensorFloat
+        args: 
+          bit_width: 4
+      in_proj_bias_quant:
+        default_quantizer: Int32Bias
+        args: 
+          bit_width: 4        
+      #softmax_input_quant=None,
+      attn_output_weights_quant:
+        default_quantizer: Int8ActPerTensorFloat
+        args: 
             bit_width: 4
-        in_proj_weight_quant:
-          default_quantizer: Int8WeightPerTensorFloat
-          args: 
-            bit_width: 4
-        in_proj_bias_quant:
-          default_quantizer: Int32Bias
-          args: 
-            bit_width: 4        
-        #softmax_input_quant=None,
-        attn_output_weights_quant:
-          default_quantizer: Int8ActPerTensorFloat
-          args: 
-              bit_width: 4
-        q_scaled_quant:
-          type: act
-          default_quantizer: Int8ActPerTensorFloat
-          args: 
-            bit_width: 4
-        k_transposed_quant:
-          type: act
-          default_quantizer: Int8ActPerTensorFloat
-          args: 
-            bit_width: 4
-        v_quant:
-          type: act
-          default_quantizer: Int8ActPerTensorFloat
-          args: 
-            bit_width: 4
-        out_proj_input_quant:
-          default_quantizer: Int8ActPerTensorFloat
-          args: 
-            bit_width: 4
-        out_proj_weight_quant:
-          default_quantizer: Int8WeightPerTensorFloat
-          args: 
-            bit_width: 4
-        out_proj_bias_quant:
-          default_quantizer: Int32Bias
-          args: 
-            bit_width: 4
-        #out_proj_output_quant=None,
+      q_scaled_quant:
+        type: act
+        default_quantizer: Int8ActPerTensorFloat
+        args: 
+          bit_width: 4
+      k_transposed_quant:
+        type: act
+        default_quantizer: Int8ActPerTensorFloat
+        args: 
+          bit_width: 4
+      v_quant:
+        type: act
+        default_quantizer: Int8ActPerTensorFloat
+        args: 
+          bit_width: 4
+      out_proj_input_quant:
+        default_quantizer: Int8ActPerTensorFloat
+        args: 
+          bit_width: 4
+      out_proj_weight_quant:
+        default_quantizer: Int8WeightPerTensorFloat
+        args: 
+          bit_width: 4
+      out_proj_bias_quant:
+        default_quantizer: Int32Bias
+        args: 
+          bit_width: 4
+      #out_proj_output_quant=None,
+  transformer.layer.r'[0-9]+'.r'residual[1-2]':
+    quantize: True
+    layer_type: EltwiseAdd

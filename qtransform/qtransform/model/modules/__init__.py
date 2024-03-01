@@ -238,11 +238,11 @@ class TransformerBlock(nn.Module):
         #batch is one sample
         if len(batch.size()) == 2:
             return ln(batch).unsqueeze(0)
+        N,C,L = batch.size()
         #dropout layer (from gpt model) returns quanttensor instead of regular tensor, iterating does not work with quanttensor
         #TODO: unsure if this would break the qonnx export
         if isinstance(batch, QuantTensor):
             device = batch.value.device
-            N,C,L = batch.size()
             samples = batch.value.chunk(N) #unsure if inplace forward pass of quanttensor value will lead to undefined behavior
             out = torch.zeros(N,C,L).to(device)
         else:
@@ -251,17 +251,11 @@ class TransformerBlock(nn.Module):
             #in place modification of tensors
             samples = batch
             out = samples
-        for i, sample in enumerate(samples):
+        for i in range(N):
             #chunking batch returns input of shape [1, C, L], BatchNorm1dToQuantScaleBias then returns tensor of shape [1,C,C,L]
             #first dimension can be squeezed together, tensors of second dimension are all the same
             #therefore, take the first "batch"
-            """
-            TODO: when out tensor is set to device, this error occurs: 
-            
-                RuntimeError: Output 1 of UnbindBackward0 is a view and its base or another view of its base has been modified inplace. 
-                This view is the output of a function that returns multiple views. Such functions do not allow the output views to be modified inplace. 
-                You should replace the inplace operation by an out-of-place one.
-            """
+            sample = samples[i]
             x = ln(sample)
             #quanttensor value is read only
             out[i] = x.squeeze(dim=0)[0] if isinstance(x, torch.Tensor) else x.value.squeeze(dim=0)[0]
@@ -273,6 +267,7 @@ class TransformerBlock(nn.Module):
         out.to(samples[0].device)
         out = self.identity(out)
         return out
+
     def forward(self, x):
         if self.norm_size:
             #x = self.custom_ln1(x)
