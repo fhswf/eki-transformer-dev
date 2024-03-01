@@ -26,6 +26,10 @@ layers:
         default_quantizer: Int8Bias
         args:
           bit_width: 4
+      input: 
+        default_quantizer: Int8ActPerTensorFloat
+        args:
+          bit_width: 4
     args:
       replace_bn: False
   linear_out:

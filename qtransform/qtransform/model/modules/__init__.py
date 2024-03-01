@@ -8,8 +8,6 @@ from typing import Optional, Union
 from brevitas.inject.defaults import Uint8ActPerTensorFloat
 from brevitas.nn.quant_layer import ActQuantType
 from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
-from brevitas import nn as qnn
-from brevitas.quant_tensor import QuantTensor
 
 __all__ = ['EltwiseAdd']
 
@@ -227,62 +225,11 @@ class TransformerBlock(nn.Module):
         #necessary for quantized batchnorm to create quanttensor from tensor
         self.identity = torch.nn.Identity()
 
-    def quant_bn_forward(self, batch: Union[torch.Tensor, QuantTensor], ln: qnn.BatchNorm1dToQuantScaleBias):
-        """
-        Passes a batch of dimension [N,C,L] to BatchNorm1dToQuantScaleBias which expects tensors of size [C,L].
-        Each sample of the batch is normalized and then concatted into a tensor of the original shape. 
-        TODO: unsure if this should be placed in forward pass of BatchNorm1dToQuantScaleBias in our brevitas fork or here
-        """
-        if not isinstance(ln, qnn.BatchNorm1dToQuantScaleBias):
-            raise TypeError(f'Passed quantized BatchNorm layer is of type {type(ln)}, not BatchNorm1dToQuantScaleBias')
-        #batch is one sample
-        if len(batch.size()) == 2:
-            return ln(batch).unsqueeze(0)
-        N,C,L = batch.size()
-        #dropout layer (from gpt model) returns quanttensor instead of regular tensor, iterating does not work with quanttensor
-        #TODO: unsure if this would break the qonnx export
-        if isinstance(batch, QuantTensor):
-            device = batch.value.device
-            samples = batch.value.chunk(N) #unsure if inplace forward pass of quanttensor value will lead to undefined behavior
-            out = torch.zeros(N,C,L).to(device)
-        else:
-            #samples = batch.chunk(batch.size()[0])
-            #out = torch.zeros(batch.size())
-            #in place modification of tensors
-            samples = batch
-            out = samples
-        for i in range(N):
-            #chunking batch returns input of shape [1, C, L], BatchNorm1dToQuantScaleBias then returns tensor of shape [1,C,C,L]
-            #first dimension can be squeezed together, tensors of second dimension are all the same
-            #therefore, take the first "batch"
-            sample = samples[i]
-            x = ln(sample)
-            #quanttensor value is read only
-            out[i] = x.squeeze(dim=0)[0] if isinstance(x, torch.Tensor) else x.value.squeeze(dim=0)[0]
-        #dirty workaround to make batchnorm work, since output tensor is not quantized yet
-        if isinstance(self.identity, torch.nn.Identity):
-            self.identity = qnn.QuantIdentity()
-            #somehow infer on which device model should be
-            self.identity.to(device=self.attn.bias.device)
-        out.to(samples[0].device)
-        out = self.identity(out)
-        return out
-
     def forward(self, x):
         if self.norm_size:
-            #x = self.custom_ln1(x)
-            #brevitas batchnorm does not support batches
-            #TODO: unsure if brevitas batchnorm applies padding for smaller inputs
-            if isinstance(self.ln_1, qnn.BatchNorm1dToQuantScaleBias):
-                x = self.quant_bn_forward(x, self.ln_1)
-            else:
-                x = self.ln_1(x)
+            x = self.ln_1(x)
             x = self.residual1(x, self.attn(x))
-            #x = self.custom_ln2(x)
-            if isinstance(self.ln_2, qnn.BatchNorm1dToQuantScaleBias):
-                x = self.quant_bn_forward(x, self.ln_2)
-            else:
-                x = self.ln_2(x)
+            x = self.ln_2(x)
             x = self.residual2(x, self.mlp(x))
             #x = x + self.attn(self.ln_1(x))
             #x = x + self.mlp(self.ln_2(x))
