@@ -4,13 +4,10 @@ from torch import nn
 from torch.nn import functional as F
 from qtransform.model import modules as custom_nn
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 from brevitas.inject.defaults import Uint8ActPerTensorFloat
 from brevitas.nn.quant_layer import ActQuantType
 from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
-from brevitas import nn as qnn
-from brevitas.nn import utils as qutils
-from brevitas.proxy import WeightQuantProxyFromInjector, BiasQuantProxyFromInjector
 from qtransform import device_singleton
 
 __all__ = ['EltwiseAdd']
@@ -62,11 +59,18 @@ class BatchNorm(nn.BatchNorm1d):
             #input tensor should always be three dimensional
             padding = torch.zeros(n, self.num_features - c, l).to(device=input.device)
             input = torch.cat((input, padding), dim=1)
+            del padding
         input = super().forward(input, *args, **kwargs)
         #remove padding
         #input tensor of shape [N,C,L] gets padded to shape [N, F, L] (F >= C) and then unpadded to shape [N,C,L] 
         return input[:,None:c]
 
+class InstanceNorm(nn.InstanceNorm1d):
+    """
+    Boilerplate class to enable specifying InstanceNorm instead of InstanceNorm1d
+    """
+    def __init__(self,num_features, eps=1e-5, momentum=0.1, affine=False, track_running_stats=False):
+        super().__init__(num_features=num_features, eps=eps, momentum=momentum, affine=affine, track_running_stats=track_running_stats)
 
 class QuantGELU(QuantNLAL):
     """Does not work so well"""
@@ -84,56 +88,6 @@ class QuantGELU(QuantNLAL):
             act_quant=act_quant,
             return_quant_tensor=return_quant_tensor,
             **kwargs)
-        
-
-
-def compute_channel_view_shape(tensor: torch.Tensor, channel_dim: int):
-    """
-        copied from: brevitas.nn.utils.compute_channel_view_shape
-    """
-    broadcast_shape = [1] * len(tensor.size())
-    broadcast_shape[channel_dim] = -1
-    return tuple(broadcast_shape)
-
-## TODO test this
-## TODO maybe specify in args if batch norm is performed during input or output projection
-def merge_bn_mha(layer, bn, output_channel_dim=0):
-    #retrieve learnable parameters from batchnorm (scale + bias)
-    out = qutils.mul_add_from_bn(
-        bn_mean=bn.running_mean,
-        bn_var=bn.running_var,
-        bn_eps=bn.eps,
-        bn_weight=bn.weight.data.clone(),
-        bn_bias=bn.bias.data.clone())
-    mul_factor, add_factor = out #scalar values
-    #out_proj is QuantLinear(in_features=embd_dim, out_features=embd_dim)
-    out_ch_weight_shape = qutils.compute_channel_view_shape(layer.out_proj.weight, output_channel_dim)
-    #apply batchnorm during after forward pass of layer, before returning result
-    layer.out_proj.weight.data.mul_(mul_factor.view(out_ch_weight_shape))
-    if layer.out_proj.bias is not None:
-        out_ch_bias_shape = qutils.compute_channel_view_shape(layer.out_proj.bias, channel_dim=0)
-        layer.out_proj.bias.data.mul_(mul_factor.view(out_ch_bias_shape))
-        layer.out_proj.bias.data.add_(add_factor.view(out_ch_bias_shape))
-    else:
-        layer.out_proj.bias = nn.Parameter(add_factor)
-    if (hasattr(layer, 'out_proj_weight_quant') and
-            isinstance(layer.out_proj_weight_quant, WeightQuantProxyFromInjector)):
-        layer.out_proj_weight_quant.init_tensor_quant()
-    if (hasattr(layer, 'out_proj_bias_quant') and isinstance(layer.out_proj_bias_quant, BiasQuantProxyFromInjector)):
-        layer.out_proj_bias_quant.init_tensor_quant()
-
-class LinearForBatchNorm(nn.Linear):
-    """
-    Very experimental linear layer that transposes a tensor of shape [N,C,L] / [C,L]
-    into shape [N,L,C] / [L,C], performs linear transformation on it and then transposes it back.
-    It probably is not useful as that would imply performing linear transformation on exactly one embedding
-    of each word and then adding the result together.
-    """
-    def __init__(self, num_features: int, bias= True, *args, **kwargs):
-        super().__init__(num_features, num_features, bias, *args, **kwargs)
-    
-    def forward(x):
-        return super().forward(x.transpose(-1,-2)).transpose(-1,-2)
 
 class CausalSelfAttention(nn.Module):
     """
@@ -146,20 +100,22 @@ class CausalSelfAttention(nn.Module):
         self.n_embd = config.n_embd
         self.dropout = config.dropout
         self.block_size = config.block_size
-        qnn.QuantMultiheadAttention
         self.mha = nn.MultiheadAttention(config.n_embd, config.n_head, dropout=self.dropout, batch_first=True)
-        self.attn_mask = torch.nn.parameter.Parameter(torch.tril(torch.ones((config.block_size,config.block_size)))) # limit to left in the input sequence
         self.flash = config.flash
+        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        self.resid_dropout = nn.Dropout(config.dropout)
+        #since synthesis cannot use is_causal due to bool dtype and brevitas mha does not have is_causal in forward pass function
+        bias = torch.ones(config.block_size, config.block_size).tril(diagonal=0)
+        #torch.mha uses torch.nn.functional.scaled_dot_product_attention, attention mask is added (plus operation) to attention
+        #meaning: explicitly use negative infinity to prevent adding zero instead of masking that value during softmax
+        bias = bias.masked_fill(bias == 0, float('-inf'))
+        self.register_buffer("bias", bias)
         # in case we need to do attention by hand:
         if (not self.flash) or torch.__version__[3] < 2:
             log.warn("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.2")
             # causal mask to ensure that attention is only applied to the left in the input sequence
-            self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
-                                        .view(1, 1, config.block_size, config.block_size))
             self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-            self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
             self.attn_dropout = nn.Dropout(config.dropout)
-            self.resid_dropout = nn.Dropout(config.dropout)
         #print(self.flash)
         #print(torch.__version__[2])
 
@@ -167,39 +123,44 @@ class CausalSelfAttention(nn.Module):
         #print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!HELP ME")
         # this if block is needed for toprch <2.21 where flash attention onnx export does not work
 
-        #if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash): #or torch.__version__ < (2,21):
-#
-        #    #log.warn("Using slower self attention for non quantized execution if torch does not support it or if flash == False")
-        #    B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
-        #    # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        #    q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
-        #    k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        #    q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        #    v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        #    # manual implementation of attention
-        #    att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        #    att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
-        #    att = F.softmax(att, dim=-1)
-        #    att = self.attn_dropout(att)
-        #    y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        #    y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
-#
-        #    # output projection
-        #    y = self.resid_dropout(self.c_proj(y))
-        #else:
-            #QuantMultiheadAttention does not have is_causal in constructor -> use attention mask instead
-
-
-        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
-        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
-        q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
-        #k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        #q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        #v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        y, weights = self.mha(q, k, v, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
+        '''if not type(self.mha).__name__ == "QuantMultiheadAttention" and (not self.flash): #or torch.__version__ < (2,21):
         
-        
-        #y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
+            log.warn("Using slower self attention for non quantized execution if torch does not support it or if flash == False")
+            B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+            #    # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+            q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
+            k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+            q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+            v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+            #    # manual implementation of attention
+            att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+            att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+            att = F.softmax(att, dim=-1)
+            att = self.attn_dropout(att)
+            y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
+            y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side'''
+        if False:
+            pass
+        else:
+            """
+            from scaled dot product attention:
+                L: context, S: embedding dimension
+                L, S = query.size(-2), key.size(-2)
+                scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
+                attn_bias = torch.zeros(L, S, dtype=query.dtype)
+                if is_causal:
+                    assert attn_mask is None
+                    temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
+                    attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
+                    attn_bias.to(query.dtype)
+
+            """
+            N, C, L = x.size()
+            #TODO: with torch version 2.0, output becomes nan when model is in eval mode. outside of CausalSelfAttention, mha does not return nan
+            #      tensors during eval mode
+            #due to inference, input features can be lower than specified max context length which causes problem during attention calculation
+            y, weights = self.mha(x, x, x, attn_mask=self.bias[:C,:C], need_weights=False) # Q, K, V, attn_mask y
+        y = self.resid_dropout(self.c_proj(y))
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
         return y
 from logging import getLogger
@@ -241,16 +202,12 @@ class TransformerBlock(nn.Module):
             self.norm_size = config.n_embd
             #dummy layers which do nothing in order to merge with batchnorm layers
             #that also means including some bloat layers
-            self.custom_ln1 = nn.Identity()
-            self.custom_ln2 = nn.Identity()
-        elif config.norm_layer == "BatchNorm":
+            #self.custom_ln1 = nn.Identity()
+            #self.custom_ln2 = nn.Identity()
+        elif config.norm_layer in ["BatchNorm", "InstanceNorm"]:
             self.norm_size = config.block_size
-            #should do the same as quantidentity as long as requires_grad is set to False
-            #after merging with batchnorm, should scale input to have a mean of 0 and a standard deviation of 1
-            #TODO: should they be trainable before/ after merging?
-            #      layers are not moved to cuda with model.to(device). for now, workaround by specifying device in constructor
-            self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
-            self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
+            #self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
+            #self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
         elif config.norm_layer == "None":
             self.norm_size = None
         else:
@@ -267,13 +224,15 @@ class TransformerBlock(nn.Module):
         self.residual2 = custom_nn.EltwiseAdd()
         self.attn = CausalSelfAttention(config)
         self.mlp = MLP(config)
+        #necessary for quantized batchnorm to create quanttensor from tensor
+        self.identity = torch.nn.Identity()
 
     def forward(self, x):
         if self.norm_size:
-            x = self.custom_ln1(x)
-            x = self.residual1(x, self.attn(self.ln_1(x)))
-            x = self.custom_ln2(x)
-            x = self.residual2(x, self.mlp(self.ln_2(x)))
+            x = self.ln_1(x)
+            x = self.residual1(x, self.attn(x))
+            x = self.ln_2(x)
+            x = self.residual2(x, self.mlp(x))
             #x = x + self.attn(self.ln_1(x))
             #x = x + self.mlp(self.ln_2(x))
         else:

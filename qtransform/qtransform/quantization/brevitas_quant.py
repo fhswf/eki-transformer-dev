@@ -131,11 +131,11 @@ class BrevitasQuantizer(Quantizer):
                 log.debug(f'Replacing batchnorm "{layer_name}')
                 #custom quantizers redundant when quantizing before export as default qparams are set to default
                 new_bn = QuantBatchnorm1d(layer.num_features, **quantizers)
-                bn: QuantBatchNorm1d = replace_bn(layer, new_bn, qat=True)
+                bn: QuantBatchnorm1d = replace_bn(layer, new_bn, qat=True)
                 return bn 
             else:
-                log.warning(f'Quantization of batchnorm should be ')
-                return layer
+                log.debug(f'Quantizing batchnorm {layer_name}')
+                layer_type = "BatchNorm1d"
 
         #filter every class which contains name of layer to be quantized
         # -> MultiheadAttention: QuantMultiheadAttention, BatchNorm1d: BatchNorm1dQuantToScaleBias

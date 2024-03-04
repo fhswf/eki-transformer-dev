@@ -3,10 +3,12 @@ command: train
 always_save_checkpoint : True # if True, always save a checkpoint after each eval
 # model_chkpt_dir: ${oc.env:HOME}
 checkpoint_dir: models
+from_checkpoint: #specify checkpoint to train from absolute path or relative to checkpoint_dir 
 epochs: 10
 gradient_accumulation_steps : 1 # used to simulate larger batch sizes, leave empty or set to 1 for no accumulation
 flash: False
 export: True ## perform an export after #epochs are done
+compile: True
 max_iters : 500 # number of training iterations for one epoch. total number of iterations: max_iters * epochs
 save_epoch_interval: 1
 log_steps_interval : 10
@@ -15,6 +17,15 @@ grad_clip : 0.7 # clip gradients at this value, or disable if :: 0.0
 eval_epoch_interval : 1000 #perform eval after specified amount of epochs
 eval_iters: 200 #retrieve specified amount of batches for evaluation
 
+#TODO: profiling can display a lot of information at the cost of readability. toggling args could prevent it at the cost of
+#      omiting resource details
+profile: #display resource consumption for each epoch
+  active: False
+  args:
+    record_shapes: True
+    profile_memory: True
+    use_cuda: True
+  row_limit: 10 #amount of operations to display on profiling. by default: 10
 #moved optimizer stuff (lr, optimizer class, lr decay) to qtransform.optim
 
 # export params are loaded from export.yaml

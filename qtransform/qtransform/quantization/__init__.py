@@ -273,8 +273,6 @@ from types import ModuleType
 import qtransform.quantization as package_self
 from re import search, subn, match, IGNORECASE
 
-
-
 @dataclass
 class LayerQuantConfig:
     #if a field is not wrapped within Optional[], it should be set
@@ -319,13 +317,6 @@ class LayerQuantConfig:
         #empty dict to avoid None checking every time
         if self.args is None:
             self.args = dict()
-        #brevitas batchnorm normalizes along batch size (dim 0) instead of features (dim 1)
-        #solution is to merge batchnorm into either the previous layer or into a custom BatchNorm layer
-        #which performs simple scaling
-        if match(r'batchnorm', self.layer_type, IGNORECASE):
-            log.warning(f'Quantization for Batchnorm is performed by replacing it with a linear layer ' \
-                f'during export, thereby ignoring the config (for: {self.name}). ')
-            self.replace_later = True
         #our brevitas fork implements quantization of layernorm, TODO: test
         elif match(r'layernorm', self.layer_type, IGNORECASE) and self.LAYERNORM_WARN:
             log.warning(f'The quantization of layernorm was implemented by us as it did not exist ' \

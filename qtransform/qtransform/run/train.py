@@ -16,6 +16,7 @@ from qtransform import device_singleton
 from qtransform.utils.helper import load_state_dict_proxy
 from time import time
 log = logging.getLogger(__name__)
+from torch.profiler import profile, record_function, ProfilerActivity
 
 def run(cfg: DictConfig):
     """ launches training with provided config"""
@@ -24,6 +25,7 @@ def run(cfg: DictConfig):
     log.info("================")
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
+    torch.autograd.set_detect_anomaly(True)
     #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
     ## note: float16 data type will automatically use a GradScaler
     #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
@@ -83,6 +85,8 @@ def run(cfg: DictConfig):
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model.to(device=device)
+    #if torch.__version__ >= (2,0) and cfg.run.compile:
+    #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
 
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
@@ -99,6 +103,7 @@ def run(cfg: DictConfig):
         from qtransform.quantization import get_quantizer
         quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+        model.to(device=device)
         # TODO make this a decorator so it can return stuff
         last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
         #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 
@@ -145,7 +150,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         log.warn("cfg.run.epochs is 0, performing mini training dry run")
         mini_run = True
 
-    if "from_checkpoint" in cfg.run and cfg.run.from_checkpoint:
+    if "from_checkpoint" in cfg.run and isinstance(cfg.run.from_checkpoint, str):
         log.info(f"Resuming training from {cfg.run.from_checkpoint}")
         from_epoch, checkpoint = load_checkpoint(cfg)
         log.info(f"Epoch is {from_epoch}, running for {cfg.run.epochs}")
@@ -191,7 +196,19 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         #dataloader always returns the same tensors after each epoch because it is casted inside of function call
         #therefore, cast it before training
         #TODO: find a more elegant solution, maybe by manipulating its seed with a torch.Generator?
-        metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
+        if cfg.run.profile.active:
+            activities = [ProfilerActivity.CPU]
+            if device.type == 'cuda':
+                activities.append(ProfilerActivity.CUDA)
+            row_limit = cfg.run.profile.row_limit
+            if not isinstance(row_limit, int):
+                row_limit = 10
+            with profile(activities=activities, **cfg.run.profile.args) as prof:
+                with record_function(f'TRAIN EPOCH {epoch}'):
+                    metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
+            log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
+        else:
+            metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
 
         ## eval
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
@@ -205,6 +222,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
             last_checkpoint: str = save_checkpoint(cfg=cfg, 
                 model=model, 
                 optimizer=optimizer, 
+                dataset=cfg.dataset.name,
                 timestamp=timestamp, 
                 epoch=epoch, 
                 metrics=metrics, 
@@ -215,11 +233,15 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         if scheduler is not None:
             scheduler.step()
             new_lr = scheduler.get_last_lr()[0]
-        log.debug(f'New learning rate: {new_lr}')
+            log.debug(f'New learning rate: {new_lr}')
     return last_checkpoint
 
-def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],
-           optimizer: optim.Optimizer, mini_run: bool=False) -> Any:
+def train_one_epoch(cfg: DictConfig, 
+        device, 
+        model: nn.Module, 
+        train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],
+        optimizer: optim.Optimizer, 
+        mini_run: bool=False) -> Any:
     """ training loop over steps/batches """
     model.train() #if it was quantized, it could have been set to eval
     last_loss = 0
@@ -233,6 +255,9 @@ def train_one_epoch(cfg: DictConfig, device, model: nn.Module, train_data: Union
     if not isinstance(gradient_accumulation_steps, int):
         gradient_accumulation_steps = 1
     train_batch_time = time()
+    #avoid printing out loss of zero 
+    if cfg.run.max_iters < cfg.run.log_steps_interval:
+        cfg.run.log_steps_interval = cfg.run.max_iters
     for i in range(1, cfg.run.max_iters+1):
         loss = None #remember last loss of mini-batch
         #break one iteration down into multiple batches to simulate a larger batch size

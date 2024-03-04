@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from qtransform import device_singleton
 log = logging.getLogger(__name__)
 from omegaconf import DictConfig, open_dict
+import hydra
 from torch import nn
 import torch
 import tiktoken
@@ -12,8 +13,8 @@ from os.path import isdir, exists, join, expanduser, isabs
 from os import makedirs, getcwd, makedirs
 from datetime import datetime
 from . import generate, load_model, ModelData
-import matplotlib.pyplot as plt
 import numpy as np
+from qtransform.dataset.tokenizer.tokenizer import Tokenizer
 
 @dataclass
 class InferConfig():
@@ -34,15 +35,14 @@ class InferConfig():
     onnx_model: dict = None
     compile: bool = True
 
+    debug: bool = False
+
 def run(cfg : DictConfig):
     """ Inference """
     log.info("=================")
     log.info("Running Inference")
     log.info("=================")
-    #cuda does not work as some unnamed tensors are still on cpu
-    #TODO: find them and make them parameters
-    #device_singleton.device = cfg.device
-    device_singleton.device = 'cpu'
+    device_singleton.device = cfg.device
     device = device_singleton.device
 
     torch.manual_seed(cfg.seed)
@@ -103,6 +103,17 @@ def infer(cfg: DictConfig, device: Any):
     out_dir = cfg.run.get('out_dir', '')
     #infer for onnx and checkpoint
     for model_data in models:
+        if isinstance(model_data.model, nn.Module):
+            if torch.__version__ >= (2,0) and cfg.run.compile: 
+                model = torch.compile(model) # requires PyTorch 2.0 (optional)
+            model_data.model.eval()
+
+        if cfg.debug:
+            #ignore our inference, use karpathy's 
+            start_ids = tokenizer.encode(start, infer=True)
+            x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+            sample(model_data.model, tokenizer=model_data.tokenizer, start_ids=x)
+            continue
         #inference yields generator in case something should be done before returning entire output
         gen_infer = write_inference(model_data)
         #write samples into file
@@ -135,3 +146,12 @@ def infer(cfg: DictConfig, device: Any):
                 print(text)
 
 
+def sample(model: torch.nn.Module, tokenizer: Tokenizer, infer_cfg: InferConfig):
+    """karpathy implementation"""
+    # run generation
+    with torch.no_grad():
+        with ctx:
+            for k in range(infer_cfg.num_samples):
+                y = model.generate(x, max_new_tokens = infer_cfg.max_new_tokens, temperature=infer_cfg.temperature, top_k=infer_cfg.top_k)
+                print(tokenizer.decode(y[0].tolist()))
+                print('---------------')
