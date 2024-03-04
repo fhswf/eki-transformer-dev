@@ -274,14 +274,8 @@ def train_one_epoch(cfg: DictConfig,
                 outputs, loss = model(inputs, labels)
             else:
                 outputs, _ = model(inputs)
-                #TODO: debug nll_loss
-                #print(labels.size())
-                #print(labels[:,-1].size())
-                #print(outputs.size())
-                _, preds = torch.max(F.log_softmax(outputs, dim=2), 2)
-                #print(preds.size())
-                # F.log_softmax(outputs, dim=2)
-                loss = F.nll_loss(preds, labels[:,-1])
+                outputs = F.log_softmax(outputs, dim=2)
+                loss = F.nll_loss(outputs.view(-1, outputs.size(-1)),labels.view(-1), ignore_index=-1)
             loss /= gradient_accumulation_steps #make all mini-batches account as one large batch
             loss.backward()
         #clip gradients to prevent vanishing/exploding gradient problem
@@ -331,8 +325,9 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
         if cfg.model.calc_loss_in_model:
             voutputs, vloss = model(vinputs, vlabels)
         else:
-            voutputs = model(vinputs)
-            vloss = F.nll_loss(voutputs, vlabels)
+            voutputs, _ = model(vinputs)
+            voutputs_softmax = torch.nn.functional.log_softmax(voutputs, dim=2)
+            vloss = torch.nn.functional.nll_loss(voutputs_softmax.view(-1, voutputs_softmax.size(-1)),vlabels.view(-1), ignore_index=-1)
         # print(vloss)
         vlosses[i] = vloss.item()
         i += 1
