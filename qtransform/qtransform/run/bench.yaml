@@ -2,7 +2,7 @@ command: "bench"
 el: 2
 num_samples: ??? #amount of samples to retrieve when benchmarking. the length of one sample is equal to the model's block size
 out_dir: ''
-
+profile: True
 checkpoint_dir: models
 from_checkpoint: 
 row_limit: 10 #amount of rows (torch operations) to display on resource profiler

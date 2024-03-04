@@ -92,5 +92,4 @@ class DeviceSingleton:
         self._device = device(new_device)
         log.info(f'Device specified: {value}. Using device: {new_device}')
 
-
 device_singleton = DeviceSingleton()

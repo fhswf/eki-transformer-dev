@@ -72,7 +72,7 @@ class GPT(nn.Module):
             self.norm_size = None
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
-        
+        print(config.vocab_size, config.n_embd)
         if self.norm_size:
             ln_out = getattr(custom_nn, config.norm_layer, None)
             self.transformer = nn.ModuleDict(dict(
@@ -164,7 +164,10 @@ class GPT(nn.Module):
                 #squeeze batch and block_size dimension together, retain non-softmaxed word probabilities
                 #logits become a 1d tensor, containing the index of the next word
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-
+                #if not self.training:
+                    #print(loss, logits.size(), targets.size())
+                    #print(logits)
+                    #print(logits.view(-1, logits.size(-1)) , targets.view(-1))
         return logits, loss
 
     def crop_block_size(self, block_size):

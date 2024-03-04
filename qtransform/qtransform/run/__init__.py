@@ -146,6 +146,7 @@ def forward_pass(model_type: InferType, model: Union[nn.Module, ModelWrapper], i
             odict = execute_onnx(model, idict)
             logits = torch.from_numpy(odict["output"])
         case InferType.CHECKPOINT:
+            model.eval()
             logits, _ = model(idx_cond)
         case _:
             log.error(f'Forward pass only supported for ONNX models or checkpoints')

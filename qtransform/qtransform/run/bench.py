@@ -65,13 +65,19 @@ def run(cfg : DictConfig):
         row_limit = 10
     #load model
     models: List[ModelData] = load_model(cfg, device)
-    #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
-    activities = ProfilerActivity.CPU if device.type == 'cpu' else ProfilerActivity.CUDA 
-    for i, model_data in enumerate(models):
-        with profile(activities=[activities], profile_memory=True, record_shapes=True) as prof:
-            with record_function(f'BENCHMARK: {model_data.type.name}'):
-                log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')
-        log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
+    
+    if cfg.run.profile:
+        #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
+        activities = ProfilerActivity.CPU if device.type == 'cpu' else ProfilerActivity.CUDA 
+        for i, model_data in enumerate(models):
+            with profile(activities=[activities], profile_memory=True, record_shapes=True) as prof:
+                with record_function(f'BENCHMARK: {model_data.type.name}'):
+                    log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')
+            log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
+    else:
+        for i, model_data in enumerate(models):
+            log.info(f'BENCHMARK for : {model_data.type.name}')
+            log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')
 
 def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
     perplexity = torch.zeros(cfg.run.num_samples)
@@ -87,8 +93,6 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
         log.warning(f'Benchmarking for ONNX models not implemented yet.')
         return None
     
-    #TODO: for some reason, script gets killed due to insufficient memory
-    #      cache gets cleared and data from dataloader alongside outputs are deleted, not sure why error still persists
     for i, data in enumerate(bench_dataloader):
         counter += 1
         if i >= cfg.run.num_samples:
@@ -97,21 +101,17 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
         inputs = inputs.to(device_singleton.device)
         labels = labels.to(device_singleton.device)
         output = forward_pass(model_data.type, model_data.model, inputs)
-        del inputs
         if isinstance(output, tuple):
             logits = output[0]
         else:
             logits = output
         probs = F.softmax(logits, dim=-1)
-        del output
-        del logits
-        perplexity[i] = measure_perplexity(probs, labels)
-        #accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+        with torch.no_grad():
+            probs = F.softmax(logits, dim=-1)
+            perplexity[i] = measure_perplexity(probs, labels)
+            accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
         #other_perplexity += measure_perplexity(probs, labels)
         #other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
-        del probs
-        del labels
-        del data
         torch.cuda.empty_cache()
     #table printing from: https://learnpython.com/blog/print-table-in-python/
     #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
