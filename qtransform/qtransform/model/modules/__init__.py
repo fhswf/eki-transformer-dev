@@ -188,7 +188,18 @@ class CausalSelfAttention(nn.Module):
         #    y = self.resid_dropout(self.c_proj(y))
         #else:
             #QuantMultiheadAttention does not have is_causal in constructor -> use attention mask instead
-        y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
+
+
+        B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
+        # calculate query, key, values for all heads in batch and move head forward to be the batch dim
+        q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
+        #k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        #q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        #v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        y, weights = self.mha(q, k, v, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
+        
+        
+        #y, weights = self.mha(x, x, x, attn_mask=self.attn_mask if self.training else None, need_weights=False) # Q, K, V, attn_mask y
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
         return y
 from logging import getLogger

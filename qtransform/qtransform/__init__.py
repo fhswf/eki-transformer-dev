@@ -1,8 +1,8 @@
-from logging import getLogger
+import logging
 import os
 from contextlib import contextmanager
 from torch import device, cuda, backends
-log = getLogger(__name__)
+log = logging.getLogger(__name__)
 
 def get_module_config_path():
     return os.path.join('/'.join(__file__.split('/')[:-2]), 'qtransform' , 'conf')
@@ -13,7 +13,7 @@ def main(cfg):
     mn.main(cfg)
 
 
-def jls_extract_def():
+def jls_extract_def(loglevel=logging.INFO):
     from hydra import initialize, initialize_config_module, initialize_config_dir, compose
     from omegaconf import OmegaConf
     import qtransform 
@@ -25,39 +25,39 @@ def jls_extract_def():
         config = yaml.load(stream, Loader=yaml.FullLoader)
     
     logging.config.dictConfig(config)
-    logging.getLogger().setLevel(logging.INFO) 
+    logging.getLogger().setLevel(loglevel) 
     return initialize_config_dir, config_path, compose
 
-def notebook_run(args):
-    initialize_config_dir, config_path, compose = jls_extract_def()
+def notebook_run(args, loglevel):
+    initialize_config_dir, config_path, compose = jls_extract_def(loglevel)
     with initialize_config_dir(version_base=None, config_dir=config_path):
         cfg = compose(config_name="config.yaml", overrides=args)
         print(cfg)
         main(cfg)
 
 @contextmanager
-def with_hyrda(arg):
+def with_hyrda(arg, loglevel):
     """creates a global cfg variable from hydra run config"""
-    initialize_config_dir, config_path, compose = jls_extract_def()
+    initialize_config_dir, config_path, compose = jls_extract_def(loglevel)
     with initialize_config_dir(version_base=None, config_dir=config_path):
         global cfg
         old_cfg = cfg
         cfg = compose(config_name="config.yaml", overrides=arg)
-        log = getLogger(__name__)
+        log = logging.getLogger(__name__)
         log.info(f"Hydra compose config is: {cfg}")
         yield
         cfg = old_cfg
 
-def with_config(arg):
+def with_config(arg, loglevel):
     """simiar to with_hyrda but only for singular function definition"""
     def wrapper_decorator(func):
         def wrapped_func(*args, **kwargs):
-            initialize_config_dir, config_path, compose = jls_extract_def()
+            initialize_config_dir, config_path, compose = jls_extract_def(loglevel)
             with initialize_config_dir(version_base=None, config_dir=config_path):
                 cfg = compose(config_name="config.yaml", overrides=arg)
-                log = getLogger(__name__)
+                log = logging.getLogger(__name__)
                 log.info(f"Hydra compose config is: {cfg}")
-                func(cfg, *args, **kwargs)
+                return func(cfg, *args, **kwargs)
         return wrapped_func
     return wrapper_decorator
 
