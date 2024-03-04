@@ -105,13 +105,13 @@ def run(cfg: DictConfig):
         model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         model.to(device=device)
         # TODO make this a decorator so it can return stuff
-        last_checkpoint = quantizer.train_qat(model, train, [cfg, data_wrapper.tokenizer, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
+        last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
         #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 
         if replace_layers_later is not None:
             model = quantizer.get_quantized_model(replace_layers_later)
     else:
         #if hasattr(log,"trace"): log.trace(model)
-        last_checkpoint = train(cfg=cfg, tokenizer=data_wrapper.tokenizer, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
+        last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
     # maybe subsequent jobs can be managed by hydra in the future?
     # when this paradigm comes up more frequently we have to make this a thing ....
     log.debug("Finished training model")
@@ -138,7 +138,7 @@ def run(cfg: DictConfig):
         #write checkpoint into fifo
         write_to_pipe(cfg, last_checkpoint)
         
-def train(model: nn.Module, tokenizer, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
+def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
     #print(model)
@@ -205,10 +205,10 @@ def train(model: nn.Module, tokenizer, cfg: DictConfig, device, train_data_loade
                 row_limit = 10
             with profile(activities=activities, **cfg.run.profile.args) as prof:
                 with record_function(f'TRAIN EPOCH {epoch}'):
-                    metrics = train_one_epoch(cfg, tokenizer, device, model, iter(train_data_loader), optimizer, mini_run)
+                    metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
             log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
         else:
-            metrics = train_one_epoch(cfg, tokenizer, device, model, iter(train_data_loader), optimizer, mini_run)
+            metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
 
         ## eval
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
@@ -237,7 +237,6 @@ def train(model: nn.Module, tokenizer, cfg: DictConfig, device, train_data_loade
     return last_checkpoint
 
 def train_one_epoch(cfg: DictConfig, 
-        tokenizer, 
         device, 
         model: nn.Module, 
         train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],

@@ -2,6 +2,7 @@ import logging
 import os
 from contextlib import contextmanager
 from torch import device, cuda, backends
+import torch
 log = logging.getLogger(__name__)
 
 def get_module_config_path():
@@ -91,5 +92,6 @@ class DeviceSingleton:
                 new_device = 'cpu'
         self._device = device(new_device)
         log.info(f'Device specified: {value}. Using device: {new_device}')
+        # torch.set_default_device(self._device) # does not work for dataloader forks....
 
 device_singleton = DeviceSingleton()

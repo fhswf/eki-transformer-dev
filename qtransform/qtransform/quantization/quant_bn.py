@@ -6,6 +6,7 @@ from typing import Optional, Union
 from brevitas.quant_tensor import QuantTensor
 from torch.nn import BatchNorm1d
 import torch
+from qtransform import device_singleton
 from brevitas.quant_tensor import QuantTensor
 from typing import Union
 #test if a quantized layer can be implemented which basically scales the values along a tensor and adds a bias, thereby simulating batch normalization
@@ -20,7 +21,9 @@ def check_shapes(tensor: torch.Tensor) -> torch.Tensor:
     """
     shape_tensor = tensor.size()
     if len(shape_tensor) == 1:
-        tensor = tensor[:,None]
+        tensor1 = torch.reshape(tensor, (list(tensor.size()) + list([1])))
+        tensor = tensor1
+        #tensor = torch.unsqueeze(tensor, 1)
     if len(shape_tensor) == 2:
         if shape_tensor[0] > 1 and shape_tensor[1] > 1:
             raise ValueError(f'Too many values to unpack for tensor {shape_tensor}.')
@@ -70,7 +73,7 @@ class CustomBatchNorm1d(TorchModule):
     weight: torch.nn.Parameter
     bias: torch.nn.Parameter
 
-    def __init__(self, num_features: int, requires_grad = True, device: Union[torch.device, None] = None, dtype = None):
+    def __init__(self, num_features: int, requires_grad = True, device: Union[torch.device, None] = device_singleton.device, dtype = None):
         """
         Dummy replacement layer for the params of BatchNorm1d. The pre-existing batchnorm layer can either be merged into this class
         or completely replaced with it. Either way, the weight and bias parameters of this class are set to the calculated values from
@@ -91,7 +94,8 @@ class CustomBatchNorm1d(TorchModule):
             #make sure that weight and bias tensor are always of size (C, 1)
             #weird behavior that removes parameter if value is not wrapped around torch.nn.Parameter
             #not sure if requires_grad needs to be set within both parameter and tensor
-            super().__setattr__(name, torch.nn.Parameter(check_shapes(value).requires_grad(self.requires_grad), requires_grad=self.requires_grad))
+            value = torch.nn.Parameter(check_shapes(value), requires_grad=self.requires_grad)
+            super().__setattr__(name, value)
         else:
             super().__setattr__(name, value)
 
