@@ -1,16 +1,16 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
 throw_errors_on_duplicate : False #If the same layer has multiple configs within this file, pick the last one and throw warnings. Otherwise, throw an error and exit
 layers:
-    transformer.r'w[tp]e': 
-      quantize: True
-      layer_type: Embedding
-      quantizers: 
-        weight: 
-          #type: weight
-          #order of overriding: default_quantizer, then template, then args
-          default_quantizer: Int8WeightPerTensorFloat
-          args:
-            bit_width: 8
+    #transformer.r'w[tp]e': 
+    #  quantize: True
+    #  layer_type: Embedding
+    #  quantizers: 
+    #    weight: 
+    #      #type: weight
+    #      #order of overriding: default_quantizer, then template, then args
+    #      default_quantizer: Int8WeightPerTensorFloat
+    #      args:
+    #        bit_width: 8
     transformer.dropout: 
       quantize: True
       layer_type: Dropout #no quantizers for dropout possible, what is the default behavior then?
@@ -54,90 +54,23 @@ layers:
       #args:
       #  return_quant_tensor: True
 
-    transformer.ln_out:
+    # transformer Ident after BatchNorm heads 
+    transformer.layer.r'[0-9]+'.r'ln_[0-9].id':
       quantize: True
-      #it still is open whether a custom layer with their own weights and biases shoud entirely replace batchnorm (CustomBatchNorm1d)
-      #or the current params of the batchnorm layer should be merged into the previous layer
-      #depending on the option, the quantargs would be applied on different layers
-      layer_type: BatchNorm1d
-      quantizers:
-        weight:
-          default_quantizer: Int8WeightPerTensorFloat
-          args: 
-            bit_width: 8
-        input:
-          default_quantizer: Int8ActPerTensorFloat
-          args: 
-            bit_width: 8
-        bias:
-          default_quantizer: Int32Bias
-          args: 
-            bit_width: 8
-      #args:
-      #  replace_bn: False #replace with CustomBatchNorm1d, lose running_mean and running_var
-      #  merge_bn: custom_ln1 #name of the layer that batchnorm should be merged with.
-
-
-    #transformer.ln_out:
-    #  quantize: True
-    #  layer_type: Identity
-    #  quantizers: 
-    #    weight:
-    #      default_quantizer: Int8WeightPerTensorFloat
-    #      args:
-    #        bit_width: 8
-
-    # last layer of our model, does the projection towards embeddings
-    # TODO curretnly does prevent the model from converging
-    #linear_out:
-    #  quantize: True
-    #  layer_type: Linear
-    #  quantizers: 
-    #    weight:
-    #      default_quantizer: Int8WeightPerTensorFloat
-          #args:
-          #  bit_width: 8
-        #input:
-        #  default_quantizer: Int8ActPerTensorFloat
+      layer_type: Identity
+      quantizers: 
+        #weight:
+        #  default_quantizer: Int8WeightPerTensorFloat
         #  args:
         #    bit_width: 8
-        #bias:
-        #  default_quantizer: Int8BiasPerTensorFloatInternalScaling
-          #args:
-          #  bit_width: 8
-
-    #transformer Norm for  heads 
-    transformer.layer.r'[0-9]+'.r'ln_[0-9]':
-      quantize: True
-      #it still is open whether a custom layer with their own weights and biases shoud entirely replace batchnorm (CustomBatchNorm1d)
-      #or the current params of the batchnorm layer should be merged into the previous layer
-      #depending on the option, the quantargs would be applied on different layers
-      layer_type: BatchNorm1d
-      quantizers:
-        weight:
-          default_quantizer: Int8WeightPerTensorFloat
-          args: 
-            bit_width: 8
-        input:
+        act:
           default_quantizer: Int8ActPerTensorFloat
-          args: 
+          args:
             bit_width: 8
-        bias:
-          default_quantizer: Int32Bias
-          args: 
-            bit_width: 8
-      #args:
-      #  replace_bn: False #replace with CustomBatchNorm1d, lose running_mean and running_var
-      #  merge_bn:  #name of the layer that batchnorm should be merged with.
+      args:
+        return_quant_tensor: True
 
-    #transformer.layer.r'[0-9]+'.r'ln_[0-9]':
-    #  quantize: True
-    #  layer_type: Identity
-    #  quantizers: 
-    #    weight:
-    #      default_quantizer: Int8WeightPerTensorFloat
-    #      args:
-    #        bit_width: 8
+  
 
     #Feed forward neural network
     transformer.layer.r'[0-9]+'.mlp.r'c_.+':

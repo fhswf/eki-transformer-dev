@@ -1,0 +1,15 @@
+cls: GPT
+calc_loss_in_model: True
+args:
+  n_layer : 4
+  n_head : 4
+  n_embd : 256
+  dropout : 0.2 # for pretraining 0 is good, for finetuning try 0.1+
+  bias : True # do we use bias inside LayerNorm and Linear layers? # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+  block_size : 64
+  vocab_size : 50304
+  transformer_active_func: ReLU
+  norm_layer: BatchNormIdPure
+  flash: False
+  single_output: False
+  use_weight_tying: True

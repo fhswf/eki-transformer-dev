@@ -21,3 +21,5 @@ do
     qtransform run=train model=$model run.epochs=4 $data  dataset/tokenizer=tiktoken $tokenizer
 done
 
+qtransform run=train model=gpt_2_h2l2e256b64_ReBNP dataset=huggingface dataset.name=wikitext dataset.subset=wikit
+ext-103-raw-v1 +export=True run.epochs=10  dataset/tokenizer=tiktoken dataset.tokenizer.encoding=gpt2 run.max_iters=30000
