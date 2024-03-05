@@ -25,7 +25,7 @@ class HuggingfaceDatasetWrapper(DatasetWrapper):
         super().__init__(cfg)
 
     def create_hf_dataset(self) -> DatasetDict:
-        return load_dataset(self.cfg.name)
+        return load_dataset(path = self.cfg.name, name = self.cfg.subset)
 
     def shuffle(self):
         raise NotImplementedError()

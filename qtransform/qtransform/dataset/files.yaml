@@ -2,14 +2,21 @@ wrapper: FileSystemLLMDatasetWrapper
 #either has to match an entry from links, a dataset from torchvision or a filename (excluding encoding) within dataset directory
 name: ??? #directory name, should contain human-readable text files for tokenization
 module: files
-sizes: #sizes of dataset splits. if omited, assume empty sizes for splits
-  train: 0.7
-  eval: 0.1
-  bench: 1.0
+splits: 
+  names: 
+    #mapping of huggingface splits to our predefined splitnames (train, eval, bench)
+    #if dataset has less than 3 splits, leave splits empty and derive split from training split 
+    train: train
+    eval: validation
+    bench: test
+  sizes:
+    train: 0.9 #ignored usually
+    eval: 0.05
+    bench: 0.05
 args:
   block_size: ${model.args.block_size}
   batches: 1000
-  chunking: False #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
+  chunking: True #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
   chunk_size: 100 
 
 defaults:
