@@ -108,12 +108,12 @@ def infer(cfg: DictConfig, device: Any):
                 model = torch.compile(model) # requires PyTorch 2.0 (optional)
             model_data.model.eval()
 
-        if cfg.debug:
-            #ignore our inference, use karpathy's 
-            start_ids = tokenizer.encode(start, infer=True)
-            x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
-            sample(model_data.model, tokenizer=model_data.tokenizer, start_ids=x)
-            continue
+        #if cfg.debug:
+        #    #ignore our inference, use karpathy's 
+        #    start_ids = tokenizer.encode(start, infer=True)
+        #    x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
+        #    sample(model_data.model, tokenizer=model_data.tokenizer, start_ids=x)
+        #    continue
         #inference yields generator in case something should be done before returning entire output
         gen_infer = write_inference(model_data)
         #write samples into file
