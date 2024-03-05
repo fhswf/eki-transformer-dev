@@ -7,6 +7,7 @@ import qtransform
 from qtransform import classloader
 from dataclasses import dataclass, fields
 from enum import Enum
+from os import listdir
 from os.path import join
 from qtransform.dataset.tokenizer import Tokenizer, get_tokenizer
 import datasets
@@ -22,36 +23,16 @@ class DatasetRunType(Enum):
 @dataclass
 class DatasetSizes:
     """
-        Remember the size of datasets in percent to retain the size when shuffling and to 
-        do checks before data should be loaded. 
+        Remember the size of datasets in percent to create missing dataset splits
     """
     train: float = 0.0 #size of training data
     eval: float = 0.0 #size of the subset of training data to check if model is overfitting
     bench: float = 0.0 
 
-    def __post_init__(self):
-        empty_split = 0 #check how many splits are not empty
-        count = 0
-        for field in fields(self):
-            attr = getattr(self, field.name)
-            if not isinstance(attr, float):
-                log.error(f'{field.name} is not a floating point number.')
-                raise KeyError()
-            if attr < 0.0 or attr > 1.0:
-                log.error(f'Data split {field.name} has to be within range 0.0 and 1.0, not {attr}')
-                raise ValueError()
-            if attr == 0.0:
-                empty_split += 1
-            count += 1
-        if self.eval > 0.0 and self.train == 0.0:
-            log.error(f'Cannot validate training if size of training data is empty')
-            raise ValueError()
-        elif self.eval == 1.0:
-            log.warning(f'Size of validation split is equal to training split (eval = 1.0)')
-        #all fields are 0.0, no point in continuing process as no data can be loaded
-        if count == empty_split:
-            log.error(f'Sizes of specified splits are zero.')
-            raise ValueError()
+    def __setattr__(self, name, value):
+        if not isinstance(value, float):
+            raise TypeError(f'Cannot set {name} to non-float value {value}')
+        self.__dict__[name] = value
 
 @dataclass
 class DatasetInfo:
@@ -101,17 +82,21 @@ class DatasetWrapper(ABC):
         if self.cfg.get('name') is None:
             log.error(f'No dataset name specified.')
             raise KeyError()
-        if self.cfg.get('sizes') is None:
+        if self.cfg.splits.get('sizes') is None:
             log.warning(f'No sizes for the data splits specified.')
+            raise KeyError()
+        if self.cfg.splits.get('names') is None:
+            log.warning(f'No mapping of split names specified')
             raise KeyError()
         #add empty args property to avoid None checking every time
         if self.cfg.get('args') is None:
             with open_dict(self.cfg):
                 self.cfg["args"] = {}
-        self.dataset_sizes = DatasetSizes(**cfg.sizes)
+        self.dataset_sizes = DatasetSizes(**cfg.splits.sizes)
         self.dataset_info = DatasetInfo(name=self.cfg.name)
         self.tokenized_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
-        self.dataset_file = join(self.tokenized_dir, self.cfg.name+ '-' + self.cfg.tokenizer.dtype + '.bin')
+        #filepaths of dataset splits
+        self.dataset_files = {x:join(self.tokenized_dir, x + "-" + self.cfg.name+ '-' + self.cfg.tokenizer.dtype + '.bin') for x in ["train", "eval", "bench"]}
         #currently, dtype has to be set by user. maybe it could also be automatically infered by the max tokens property of Tokenizer
         if self.cfg.tokenizer.get('dtype') is None:
             log.debug(f'Dtype for dataset omited. Assuming default: int64')
@@ -121,6 +106,112 @@ class DatasetWrapper(ABC):
         #tokenizer is created regardless of whether tokenization is necessary or not
         #reason: typechecking of metadata to save it in model checkpoints
         self.tokenizer: Tokenizer = get_tokenizer(self.cfg.tokenizer)
+
+    def tokenize_splits(self):
+        #copy of untokenized splits to check if hf dataset has to be created
+        #TODO: dataset_splits could be an attribute that is set if it was None instead of doing this
+        untokenized_splits = {}
+        for split, path in self.dataset_files.items():
+            if not os.path.exists(path):
+                untokenized_splits[split] = path
+        #splits have been tokenized
+        if len(untokenized_splits) == 0:
+            return
+        os.makedirs(self.tokenized_dir, exist_ok = True)
+        #retrieve dataset 
+        dataset_splits: DatasetDict = self.create_hf_dataset()
+        if "train" not in dataset_splits.keys():
+            log.error(f'Dataset split does not contain train split')
+            raise RuntimeError()
+        #rename splits 
+        for split in ["train", "eval", "bench"]:
+            cfg_split = self.cfg.splits.names[split]
+            if cfg_split is None or dataset_splits.get(cfg_split, None) is None:
+                continue
+            dataset_splits[split] = dataset_splits.pop(self.cfg.splits.names[split])
+        log.info(f'Begin tokenizing dataset {self.cfg.name}')
+        #assume feature "text" contains text to be tokenized
+        if self.cfg.args.get('data_column_name') is None:
+            log.warning(f'Field data_column_name omited. Assuming feature name "text" to be containing training data.')
+            with open_dict(self.cfg):
+                self.cfg.args["data_column_name"] = "text"
+        log.debug(f'{dataset_splits}')
+        #default huggingface batch_size: 1000 (https://huggingface.co/docs/datasets/process#batch-processing)
+        batch_size = self.cfg.args.get('batches')
+        if batch_size is None or batch_size > len(dataset_splits):
+            batch_size = 1000 
+            log.info(f'Using batch size {batch_size} for memmap processing')
+        
+        #only use columns which contain data, ignore e.g. labels for classification problems
+        dataset_splits = dataset_splits.select_columns(self.cfg.args.data_column_name)
+        log.debug(f'Dataset has {len(dataset_splits.keys())} splits, with the splits having {[len(dataset_splits[x]) for x in dataset_splits.keys()]} samples.')
+        tokenizer = get_tokenizer(self.cfg.tokenizer)
+        #split samples into sentences of length chunk_size or simply rename feature to "chunk" if chunking is False
+        chunking = self.cfg.args.get("chunking", False)
+        if chunking is True:
+            dataset_splits = dataset_splits.map(
+                self.chunk_examples, 
+                batched=True, 
+                batch_size = batch_size,
+                num_proc = self.get_hf_num_proc(sum(dataset_splits.num_rows.values())),
+                remove_columns = self.cfg.args.data_column_name,
+                desc=f'Chunking dataset into samples of length {self.cfg.args.chunk_size}') 
+        else:
+            #saves if-else statements for feature name
+            log.info(f'Skipping chunking of datasets')
+            dataset_splits = dataset_splits.rename_column(self.cfg.args.data_column_name, "chunks")
+        log.debug(f'Dataset after chunking: {dataset_splits}')
+
+        #check if some splits are missing
+        #do this after chunking as some datasets have 1 large sample
+        missing_splits = {"eval", "bench"} - set(dataset_splits.keys())
+        for missing_split in missing_splits:
+            log.debug(f'Dataset is missing split {missing_split}. Deriving split from train split')
+            split_dataset = dataset_splits["train"].train_test_split(getattr(self.dataset_sizes, missing_split), seed=2357, shuffle=True)
+
+        #larger batch size than amount of samples will lead to one large batch containing all samples
+        if len(dataset_splits) < batch_size:
+            log.warning(f'Batch size of {batch_size} and sample size of {len(dataset_splits)} makes batch processing redundant.')
+        def encode_batch(batch):
+            batch_ids = [tokenizer.encode(x) for x in batch["chunks"]]
+            return {"input_ids": batch_ids, "length": [len(x) for x in batch_ids]}
+
+        dataset_splits = dataset_splits.map(
+            #map function expects dictionary or dataset object, tokenize function returns list of tokens (integers)
+            encode_batch,
+            batched=True,
+            batch_size = batch_size,
+            remove_columns = "chunks",
+            num_proc = self.get_hf_num_proc(sum(dataset_splits.num_rows.values())),
+            desc=f'tokenizing from chunks')
+        if hasattr(log, "trace"): log.trace(f'Dataset split after tokenization: {dataset_splits}')
+        #each sample of split contains amount of tokens to derive size of memmap
+        length_splits = {split:sum(dataset_splits[split]["length"]) for split in dataset_splits}
+        tokenizer.meta.num_tokens = sum(length_splits.values())
+        #write tokens into memmap
+        for split, path in untokenized_splits.items():
+            offset = 0
+            try:
+                log.debug(f'Split "{split}" has {length_splits[split]} tokens.')
+                log.debug(f'Begin writing into memmap')
+                memmap = np.memmap(path, mode='w+', dtype=self.dtype, shape=(length_splits[split], ))
+                for batch_id in range(batch_size):
+                    batch = dataset_splits[split].shard(num_shards=batch_size, index=batch_id)
+                    log.debug(f'Batch: {batch_id}/{batch_size}. Length of batch: {len(batch)}')
+                    if len(batch) == 0:
+                        break
+                    tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
+                    if hasattr(log, "trace"): log.trace(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
+                    memmap[offset:offset+len(tokens)] = tokens
+                    offset += len(tokens)
+                memmap.flush()
+                tokenizer.save_metadata(self.tokenized_dir)
+            except Exception as e:
+                #remove broken memmap file
+                log.error(f'Stopped tokenization of split {split}.\nRemoving the broken memmap file under {path}', exc_info=True)
+                os.remove(path)
+                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
+            log.debug(f'Tokenization done.')
 
     def load_dataset(self) -> DatasetInfo:
         """
@@ -132,107 +223,12 @@ class DatasetWrapper(ABC):
             (https://github.com/karpathy/nanoGPT/blob/master/data/openwebtext/prepare.py#L80)
         """
         log.info(f'Loading dataset: {self.cfg.name}, with encoding: {self.cfg.tokenizer.encoding} and dtype: {self.dtype}')
-        if not os.path.exists(self.dataset_file):
-            #assume feature "text" contains text to be tokenized
-            if self.cfg.args.get('data_column_name') is None:
-                log.warning(f'Field data_column_name omited. Assuming feature name "text" to be containing training data.')
-                with open_dict(self.cfg):
-                    self.cfg.args["data_column_name"] = "text"
-
-            log.info(f'Begin tokenizing dataset as file: {self.dataset_file}')
-            os.makedirs(self.tokenized_dir, exist_ok = True)
-            #retrieve dataset 
-            dataset_splits: DatasetDict = self.create_hf_dataset()
-            log.debug(f'Begin tokenizing dataset.')
-
-            #default huggingface batch_size: 1000 (https://huggingface.co/docs/datasets/process#batch-processing)
-            batch_size = self.cfg.args.get('batches')
-            if batch_size is None or batch_size > len(dataset_splits):
-                batch_size = 1000 
-                log.info(f'Using batch size {batch_size} for memmap processing')
-
-            #concatenate splits into one large split, only use text column
-            #otherwise, chunking will fail due to uneven amount of samples in each feature (https://github.com/huggingface/datasets/issues/1817#issuecomment-774066254)
-            dataset_splits = datasets.concatenate_datasets([x.select_columns(self.cfg.args.data_column_name) for x in dataset_splits.values()])
-            log.debug(f'Dataset has {len(dataset_splits)} rows.')
-            tokenizer = get_tokenizer(self.cfg.tokenizer)
-            #split samples into sentences of length chunk_size or simply rename feature to "chunk" if chunking is False
-            chunking = self.cfg.args.get("chunking", False)
-            if chunking is True:
-                log.debug(f'Begin chunking dataset into sentences of length {self.cfg.args.chunk_size}')
-                dataset_splits = dataset_splits.map(
-                    self.chunk_examples, 
-                    batched=True, 
-                    batch_size = batch_size,
-                    num_procs = self.get_hf_num_proc(dataset_splits.num_rows),
-                    remove_columns = self.cfg.args.data_column_name) 
-            else:
-                #saves if-else statements for feature name
-                log.info(f'Skipping chunking of datasets')
-                dataset_splits = dataset_splits.rename_column(self.cfg.args.data_column_name, "chunks")
-            log.debug(f'Dataset after chunking: {dataset_splits}')
-
-            #larger batch size than amount of samples will lead to one large batch containing all samples
-            if len(dataset_splits) < batch_size:
-                log.warning(f'Batch size of {batch_size} and sample size of {len(dataset_splits)} makes batch processing redundant.')
-            def encode_batch(batch):
-                batch_ids = [tokenizer.encode(x) for x in batch["chunks"]]
-                return {"input_ids": batch_ids, "length": [len(x) for x in batch_ids]}
-
-            dataset_splits = dataset_splits.map(
-                #map function expects dictionary or dataset object, tokenize function returns list of tokens (integers)
-                encode_batch,
-                batched=True,
-                batch_size = batch_size, 
-                remove_columns = "chunks",
-                num_proc=self.get_hf_num_proc(dataset_splits.num_rows), 
-                desc=f'tokenizing from chunks')
-            if hasattr(log, "trace"): log.trace(f'Dataset split after tokenization: {dataset_splits}')
-            length_tokens = sum(dataset_splits["length"]) 
-            tokenizer.meta.num_tokens = length_tokens
-            log.debug(f'Dataset has {length_tokens} tokens.')
-            log.debug(f'Begin writing into memmap')
-
-            #write tokens into memmap
-            offset = 0
-            try:
-                memmap = np.memmap(self.dataset_file, mode='w+', dtype=self.dtype, shape=(length_tokens, ))
-                for batch_id in range(batch_size):
-                    batch = dataset_splits.shard(num_shards=batch_size, index=batch_id)
-                    log.debug(f'Batch: {batch_id}/{batch_size}. Length of batch: {len(batch)}')
-                    if len(batch) == 0:
-                        break
-                    #would write operation be faster if values are moved to gpu?
-                    tokens = np.concatenate(batch["input_ids"], dtype=self.dtype)
-                    if hasattr(log, "trace"): log.trace(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
-                    memmap[offset:offset+len(tokens)] = tokens
-                    offset += len(tokens)
-                memmap.flush()
-                tokenizer.save_metadata(self.tokenized_dir)
-            except Exception as e:
-                #remove broken memmap file
-                log.error(f'Stopped tokenization due to error: {error}.\nRemoving the broken memmap file under {self.dataset_file}')
-                os.remove(self.dataset_file)
-                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
-            log.debug(f'Tokenization done.')
-
-        if self.dataset_sizes.train > 0.0:
-            self.dataset_info.train = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.train)
-        #eval
-        if self.dataset_sizes.eval > 0.0:
-            percentage_eval = round(self.dataset_sizes.eval * 100)
-            #eval_start = torch.randint(round(self.dataset_sizes.train * 100) - percentage_eval, (1, )).item() / 100
-            eval_start = self.dataset_sizes.train
-            if not isinstance(eval_start, float) or eval_start <= 0.0:
-                log.error(f'Cannot eval without training data (train size specified was: {eval_start})')
-                raise ValueError()
-            eval_end = min(1.0, eval_start + self.dataset_sizes.eval)
-            #self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_start + self.dataset_sizes.eval)
-            self.dataset_info.eval = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, start=eval_start, end=eval_end)
-        #bench
-        if self.dataset_sizes.bench > 0.0:
-            self.dataset_info.bench = MemmapDataset(self.dataset_file, self.dtype, self.cfg.args.block_size, end=self.dataset_sizes.bench)
         
+        self.tokenize_splits()
+        self.dataset_info.train = MemmapDataset(self.dataset_files["train"], self.dtype, self.cfg.args.block_size)
+        self.dataset_info.eval = MemmapDataset(self.dataset_files["eval"], self.dtype, self.cfg.args.block_size)
+        self.dataset_info.bench = MemmapDataset(self.dataset_files["bench"], self.dtype, self.cfg.args.block_size)
+
     def get_hf_num_proc(self, rows: int) -> int:
         """
             Get num_proc argument for huggingface mapping function based on the amount of rows that a dataset has.

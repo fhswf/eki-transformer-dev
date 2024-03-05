@@ -28,6 +28,7 @@ class FileSystemLLMDatasetWrapper(DatasetWrapper):
     def create_hf_dataset(self) -> DatasetDict:
         #choose name "text" as feature name
         with open_dict(self.cfg):
+            #ignore data_column_name from config as hf dataset has been created on the fly
             self.cfg.args["data_column_name"] = "text"
         files = self.get_untokenized_files()
         #https://huggingface.co/docs/datasets/create_dataset#from-local-files

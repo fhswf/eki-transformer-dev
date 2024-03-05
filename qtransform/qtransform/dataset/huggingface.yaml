@@ -1,17 +1,23 @@
 wrapper: HuggingfaceDatasetWrapper
 module: huggingface
 name: ???
+subset: #actual name of dataset if dataset contains sub datasets (e.g. name: wikitext, subset: wikitext-103-raw-v1) 
 type: huggingface
-sizes: 
-  train: 0.3
-  eval: 0.05
-  bench: 0.3
+splits: 
+  names: #mapping of our split names to huggingface split names
+    train: train
+    eval: validation
+    bench: test
+  sizes:
+    train: 0.9 #
+    eval: 0.05
+    bench: 0.05
 args:
   block_size: ${model.args.block_size}
   cache_dir: #directorry where cached datasets are stored. default: ~/.cache/huggingface
   data_column_name: text #name of the column that contains the training data. usually "text"
   batches: 1000 #split dataset into shards to perform tokenization more efficiently
-  chunking: False #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
+  chunking: True #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
   chunk_size: 100 
 
 defaults:

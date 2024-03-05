@@ -16,7 +16,7 @@ onnxoptimizer
 python-dateutil
 aiohttp
 pyyaml
-protobuf==3.20.3
+protobuf==3.20.3 #importerror: cannot import builder from google.protobuf.internal, reinstall works. why?
 huggingface-hub<1.0,>=0.19.3
 transformers>=4.36
 tokenizers>=0.13.3 

@@ -35,6 +35,7 @@ class Tokenizer(ABC):
     """
     _memmap: np.memmap
     _meta: Metadata
+    PADDING_TOKEN: str
 
     def __init__(self, tokenizer_cfg: DictConfig, memmap: np.memmap = None):
         if isinstance(tokenizer_cfg, Dict):
