@@ -18,7 +18,7 @@ layers:
           bit_width: 4
     args:
       replace_bn: False #replace with CustomBatchNorm1d, lose running_mean and running_var
-      merge_bn: custom_ln1 #name of the layer that batchnorm should be merged with.
+      merge_bn:  #name of the layer that batchnorm should be merged with.
 
   transformer.layer.r'[0-9]+'.ln_2: #r'ln_[0-9]':
     quantize: True

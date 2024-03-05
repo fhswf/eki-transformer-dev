@@ -21,7 +21,8 @@ def check_shapes(tensor: torch.Tensor) -> torch.Tensor:
     """
     shape_tensor = tensor.size()
     if len(shape_tensor) == 1:
-        tensor1 = torch.reshape(tensor, (list(tensor.size()) + list([1])))
+        #tensor1 = torch.reshape(tensor, (list(tensor.size()) + list([1])))
+        tensor1 = torch.unsqueeze(tensor, 1)
         tensor = tensor1
         #tensor = torch.unsqueeze(tensor, 1)
     if len(shape_tensor) == 2:
