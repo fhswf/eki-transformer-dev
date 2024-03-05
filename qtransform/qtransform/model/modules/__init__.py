@@ -65,6 +65,41 @@ class BatchNorm(nn.BatchNorm1d):
         #input tensor of shape [N,C,L] gets padded to shape [N, F, L] (F >= C) and then unpadded to shape [N,C,L] 
         return input[:,None:c]
 
+class BatchNormIdNoReplace(nn.Module):
+    """ Like our custom BatchNorm but with an Ident """
+    def __init__(self, num_features, bias, *args, **kwargs): #arg names need to be identical to torch argnames for quantization support
+        super().__init__(*args, **kwargs)
+        self.bn = BatchNorm(num_features, bias, *args, **kwargs)
+        self.id = nn.Identity()
+        
+    def forward(self, input, *args, **kwargs):
+        return self.id(self.bn(input, *args, **kwargs))
+
+class BatchNormIdPure(nn.BatchNorm1d):
+    """ Like our custom BatchNorm but with an Ident """
+    def __init__(self, num_features, bias, *args, **kwargs): #arg names need to be identical to torch argnames for quantization support
+        self.num_features = num_features
+        super().__init__(num_features, *args, **kwargs)
+        #self.weight = nn.Parameter(torch.ones(ndim))
+        #self.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
+        self.id = nn.Identity()
+        
+    def forward(self, input, *args, **kwargs):
+        return self.id(super().forward(input, *args, **kwargs))
+
+
+class BatchNormTranspose(nn.Module):
+    """ BatchNorm with Transposed Inputs to compute Norm over the last dimension."""
+    def __init__(self, num_features, bias, *args, **kwargs): #arg names need to be identical to torch argnames for quantization support
+        super().__init__(*args, **kwargs)
+        self.bn = torch.nn.BatchNorm1d(num_features)
+        self.bn.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
+        self.id = nn.Identity()
+        
+    def forward(self, input, *args, **kwargs):
+        x = self.bn(torch.transpose(input, dim0=-1, dim1=-2))
+        return self.id(torch.transpose(x, dim0=-1, dim1=-2))
+
 class InstanceNorm(nn.InstanceNorm1d):
     """
     Boilerplate class to enable specifying InstanceNorm instead of InstanceNorm1d
@@ -198,7 +233,13 @@ class TransformerBlock(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.norm_size = None
-        if config.norm_layer == "LayerNorm":
+        if config.norm_layer == "BatchNormTranspose":
+            self.norm_size = config.n_embd
+        elif config.norm_layer == "BatchNormIdPure":
+            self.norm_size = config.block_size
+        elif config.norm_layer == "BatchNormIdNoReplace":
+            self.norm_size = config.block_size
+        elif config.norm_layer == "LayerNorm":
             self.norm_size = config.n_embd
             #dummy layers which do nothing in order to merge with batchnorm layers
             #that also means including some bloat layers

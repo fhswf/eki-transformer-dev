@@ -66,7 +66,13 @@ class GPT(nn.Module):
 
         if config.norm_layer == "LayerNorm":
             self.norm_size = config.n_embd
+        elif config.norm_layer == "BatchNormIdPure":
+            self.norm_size = config.block_size
         elif config.norm_layer in ["BatchNorm", "InstanceNorm"]:
+            self.norm_size = config.block_size
+        elif config.norm_layer == "BatchNormTranspose":
+            self.norm_size = config.n_embd
+        elif config.norm_layer == "BatchNormIdNoReplace":
             self.norm_size = config.block_size
         elif config.norm_layer == "None":
             self.norm_size = None

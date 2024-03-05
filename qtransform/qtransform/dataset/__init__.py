@@ -384,4 +384,5 @@ def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:
     log.debug(f"get_loader config: {dataloader_cfg}")
     # loader = DataLoader(data, generator=torch.Generator(device='cuda'), **dataloader_cfg) # does no work for dataloader forks
     loader = DataLoader(data, **dataloader_cfg)
+    print("len", len(loader))
     return loader

@@ -9,7 +9,7 @@ args:
   block_size : 64
   vocab_size : 50304
   transformer_active_func: ReLU
-  norm_layer: BatchNorm
+  norm_layer: BatchNormIdNoReplace
   flash: False
   single_output: False
   use_weight_tying: True
