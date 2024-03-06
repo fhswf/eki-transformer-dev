@@ -33,15 +33,22 @@ class TransformersTokenizer(Tokenizer):
             log.warning(f'Missing key "fast" in transformers tokenizer config. Defaulting to True.')
             with open_dict(self.tokenizer_cfg):
                 self.tokenizer_cfg.fast = FAST
-
         #get pretrainedtokenizer classes and their model encodings
         parent_class = transformers.PreTrainedTokenizerFast if self.meta.fast else transformers.PreTrainedTokenizer
         pretrained_tokenizers = get_classes(transformers.models, parent_class)
-        self.tokenizer = None
-        for tokenizer_cls_name, tokenizer_cls in pretrained_tokenizers.items():
-            encodings = tokenizer_cls.max_model_input_sizes 
-            if self.meta.encoding in encodings:
-                self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding, truncation=True)
+        #support third party tokenizers
+        if self.tokenizer_cfg.pretrained_tokenizer is not None:
+            assert self.tokenizer_cfg.pretrained_tokenizer in pretrained_tokenizers.keys(), \
+                f'Pretrained Tokenizer {self.tokenizer_cfg.pretrained_tokenizer} does not exist'
+            tokenizer_cls = pretrained_tokenizers[self.tokenizer_cfg.pretrained_tokenizer]
+            self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding, truncation=True)
+        else: 
+            self.tokenizer = None
+            for tokenizer_cls_name, tokenizer_cls in pretrained_tokenizers.items():
+                encodings = tokenizer_cls.max_model_input_sizes 
+                log.debug(f'Encodings for {tokenizer_cls_name}: {encodings}')
+                if self.meta.encoding in encodings:
+                    self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding, truncation=True)
         log.debug(f'Using tokenizer class: {self.tokenizer.__class__.__name__} with encoding: {self.meta.encoding}')
         if self.tokenizer is None:
             log.error(f'No transformers tokenizer found for encoding: {self.meta.encoding} and fast={self.meta.fast}')

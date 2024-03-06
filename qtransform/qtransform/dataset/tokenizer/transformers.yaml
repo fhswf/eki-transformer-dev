@@ -1,4 +1,5 @@
 wrapper: TransformersTokenizer
+pretrained_tokenizer: #if a custom encoding should be used (e.g. Kristijan/wikitext-103-tokenizer), specify base Model (GPT2TokenizerFast) here
 encoding: ??? #the name of the pretrained model, e.g. bert-base-uncased for BertTokenizer or gpt2
 module: transformers
 fast: True #(https://huggingface.co/docs/transformers/main_classes/tokenizer)

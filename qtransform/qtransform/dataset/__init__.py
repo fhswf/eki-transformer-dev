@@ -96,7 +96,11 @@ class DatasetWrapper(ABC):
         self.dataset_info = DatasetInfo(name=self.cfg.name)
         self.tokenized_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
         #filepaths of dataset splits
-        self.dataset_files = {x:join(self.tokenized_dir, x + "-" + self.cfg.name+ '-' + self.cfg.tokenizer.dtype + '.bin') for x in ["train", "eval", "bench"]}
+        self.dataset_files = {}
+        dataset_name = self.cfg.subset if self.cfg.subset is not None else self.cfg.name
+        #<split>-<dataset>-<dtype>.bin e.g.: eval-openwebtext-float32.bin
+        for split in ["train", "eval", "bench"]:
+            self.dataset_files[split] = join(self.tokenized_dir, split + "-" + dataset_name + '-' + self.cfg.tokenizer.dtype + '.bin')
         #currently, dtype has to be set by user. maybe it could also be automatically infered by the max tokens property of Tokenizer
         if self.cfg.tokenizer.get('dtype') is None:
             log.debug(f'Dtype for dataset omited. Assuming default: int64')
@@ -167,7 +171,7 @@ class DatasetWrapper(ABC):
         missing_splits = {"eval", "bench"} - set(dataset_splits.keys())
         for missing_split in missing_splits:
             log.debug(f'Dataset is missing split {missing_split}. Deriving split from train split')
-            split_dataset = dataset_splits["train"].train_test_split(getattr(self.dataset_sizes, missing_split), seed=2357, shuffle=True)
+            split_dataset = dataset_splits["train"].train_test_split(getattr(self.dataset_sizes, missing_split), seed=2357)
 
         #larger batch size than amount of samples will lead to one large batch containing all samples
         if len(dataset_splits) < batch_size:
@@ -380,5 +384,5 @@ def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:
     log.debug(f"get_loader config: {dataloader_cfg}")
     # loader = DataLoader(data, generator=torch.Generator(device='cuda'), **dataloader_cfg) # does no work for dataloader forks
     loader = DataLoader(data, **dataloader_cfg)
-    print("len", len(loader))
+    log.debug(f'len: {len(loader)}')
     return loader
