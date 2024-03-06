@@ -50,6 +50,8 @@ def run(cfg: DictConfig):
     dataset_eval = data_wrapper.dataset_info.eval
     if cfg.dataset.sizes.train >= 1.0:
         log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
+
+
     #check if batch_size batches are going to be performed
     from torch.utils.data import Dataset
     def check_dataset_size(name: str, dataset: Dataset):
@@ -76,12 +78,15 @@ def run(cfg: DictConfig):
     
     max_token_value = data_wrapper.tokenizer.meta.max_token_value
     if max_token_value < cfg.model.args.vocab_size:
-        log.warning(f'Vocab size of model is larger than the tokenizer vocab. Setting vocab_size to: {max_token_value} to prevent errors during inference')
-        OmegaConf.update(cfg, "model.args.vocab_size", max_token_value, force_add=True)
+        log.warning(f'Vocab size of model is larger than the tokenizer vocab. vocab_size of model: {cfg.model.args.vocab_size}, vocab size of tokenizer {max_token_value}')
+
+        #log.warning(f'Vocab size of model is larger than the tokenizer vocab. Setting vocab_size to: {max_token_value} to prevent errors during inference')
+        #OmegaConf.update(cfg, "model.args.vocab_size", max_token_value, force_add=True)
 
     from qtransform.model import get_model
     model = get_model(cfg.model)
     model.train()
+    print(model.config)
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model.to(device=device)
@@ -181,6 +186,14 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
             metrics = checkpoint['metrics']
 
         epochs_to_run = range(from_epoch + 1, cfg.run.epochs + 1)
+    elif "from_pretrained" in cfg.run and isinstance(cfg.run.from_pretrained, str):
+        log.info(f"Loading model state dict from {cfg.run.from_pretrained}")
+        from qtransform.model.gpt import GPT
+        if not isinstance(model, GPT):
+            log.error("from from_pretrained only works for GPT style model for now")
+            raise Exception
+        model = GPT.from_pretrained(model=model, model_type=cfg.run.from_pretrained)
+        epochs_to_run = range(1, cfg.run.epochs + 1)
     else:
         log.info(f"Starting new training")
         epochs_to_run = range(1, cfg.run.epochs + 1)

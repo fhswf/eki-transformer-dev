@@ -232,6 +232,13 @@ class TransformerBlock(nn.Module):
 
     def __init__(self, config):
         super().__init__()
+        self.residual1 = custom_nn.EltwiseAdd()
+        self.residual2 = custom_nn.EltwiseAdd()
+        self.attn = CausalSelfAttention(config)
+        self.mlp = MLP(config)
+        #necessary for quantized batchnorm to create quanttensor from tensor
+        self.identity = torch.nn.Identity()
+        
         self.norm_size = None
         if config.norm_layer == "BatchNormTranspose":
             self.norm_size = config.n_embd
@@ -260,13 +267,6 @@ class TransformerBlock(nn.Module):
             self.ln_2 = ln_2(self.norm_size, config.bias)
 
         self.attn = CausalSelfAttention(config)
-        
-        self.residual1 = custom_nn.EltwiseAdd()
-        self.residual2 = custom_nn.EltwiseAdd()
-        self.attn = CausalSelfAttention(config)
-        self.mlp = MLP(config)
-        #necessary for quantized batchnorm to create quanttensor from tensor
-        self.identity = torch.nn.Identity()
 
     def forward(self, x):
         if self.norm_size:
