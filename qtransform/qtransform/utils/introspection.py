@@ -5,9 +5,10 @@ import sys
 from os.path import join
 from numpy import dtype as np_dtype
 from os.path import expanduser
+from typing import Dict, Any
 
 log = logging.getLogger(__name__)
-def get_classes(module: ModuleType, parent_class: type):
+def get_classes(module: ModuleType, parent_class: type) -> Dict[str, Any]:
     """
     'module' should be either a list of paths to look for
     modules in or a python module.

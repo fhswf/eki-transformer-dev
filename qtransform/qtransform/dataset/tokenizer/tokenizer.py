@@ -40,7 +40,7 @@ class Tokenizer(ABC):
     def __init__(self, tokenizer_cfg: DictConfig, memmap: np.memmap = None):
         if isinstance(tokenizer_cfg, Dict):
             log.debug(f'Tokenizer config is of type dict. Creating DictConfig object.')
-            self.tokenizer_cfg = OmegaConf.create(tokenizer_cfg)
+            tokenizer_cfg = OmegaConf.create(tokenizer_cfg)
         elif not isinstance(tokenizer_cfg, DictConfig):
             log.error(f'Tokenizer config is not a DictConfig ({tokenizer_cfg})')
             raise TypeError()

@@ -1,9 +1,10 @@
-from typing import Union, List, Dict
+from typing import Union, List, Dict, Any
 from omegaconf import DictConfig
 from dataclasses import dataclass
 from qtransform.dataset.tokenizer.tokenizer import Tokenizer
-from qtransform.dataset.tokenizer import get_tokenizer
+from qtransform.dataset import tokenizer as tokenizer_module
 from qtransform.utils.helper import load_checkpoint, load_onnx_model
+from qtransform.utils.introspection import get_classes
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -34,7 +35,7 @@ class TokenizerConfig():
     """
     Config for ONNX models to specify with which tokenizer the input prompt should be encoded. It reflects the yaml config structure.
     """
-    name: str = None
+    module: str = None
     encoding: str = None
     meta_path: str = None
 
@@ -72,14 +73,19 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
     if from_checkpoint_path != None and onnx_model.path != None:
         log.warning(f'Specified both onnx models and checkpoints to load. Expect high memory consumption.')
     #onnx checkpoint
+    #TODO: test this for non-quantized models
     if onnx_model.path != None:
-        log.critical(f'Inference for ONNX models not implemented yet')
-        raise NotImplementedError()
-
         model = load_onnx_model(onnx_model["path"])
-        #TODO: load tokenizer cfg from infer config
-        from qtransform.dataset.tokenizer import __all__
-
+        tokenizer_classes: Dict[str, Any] = get_classes(tokenizer, Tokenizer)
+        tokenizer = None
+        for tokenizer_cls in tokenizer_classes.values():
+            if tokenizer_cls.__module__.split('.')[-1] == onnx_model.tokenizer.module:
+                tokenizer = tokenizer_cls({"encoding": onnx_model.tokenizer.encoding})
+        if tokenizer is None:
+            log.error(f'No tokenizer found for module: {onnx_model.tokenizer.module}')
+            raise ValueError()
+        tokenizer: Tokenizer = tokenizer_cls({"encoding": onnx_model.tokenizer.encoding})
+        tokenizer.load_metadata(onnx_model.tokenizer.meta_path)
         models.append(ModelData(type=InferType.ONNX, model=model, tokenizer=tokenizer, name= onnx_model.path))
     #torch checkpoint
     if from_checkpoint_path != None:
@@ -116,7 +122,7 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
         if tokenizer_cfg is None:
             log.error(f'Tokenizer configuration neither specified in model checkpoint nor in hydra config.')
             raise KeyError()
-        tokenizer: Tokenizer = get_tokenizer(tokenizer_cfg)
+        tokenizer: Tokenizer = tokenizer_module.get_tokenizer(tokenizer_cfg)
         #load metadata, including vocabulary for character tokenization
         log.debug(tokenizer_cfg["meta"])
         tokenizer.load_metadata(meta=tokenizer_cfg["meta"])
