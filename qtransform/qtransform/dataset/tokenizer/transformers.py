@@ -37,7 +37,7 @@ class TransformersTokenizer(Tokenizer):
         parent_class = transformers.PreTrainedTokenizerFast if self.meta.fast else transformers.PreTrainedTokenizer
         pretrained_tokenizers = get_classes(transformers.models, parent_class)
         #support third party tokenizers
-        if self.tokenizer_cfg.pretrained_tokenizer is not None:
+        if "pretrained_tokenizer" in self.tokenizer_cfg and self.tokenizer_cfg.pretrained_tokenizer is not None:
             assert self.tokenizer_cfg.pretrained_tokenizer in pretrained_tokenizers.keys(), \
                 f'Pretrained Tokenizer {self.tokenizer_cfg.pretrained_tokenizer} does not exist'
             tokenizer_cls = pretrained_tokenizers[self.tokenizer_cfg.pretrained_tokenizer]

@@ -1,6 +1,6 @@
 data="dataset=huggingface dataset.name=wikitext dataset.subset=wikitext-103-raw-v1"
 tokenizer="dataset/tokenizer=tiktoken dataset.tokenizer.encoding=gpt2"
-models=( BENCH_gpt2_ReBNP_gpt2small2 )
+models=( BENCH_gpt2_ReBNP_small BENCH_gpt2_ReBNP_smaller BENCH_gpt2_ReBNP_tiny BENCH_gpt2_ReBNP_gpt2small2 )
 quant_models=( BENCH_4b_gpt2_2 BENCH_4b_gpt2_3 BENCH_8b_gpt2_2 BENCH_8b_gpt2_3 )
 
 for model in ${models[@]}
