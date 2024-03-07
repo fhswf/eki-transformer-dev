@@ -1,0 +1,2 @@
+cls: ONNX_Model
+path: ??? # path to exported onnx model

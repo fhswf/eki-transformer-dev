@@ -31,6 +31,10 @@ def run(cfg : DictConfig):
         #struct flag of dictconf prevents additional keys to be added (https://omegaconf.readthedocs.io/en/latest/usage.html#struct-flag)
         with open_dict(cfg.dataset.dataloader):
             cfg.dataset.dataloader.update(cuda_kwargs)
+
+    model = onnx.load("model.onnx")
+    input_shapes = [[d.dim_value for d in _input.type.tensor_type.shape.dim] for _input in model.graph.input]
+
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
