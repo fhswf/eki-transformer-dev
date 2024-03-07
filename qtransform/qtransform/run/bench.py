@@ -118,7 +118,6 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
             logits = output[0]
         else:
             logits = output
-        probs = F.softmax(logits, dim=-1)
         with torch.no_grad():
             probs = F.softmax(logits, dim=-1)
             perplexity[i] = measure_perplexity(probs, labels)
@@ -141,7 +140,8 @@ to the entire sample at once
 def measure_perplexity(logits: torch.Tensor, labels: torch.Tensor):
     #cross entropy either expects the probabilities of tokens or a list of tokens
     #(https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html)
-    return torch.exp(F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-1))#F.cross_entropy(logits, labels))
+    result = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-1)
+    return  torch.exp(result)#F.cross_entropy(logits, labels))
 
 def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs: torch.Tensor = None) -> float:
     """
