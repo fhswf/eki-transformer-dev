@@ -68,7 +68,20 @@ def run(cfg : DictConfig):
     elif row_limit < 1:
         row_limit = 10
     #load model
-    models: List[ModelData] = load_model(cfg, device)
+    #TODO: huggingface models are not able to be finetuned this way. implement saving of huggingface checkpoints (as well as their configs)
+    if cfg.run.pretrained_model is not None:
+        log.info(f'Using pretrained model {cfg.run.pretrained_model}')
+        from qtransform.model.hf_gpt2 import PreTrainedGPT2
+        from qtransform.dataset.tokenizer.tiktoken import TikTokenizer
+        model = PreTrainedGPT2(DictConfig({"version": cfg.run.pretrained_model})).to(device=device)
+        tokenizer = TikTokenizer({"encoding": "gpt2"})
+        models: List[ModelData] = [ModelData(type = InferType.CHECKPOINT, 
+                                        model = model, 
+                                        tokenizer = tokenizer, 
+                                        name="hf-pretrained-"+cfg.run.pretrained_model,
+                                        block_size=1024)]
+    else:
+        models: List[ModelData] = load_model(cfg, device)
     
     if cfg.run.profile:
         #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
@@ -109,7 +122,6 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
             logits = output[0]
         else:
             logits = output
-        probs = F.softmax(logits, dim=-1)
         with torch.no_grad():
             probs = F.softmax(logits, dim=-1)
             perplexity[i] = measure_perplexity(probs, labels)
@@ -132,7 +144,8 @@ to the entire sample at once
 def measure_perplexity(logits: torch.Tensor, labels: torch.Tensor):
     #cross entropy either expects the probabilities of tokens or a list of tokens
     #(https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html)
-    return torch.exp(F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-1))#F.cross_entropy(logits, labels))
+    result = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-1)
+    return  torch.exp(result)#F.cross_entropy(logits, labels))
 
 def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs: torch.Tensor = None) -> float:
     """

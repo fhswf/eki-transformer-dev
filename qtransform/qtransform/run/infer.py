@@ -12,7 +12,7 @@ from qtransform import device_singleton
 from os.path import isdir, exists, join, expanduser, isabs
 from os import makedirs, getcwd, makedirs
 from datetime import datetime
-from . import generate, load_model, ModelData
+from . import generate, load_model, ModelData, InferType
 import numpy as np
 from qtransform.dataset.tokenizer.tokenizer import Tokenizer
 
@@ -36,6 +36,8 @@ class InferConfig():
     compile: bool = True
 
     debug: bool = False
+
+    pretrained_model: str = None
 
 def run(cfg : DictConfig):
     """ Inference """
@@ -63,8 +65,20 @@ def infer(cfg: DictConfig, device: Any):
     top_k = infer_cfg.top_k # retain only the top_k most likely tokens, clamp others to have 0 probability
     out_dir = infer_cfg.out_dir
     # -----------------------------------------------------------------------------
-
-    models: ModelData = load_model(cfg, device)
+    #TODO: huggingface models are not able to be finetuned this way. implement saving of huggingface checkpoints (as well as their configs)
+    if cfg.run.pretrained_model is not None:
+        log.info(f'Using pretrained model {cfg.run.pretrained_model}')
+        from qtransform.model.hf_gpt2 import PreTrainedGPT2
+        from qtransform.dataset.tokenizer.tiktoken import TikTokenizer
+        model = PreTrainedGPT2(DictConfig({"version": cfg.run.pretrained_model})).to(device=device)
+        tokenizer = TikTokenizer({"encoding": "gpt2"})
+        models: List[ModelData] = [ModelData(type = InferType.CHECKPOINT, 
+                                        model = model, 
+                                        tokenizer = tokenizer, 
+                                        name="hf-pretrained-"+cfg.run.pretrained_model,
+                                        block_size=1024)]
+    else:
+        models: List[ModelData] = load_model(cfg, device)
 
     # encode the beginning of the prompt
     if start.startswith('FILE:'):
@@ -92,7 +106,8 @@ def infer(cfg: DictConfig, device: Any):
         x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
         log.info(f'Running inference from {model_type.name.upper()}.')
         for k in range(num_samples):
-            y: torch.Tensor = generate(model_type, model, x, max_new_tokens, temperature=temperature, top_k=top_k)
+            #TODO: block_size for onnx models
+            y: torch.Tensor = generate(model_type = model_type, model = model, idx = x, max_new_tokens=max_new_tokens, temperature=temperature, top_k=top_k, block_size=model_data.block_size)
             #i assume that sorting will take a long time which is redundant without debugging purposes
             if cfg.debug:
                 #log.debug(f'Uniquely generated tokens, sorted in ascending order: {y.unique().sort().values}')
@@ -102,6 +117,7 @@ def infer(cfg: DictConfig, device: Any):
 
     out_dir = cfg.run.get('out_dir', '')
     #infer for onnx and checkpoint
+    #TODO: differentiate between checkpoint and onnx model better than to iterate
     for model_data in models:
         if isinstance(model_data.model, nn.Module):
             if torch.__version__ >= (2,0) and cfg.run.compile: 

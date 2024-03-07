@@ -285,7 +285,9 @@ def train_one_epoch(cfg: DictConfig,
             if cfg.model.calc_loss_in_model:
                 outputs, loss = model(inputs, labels)
             else:
+                log.warning(f'Loss function outside of model (e.g. for pretrained models) is not fixed yet')
                 outputs, _ = model(inputs)
+                log.critical(output)
                 outputs = F.log_softmax(outputs, dim=2)
                 loss = F.nll_loss(outputs.view(-1, outputs.size(-1)),labels.view(-1), ignore_index=-1)
             loss /= gradient_accumulation_steps #make all mini-batches account as one large batch
@@ -298,7 +300,7 @@ def train_one_epoch(cfg: DictConfig,
             nn.utils.clip_grad_norm_(model.parameters(), cfg.run.grad_clip)
         optimizer.step()
         optimizer.zero_grad(set_to_none=True)  # Zero gradients after gradient accumulation
-        running_loss += loss.item()
+        running_loss += loss.item() * gradient_accumulation_steps 
         #log loss
         if i % cfg.run.log_steps_interval == 0:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
@@ -309,7 +311,7 @@ def train_one_epoch(cfg: DictConfig,
         if mini_run and i>=200: # run for more than one data point
             break
 
-    return last_loss    
+    return last_loss 
 
 @torch.no_grad()
 def eval_model(cfg: DictConfig, device, model: nn.Module, 
