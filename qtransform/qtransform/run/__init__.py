@@ -29,6 +29,8 @@ class ModelData():
     model: Union[nn.Module, ModelWrapper]
     tokenizer: Tokenizer
     name: str
+    block_size: int
+    #TODO: metadata (block_size)
 
 @dataclass
 class TokenizerConfig():
@@ -60,6 +62,7 @@ class ONNXConfig():
 
 
 def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
+    #TODO: this is only used in inference or benchmarking, unify loading of checkpoints and onnx models for all scripts
     """
     Loads an ONNX model and a torch checkpoint from paths supplied in the infer config.
     The function returns a dictionary with the loaded models, ready to be used for inference.
@@ -86,6 +89,8 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
             raise ValueError()
         tokenizer: Tokenizer = tokenizer_cls({"encoding": onnx_model.tokenizer.encoding})
         tokenizer.load_metadata(onnx_model.tokenizer.meta_path)
+        raise NotImplementedError()
+        #TODO: retrieve context length
         models.append(ModelData(type=InferType.ONNX, model=model, tokenizer=tokenizer, name= onnx_model.path))
     #torch checkpoint
     if from_checkpoint_path != None:
@@ -126,8 +131,8 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
         #load metadata, including vocabulary for character tokenization
         log.debug(tokenizer_cfg["meta"])
         tokenizer.load_metadata(meta=tokenizer_cfg["meta"])
-
-        models.append(ModelData(type=InferType.CHECKPOINT, model=model, tokenizer=tokenizer, name = from_checkpoint_path))
+        block_size = checkpoint["model_args"]["args"]["block_size"]
+        models.append(ModelData(type=InferType.CHECKPOINT, model=model, tokenizer=tokenizer, name = from_checkpoint_path, block_size=block_size))
     else:
         log.warning(f'Path to checkpoint "{from_checkpoint_path}" is not a file.')
     if len(models) == 0:
@@ -161,7 +166,7 @@ def forward_pass(model_type: InferType, model: Union[nn.Module, ModelWrapper], i
 
 
 @torch.no_grad()
-def generate(model_type: InferType, model: Union[nn.Module, ModelWrapper], idx: torch.Tensor, max_new_tokens: int, temperature: float =1.0, top_k: int =None):
+def generate(model_type: InferType, block_size: int, model: Union[nn.Module, ModelWrapper], idx: torch.Tensor, max_new_tokens: int, temperature: float =1.0, top_k: int =None):
     """
     Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
     the sequence max_new_tokens times, feeding the predictions back into the model each time.
@@ -170,7 +175,8 @@ def generate(model_type: InferType, model: Union[nn.Module, ModelWrapper], idx: 
     """
     for _ in range(max_new_tokens):
         # if the sequence context is growing too long we must crop it at block_size
-        idx_cond = idx if idx.size(1) <= model.config.block_size else idx[:, -model.config.block_size:]
+        #TODO: make this work for onnx
+        idx_cond = idx if idx.size(1) <= block_size else idx[:, -block_size:]
         # forward the model to get the logits for the index in the sequence
         # the results should not be softmaxed yet as they will be later within this function
         logits = forward_pass(model_type, model, idx_cond)

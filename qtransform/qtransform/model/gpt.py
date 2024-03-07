@@ -78,7 +78,7 @@ class GPT(nn.Module):
             self.norm_size = None
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
-        print(config.vocab_size, config.n_embd)
+        log.debug(print(config.vocab_size, config.n_embd))
         if self.norm_size:
             ln_out = getattr(custom_nn, config.norm_layer, None)
             self.transformer = nn.ModuleDict(dict(

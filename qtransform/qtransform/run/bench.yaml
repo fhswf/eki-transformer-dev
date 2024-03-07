@@ -5,6 +5,7 @@ out_dir: ''
 profile: True
 checkpoint_dir: models
 from_checkpoint: 
+pretrained_model:
 row_limit: 10 #amount of rows (torch operations) to display on resource profiler
 onnx_model: #absolute path of onnx model to run inference on. either use onnx_model or from_checkpoint
   path: 

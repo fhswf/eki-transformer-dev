@@ -51,7 +51,7 @@ class TransformersTokenizer(Tokenizer):
                     self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding, truncation=True)
         log.debug(f'Using tokenizer class: {self.tokenizer.__class__.__name__} with encoding: {self.meta.encoding}')
         if self.tokenizer is None:
-            log.error(f'No transformers tokenizer found for encoding: {self.meta.encoding} and fast={self.meta.fast}')
+            log.error(f'No transformers tokenizer found for encoding: {self.meta.encoding} and fast={self.meta.fast}. Maybe manually set pretrained_tokenizer')
             raise KeyError()
         self.tokenizer.model_max_length = 1e30 #disable warning about max context
         self.meta.max_token_value = self.tokenizer.vocab_size

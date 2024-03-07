@@ -6,13 +6,14 @@ num_samples: 10 #generate num_samples
 max_new_tokens: 500
 temperature: 0.8
 top_k: 200
-start: "\n" #generates text starting with #start (\n, "<|endoftext|>" or etc.) Can also specify a file, use as: "FILE:prompt.txt" where prompt.txt is absolute
+start: "My name is Mariama, my favorite" #"\n" #generates text starting with #start (\n, "<|endoftext|>" or etc.) Can also specify a file, use as: "FILE:prompt.txt" where prompt.txt is absolute
 compile: False #use torch.compile
 
 #path of directory create files containing the infered samples. if empty, write onto stdout. 
 #the file name is composed as: INFER_<datetime>_<ONNX or CHECKPOINT>.out
 out_dir: 
 
+#TODO: make this better in terms of boilerplate
 onnx_model: #absolute path of onnx model to run inference on. either use onnx_model or from_checkpoint
   path: 
   tokenizer: #specify tokenizer config manually as it cannot be saved in onnx model
@@ -20,5 +21,6 @@ onnx_model: #absolute path of onnx model to run inference on. either use onnx_mo
     encoding: gpt2
     meta_path: #usually only necessary for character tokenization
 from_checkpoint:  #filename of checkpoint to load
+pretrained_model: gpt2 #instead of checkpoint, load huggingface model. TODO: make this consistent to our current workflow
 
 debug: False #use karpathy's inference

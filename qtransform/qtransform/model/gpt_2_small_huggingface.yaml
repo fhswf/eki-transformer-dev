@@ -1,0 +1,26 @@
+
+#issue: inference and benchmarking require either onnx model or checkpoint
+#issue 2: dataset args (block_size) are set before validating size of model
+#         block_size is infered from model.args.block_size
+
+
+
+#using custom wrapper around huggingface model in order to make return values of forward pass consistent
+cls: PreTrainedGPT2 #use huggingface model
+pretrained: False
+calc_loss_in_model: False
+args:
+  version: gpt2
+  block_size: 1024
+  vocab_size: 50257
+
+
+#!!!!!!! unchanged GPT2LMHeadModel class
+#cls: GPT2LMHeadModel
+#pretrained: True
+#calc_loss_in_model: False
+#version: gpt2 #pretrained tokenizer is configured already. available versions: gpt2, gpt2-medium, gpt2-large, gpt2-xl
+#args:
+#  version: gpt2
+#  block_size: 1024
+#  vocab_size: 50257
