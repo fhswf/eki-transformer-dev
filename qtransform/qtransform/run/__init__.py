@@ -141,28 +141,33 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
     
     return models
 
-def forward_pass(model_type: InferType, model: Union[nn.Module, ModelWrapper], idx_cond: torch.Tensor) -> torch.Tensor:
+def forward_pass(model_type: InferType, model: Union[nn.Module, ModelWrapper], idx_cond: torch.Tensor, labels = None) -> torch.Tensor:
     """
     Generic forward pass, abstracted for torch Modules and ONNX checkpoints. Unlike the generate function, forward_pass
     returns the non-softmaxed logits and does not append the highest predicted token into a sequence for a tokenizer to decode.
     forward_pass should be useful for measuring accuracy.
     """
     #generic function wrapper as forward pass for onnx models and torch modules is different
-    logits = None
+    ret = None
     match model_type:
         case InferType.ONNX:
             idict = {"input": idx_cond.numpy()}
             # use infer_shapes()
             #forward pass of gpt model returns the non-softmaxed token predictions
+            if labels is not None:
+                log.warning("labels are givin to external forwards pass wrapper but they are ignored atm for onnx runs")
             odict = execute_onnx(model, idict)
-            logits = torch.from_numpy(odict["output"])
+            ret = torch.from_numpy(odict["output"])
         case InferType.CHECKPOINT:
             model.eval()
-            logits, _ = model(idx_cond)
+            if labels is not None:
+                ret = model(idx_cond, labels)
+            else:
+                ret = model(idx_cond)
         case _:
             log.error(f'Forward pass only supported for ONNX models or checkpoints')
             raise ValueError()
-    return logits
+    return ret
 
 
 @torch.no_grad()

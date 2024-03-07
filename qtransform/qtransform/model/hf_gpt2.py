@@ -49,6 +49,14 @@ class PreTrainedGPT2(Module):
         self.model = GPT2LMHeadModel.from_pretrained(version)
 
     def forward(self, inputs, labels = None):
-        out = self.model(inputs)
+        #rint(inputs)
+        #rint(labels)
+        if labels is not None:
+            labels = inputs
+        #print(inputs)
+        #print(labels)
+        #print(labels[..., 1:].contiguous())
+        out = self.model(inputs, labels=labels)
         #no loss, could be implemented here or in train.py
-        return out.logits, None
+        return out.logits, out.loss
+       

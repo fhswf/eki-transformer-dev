@@ -32,8 +32,9 @@ def run(cfg : DictConfig):
         with open_dict(cfg.dataset.dataloader):
             cfg.dataset.dataloader.update(cuda_kwargs)
 
-    model = onnx.load("model.onnx")
-    input_shapes = [[d.dim_value for d in _input.type.tensor_type.shape.dim] for _input in model.graph.input]
+    # TODO
+    #model = onnx.load("model.onnx")
+    #input_shapes = [[d.dim_value for d in _input.type.tensor_type.shape.dim] for _input in model.graph.input]
 
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
@@ -97,9 +98,12 @@ def run(cfg : DictConfig):
             log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')
 
 def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
-    perplexity = torch.zeros(cfg.run.num_samples)
-    accuracy = torch.zeros(cfg.run.num_samples)
-    counter = 0
+    lens = min(len(bench_dataloader), cfg.run.num_samples)
+    log.info(f"Running Benchmark fo {lens} samples")
+    log.warning(f"Datalaoder length might not be correct")
+
+    perplexity = torch.zeros(lens)
+    accuracy = torch.zeros(lens)
     #other_perplexity = torch.zeros(1)
     #other_accuracy = torch.zeros(1)
     if isinstance(model_data.model, torch.nn.Module):
@@ -109,22 +113,25 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
     if model_data.type != InferType.CHECKPOINT:
         log.warning(f'Benchmarking for ONNX models not implemented yet.')
         return None
-    
-    for i, data in enumerate(bench_dataloader):
-        counter += 1
-        if i >= cfg.run.num_samples:
+    for i, data in enumerate(bench_dataloader): 
+
+        if i >= lens:
             break
         inputs, labels = data
         inputs = inputs.to(device_singleton.device)
         labels = labels.to(device_singleton.device)
-        output = forward_pass(model_data.type, model_data.model, inputs)
+        output = forward_pass(model_data.type, model_data.model, inputs, labels)
+        #log.critical(output)
         if isinstance(output, tuple):
             logits = output[0]
+            loss = output[1]
+            #print(loss)
+            #print(torch.exp(loss))
         else:
             logits = output
         with torch.no_grad():
+            perplexity[i] = measure_perplexity(logits, labels)
             probs = F.softmax(logits, dim=-1)
-            perplexity[i] = measure_perplexity(probs, labels)
             accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
         #other_perplexity += measure_perplexity(probs, labels)
         #other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
