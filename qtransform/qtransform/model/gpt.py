@@ -46,7 +46,8 @@ class GPTConfig:
     single_output: bool = False # use mini runtime optimization to only predict last token, saven on some runtime but poentially currupts onnx export
     use_weight_tying: bool = True # same weights for input emb and outputi proj https://paperswithcode.com/method/weight-tying
     custom_ln: bool = False #use CustomBatchNorm1d before BatchNorm
-
+    use_causal: bool = False
+    
 from dataclasses import fields
 class GPT(nn.Module):
     def __init__(self, config: GPTConfig):

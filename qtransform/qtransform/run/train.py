@@ -43,15 +43,22 @@ def run(cfg: DictConfig):
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
-    from qtransform.dataset import get_data, get_loader, DatasetWrapper
-    data_wrapper: DatasetWrapper = get_data(cfg.dataset)
+    from qtransform.dataset import get_data, get_loader, DatasetWrapper, get_dataset_wrapper, OldDatasetWrapper
+    data_wrapper: DatasetWrapper = get_dataset_wrapper(cfg.dataset)
     data_wrapper.load_dataset()
-    dataset_train = data_wrapper.dataset_info.train
-    dataset_eval = data_wrapper.dataset_info.eval
-    if cfg.dataset.sizes.train >= 1.0:
-        log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
+    if hasattr(data_wrapper,"dataset_info"):
+        dataset_train = data_wrapper.dataset_info.train
+        dataset_eval = data_wrapper.dataset_info.eval
+    else:
+        dataset_train = data_wrapper.datasets.train
+        dataset_eval = data_wrapper.datasets.eval
 
-
+    try:
+        if cfg.dataset.sizes.train >= 1.0:
+            log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
+    except:
+        log.warning(f'Old Dataset definitions have not been updated completely')
+        
     #check if batch_size batches are going to be performed
     from torch.utils.data import Dataset
     def check_dataset_size(name: str, dataset: Dataset):
@@ -63,25 +70,37 @@ def run(cfg: DictConfig):
         block_size = cfg.dataset.args.block_size
         if batch_size * block_size > len(dataset):
             log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, causing the dataloader to skip batches. Maybe check the split size?')
-    check_dataset_size("train", dataset_train)
-    train_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_train)
-    if dataset_eval is not None:
-        check_dataset_size("eval", dataset_eval)
-        eval_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_eval)
-    else:
-        eval_dataloader = None
-
-    #update tokenizer config with metadata to save it in model checkpoints
-    data_wrapper.tokenizer.load_metadata(filepath=os.path.join(data_wrapper.tokenized_dir, cfg.dataset.tokenizer.meta_file))
-    with open_dict(cfg.dataset.tokenizer):
-        cfg.dataset.tokenizer["meta"] = data_wrapper.tokenizer.meta
     
-    max_token_value = data_wrapper.tokenizer.meta.max_token_value
-    if max_token_value < cfg.model.args.vocab_size:
-        log.warning(f'Vocab size of model is larger than the tokenizer vocab. vocab_size of model: {cfg.model.args.vocab_size}, vocab size of tokenizer {max_token_value}')
+    if isinstance(data_wrapper, OldDatasetWrapper):
+        check_dataset_size("train", dataset_train)
+        train_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_train)
+        if dataset_eval is not None:
+            check_dataset_size("eval", dataset_eval)
+            eval_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_eval)
+        else:
+            eval_dataloader = None
 
-        #log.warning(f'Vocab size of model is larger than the tokenizer vocab. Setting vocab_size to: {max_token_value} to prevent errors during inference')
-        #OmegaConf.update(cfg, "model.args.vocab_size", max_token_value, force_add=True)
+        #update tokenizer config with metadata to save it in model checkpoints
+        data_wrapper.tokenizer.load_metadata(filepath=os.path.join(data_wrapper.tokenized_dir, cfg.dataset.tokenizer.meta_file))
+        with open_dict(cfg.dataset.tokenizer):
+            cfg.dataset.tokenizer["meta"] = data_wrapper.tokenizer.meta
+        
+        max_token_value = data_wrapper.tokenizer.meta.max_token_value
+        if max_token_value < cfg.model.args.vocab_size:
+            log.warning(f'Vocab size of model is larger than the tokenizer vocab. vocab_size of model: {cfg.model.args.vocab_size}, vocab size of tokenizer {max_token_value}')
+
+            #log.warning(f'Vocab size of model is larger than the tokenizer vocab. Setting vocab_size to: {max_token_value} to prevent errors during inference')
+            #OmegaConf.update(cfg, "model.args.vocab_size", max_token_value, force_add=True)
+    else:
+        train_dataloader = data_wrapper.get_loader('train')
+        eval_dataloader  = data_wrapper.get_loader('eval')
+
+        max_token_value = len(data_wrapper.tokenizer.get_vocab())
+        log.info(f"number token ids in tokenizer {max_token_value}")
+        # TODO find out what meta data does and ijmportance of max_token_value
+    
+    
+    raise NotImplementedError
 
     from qtransform.model import get_model
     model = get_model(cfg.model)

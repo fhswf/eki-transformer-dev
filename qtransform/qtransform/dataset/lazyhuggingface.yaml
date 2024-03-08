@@ -1,0 +1,13 @@
+wrapper: LazyHuggingfaceDatasetWrapper
+module: lazyhuggingface
+type: lazyhuggingface
+name: ??? # name or path of the dataset
+subset: # actual name of dataset if dataset contains sub datasets (e.g. name: wikitext, subset: wikitext-103-raw-v1) 
+splits: 
+  train: train
+  eval: validation
+  bench: test
+
+defaults:
+  - dataloader/default
+  - tokenizer: huggingface

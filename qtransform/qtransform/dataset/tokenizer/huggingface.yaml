@@ -1,0 +1,26 @@
+wrapper: huggingfaceTokenizer
+pretrained_tokenizer: AutoTokenizer
+module: huggingface
+#(https://huggingface.co/docs/transformers/main_classes/tokenizer)
+fast: True 
+encoding: TEMP
+name: ???
+
+
+#available encoders: 
+  #t5: T5Tokenizer (T5 model)
+  #distilbert: DistilBertTokenizer (DistilBert model)
+  #albert: AlbertTokenizer (ALBERT model)
+  #camembert: CamembertTokenizer (CamemBERT model)
+  #xlm-roberta: XLMRobertaTokenizer (XLM-RoBERTa model)
+  #longformer: LongformerTokenizer (AllenAI Longformer model)
+  #roberta: RobertaTokenizer (RoBERTa model)
+  #bert-base-japanese: BertJapaneseTokenizer (Bert model)
+  #bert: BertTokenizer (Bert model)
+  #openai-gpt: OpenAIGPTTokenizer (OpenAI GPT model)
+  #gpt2: GPT2Tokenizer (OpenAI GPT-2 model)
+  #transfo-xl: TransfoXLTokenizer (Transformer-XL model)
+  #xlnet: XLNetTokenizer (XLNet model)
+  #xlm: XLMTokenizer (XLM model)
+  #ctrl: CTRLTokenizer (Salesforce CTRL model)
+  #electra: ElectraTokenizer (Google ELECTRA model)
