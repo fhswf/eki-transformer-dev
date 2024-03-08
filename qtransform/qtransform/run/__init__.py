@@ -1,4 +1,4 @@
-from typing import Union, List, Dict, Any
+from typing import Union, List, Dict, Any, Tuple
 from omegaconf import DictConfig
 from dataclasses import dataclass
 from qtransform.dataset.tokenizer.tokenizer import Tokenizer
@@ -131,7 +131,7 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
         #load metadata, including vocabulary for character tokenization
         log.debug(tokenizer_cfg["meta"])
         tokenizer.load_metadata(meta=tokenizer_cfg["meta"])
-        block_size = checkpoint["model_args"]["args"]["block_size"]
+        block_size = checkpoint["model_cfg"]["args"]["block_size"]
         models.append(ModelData(type=InferType.CHECKPOINT, model=model, tokenizer=tokenizer, name = from_checkpoint_path, block_size=block_size))
     else:
         log.warning(f'Path to checkpoint "{from_checkpoint_path}" is not a file.')
@@ -141,7 +141,7 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
     
     return models
 
-def forward_pass(model_type: InferType, model: Union[nn.Module, ModelWrapper], idx_cond: torch.Tensor, labels = None) -> torch.Tensor:
+def forward_pass(model_type: InferType, model: Union[nn.Module, ModelWrapper], idx_cond: torch.Tensor, labels = None) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Generic forward pass, abstracted for torch Modules and ONNX checkpoints. Unlike the generate function, forward_pass
     returns the non-softmaxed logits and does not append the highest predicted token into a sequence for a tokenizer to decode.
@@ -158,16 +158,17 @@ def forward_pass(model_type: InferType, model: Union[nn.Module, ModelWrapper], i
                 log.warning("labels are givin to external forwards pass wrapper but they are ignored atm for onnx runs")
             odict = execute_onnx(model, idict)
             ret = torch.from_numpy(odict["output"])
+            loss = None
         case InferType.CHECKPOINT:
             model.eval()
             if labels is not None:
-                ret = model(idx_cond, labels)
+                ret, loss = model(idx_cond, labels)
             else:
-                ret = model(idx_cond)
+                ret, loss = model(idx_cond)
         case _:
             log.error(f'Forward pass only supported for ONNX models or checkpoints')
             raise ValueError()
-    return ret
+    return ret, labels
 
 
 @torch.no_grad()
@@ -184,7 +185,7 @@ def generate(model_type: InferType, block_size: int, model: Union[nn.Module, Mod
         idx_cond = idx if idx.size(1) <= block_size else idx[:, -block_size:]
         # forward the model to get the logits for the index in the sequence
         # the results should not be softmaxed yet as they will be later within this function
-        logits = forward_pass(model_type, model, idx_cond)
+        logits, _ = forward_pass(model_type, model, idx_cond)
         # pluck the logits at the final step and scale by desired temperature
         logits = logits[:, -1, :] / temperature
         # optionally crop the logits to only the top k options

@@ -56,7 +56,8 @@ def run(cfg : DictConfig):
             return
         block_size = cfg.dataset.args.block_size
         if batch_size * block_size > len(dataset):
-            log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, causing the dataloader to skip batches. Maybe check the split size?')
+            log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, '\
+             + 'causing the dataloader to skip batches. Maybe check the split size?')
     check_dataset_size("bench", dataset_bench)
     bench_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_bench)
     # copy paste ends here
@@ -80,7 +81,7 @@ def run(cfg : DictConfig):
                                         model = model, 
                                         tokenizer = tokenizer, 
                                         name="hf-pretrained-"+cfg.run.pretrained_model,
-                                        block_size=1024)]
+                                        block_size=model.config.n_positions)]
     else:
         models: List[ModelData] = load_model(cfg, device)
     
@@ -99,13 +100,11 @@ def run(cfg : DictConfig):
 
 def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
     lens = min(len(bench_dataloader), cfg.run.num_samples)
-    log.info(f"Running Benchmark fo {lens} samples")
+    log.info(f"Running Benchmark for {lens} samples")
     log.warning(f"Datalaoder length might not be correct")
 
     perplexity = torch.zeros(lens)
     accuracy = torch.zeros(lens)
-    #other_perplexity = torch.zeros(1)
-    #other_accuracy = torch.zeros(1)
     if isinstance(model_data.model, torch.nn.Module):
         model_data.model.eval()
         #TODO: add training steps in checkpoint data, create meta file for onnx models containing tokenizer data and model structure
@@ -130,16 +129,16 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
         else:
             logits = output
         with torch.no_grad():
-            perplexity[i] = measure_perplexity(logits, labels)
             probs = F.softmax(logits, dim=-1)
+            #idx_next = torch.multinomial(logits, num_samples=1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            #model_data.tokenizer.decode(idx_next[0].squeeze())
+            perplexity[i] = measure_perplexity(probs, labels)
             accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
-        #other_perplexity += measure_perplexity(probs, labels)
-        #other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
         torch.cuda.empty_cache()
     #table printing from: https://learnpython.com/blog/print-table-in-python/
     #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
     return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_data.name, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid')
-    #return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_data.name, other_perplexity / counter, other_accuracy / counter]],headers='firstrow', tablefmt='simple_grid')
 
     
 """
@@ -168,13 +167,14 @@ def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs:
     if inputs is None:
         #input contains complete batches of samples from dataset, cut a small portion (at max half of tokens) and generate text
         N, C = labels.size()
-        device = labels.device()
+        device = labels.device
         prompt_length = torch.randint(low=1, high=C//2, size=(1,)).item()
         log.debug(f'Begin measuring accuracy with prompt_length: {prompt_length}')
         accuracy_batch = torch.zeros(N).to(device=device)
         for i, batch in enumerate(labels):
             #generate function expects a batch size of 1
-            logits = generate(model_type, model, batch[:prompt_length].unsqueeze(dim=0), max_new_tokens = C - prompt_length)
+            #(model_type: InferType, block_size: int, model: Union[nn.Module, ModelWrapper], idx: torch.Tensor, max_new_tokens: int, temperature: float =1.0, top_k: int =None):
+            logits = generate(model_type, block_size = 256, model = model, idx = batch[:prompt_length].unsqueeze(dim=0), max_new_tokens = C - prompt_length)
             #log.critical(f'{logits}, {labels[i].unsqueeze(dim=0)}')
             #then, compare tokens with label
             _, accuracy = labels[i].unsqueeze(dim=0).eq(logits).unique(return_counts=True)
