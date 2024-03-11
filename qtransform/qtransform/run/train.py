@@ -55,6 +55,8 @@ def run(cfg: DictConfig):
     #if torch.__version__ >= (2,0) and cfg.run.compile:
     #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
     
+    print(model)
+
     train_dataloader, eval_dataloader, _ = get_dataloader_and_tokenizer(cfg, model.config.block_size)
 
     from qtransform.optim import get_optim, get_scheduler
@@ -187,7 +189,6 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         else:
             metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
 
-        ## eval
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
             losses, mean = eval_model(cfg, device, model, iter(eval_data_loader))
             log.info(f'AVERAGE EVAL LOSS FOR EPOCH {epoch}/{cfg.run.epochs}: {mean.item()}')
@@ -226,40 +227,63 @@ def train_one_epoch(cfg: DictConfig,
     #cfg is entire hydra config
     gradient_accumulation_steps = cfg.run.get('gradient_accumulation_steps', 1)
     #dataloader already iterable, refer to TODO from train function for randomness in samples
-    if isinstance(train_data, torch_data.DataLoader):
-        log.debug(f'Casting dataloader to iterable.')
-        train_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(train_data)
+    #if isinstance(train_data, torch_data.DataLoader):
+    #    log.debug(f'Casting dataloader to iterable.')
+    #    train_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(train_data)
     if not isinstance(gradient_accumulation_steps, int):
         gradient_accumulation_steps = 1
     train_batch_time = time()
     #avoid printing out loss of zero 
-    if cfg.run.max_iters < cfg.run.log_steps_interval:
-        cfg.run.log_steps_interval = cfg.run.max_iters
-    for i in range(1, cfg.run.max_iters+1):
+    if "max_iters" in  cfg.run and cfg.run.max_iters is not None and cfg.run.max_iters > 0:
+        if cfg.run.max_iters < cfg.run.log_steps_interval:
+            cfg.run.log_steps_interval = cfg.run.max_iters
+        max_len = len(train_data)
+        run_len = min(max_len, cfg.run.max_iters)
+        log.info(f"train_data len is {max_len}, max_iters set to {cfg.run.max_iters}. Running training for {run_len}")
+    else:
+        max_len = len(train_data)
+        run_len = len(train_data)
+        log.info(f"train_data len is {max_len}, max_iters set to {None}. Running training for {run_len}")
+
+    #for i in range(1, cfg.run.max_iters+1):
+    for i, data in enumerate(train_data):
+        if i > run_len:
+            break
         loss = None #remember last loss of mini-batch
         #break one iteration down into multiple batches to simulate a larger batch size
         for micro_step in range(gradient_accumulation_steps):
             #dataloaders iterate through entire dataset
             #problematic if datasets are large (openwebtext ~21GB) and testing should be done
-            data = next(train_data)
+            #data = next(train_data)
             #token tensor of length block_size (context length)
+            #print(data)
             inputs = None
             labels = None
+            # dataloader from hf with additional attention_mask for 
             if len(data) > 2:
                 inputs = data['input_ids']
                 labels = data['labels']
                 attention_mask = data['attention_mask']
+                if not torch.all(attention_mask == 1):
+                    log.error(f"mask for {i} is not all 1, BUT MASK IS IGNORED ATM")
+                    log.error(data)
             elif len(data) == 2:
                 inputs, labels = data
             else:
                 log.error(f"unsupported dataloader output. len was {len(data)}. ")
                 raise NotImplementedError
-            
+
             inputs = inputs.to(device_singleton.device)
-            labels = labels.to(device_singleton.device)
+            labels = labels.to(device_singleton.device)            
             if cfg.model.calc_loss_in_model:
+                if "shift_targets" in model.config.__dict__.keys() and not model.config.shift_targets:
+                    log.warning(f"model does not shift_targets accoring to config but calculates loss inside model, this might not work")
                 outputs, loss = model(inputs, labels)
             else:
+                # model does not shift targets => do it our self if dataset also does not do this 
+                if "shift_targets" in model.config.keys() and not model.config.shift_targets:
+                    outputs = outputs[..., :-1, :].contiguous()
+                    labels = labels[..., 1:].contiguous()
                 log.warning(f'Loss function outside of model (e.g. for pretrained models) is not fixed yet')
                 outputs, _ = model(inputs)
                 log.critical(outputs)
@@ -303,11 +327,24 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
     model.eval()
     vlosses = torch.zeros(cfg.run.eval_iters)
     i = 0    
-    if isinstance(eval_data, torch_data.DataLoader):
-        log.debug(f'Casting eval dataloader to iterable.')
-        eval_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(eval_data)
-    while i < cfg.run.eval_iters:
-        vdata = next(eval_data)
+    #if isinstance(eval_data, torch_data.DataLoader):
+    #    log.debug(f'Casting eval dataloader to iterable.')
+    #    eval_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(eval_data)
+
+    if "max_iters" in  cfg.run and cfg.run.max_iters is not None and cfg.run.max_iters > 0:
+        max_len = len(eval_data)
+        run_len = min(max_len, cfg.run.max_iters)
+        log.info(f"eval_data len is {max_len}, max_iters set to {cfg.run.max_iters}. Running eval for {run_len}")
+    else:
+        max_len = len(eval_data)
+        run_len = len(eval_data)
+        log.info(f"eval_data len is {max_len}, max_iters set to {None}. Running eval for {run_len}")
+    
+    #while i < cfg.run.eval_iters:
+    for i, vdata in enumerate(eval_data):
+        if i > run_len:
+            break
+
         vinputs = None
         vlabels = None
         if len(vdata) > 2:
