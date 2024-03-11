@@ -6,8 +6,24 @@ from os.path import join
 from numpy import dtype as np_dtype
 from os.path import expanduser
 from typing import Dict, Any
-
 log = logging.getLogger(__name__)
+
+def load_class(logger: logging.Logger, module: ModuleType, parent_class: type, class_name:str,  args: Dict[str, Any] = None):
+    """ 
+    searches for classes in module with parent_class as parent.
+    creates a class with class_name as its name and passes args to its __init__ constructor.
+    """
+    logger.info(f"Loading class {module.__name__}.{class_name}(parent: {parent_class})")
+    found_classes = get_classes(module, parent_class)
+    if class_name not in found_classes:
+        logger.error(f"{parent_class.__name__} {class_name} not found in {module.__name__}")
+        raise KeyError
+    cls: Any = found_classes[class_name]
+    if args:
+        logger.info(f'Passing arguments {args} to class: {cls}')
+        return cls(**args)    
+    return cls()
+
 def get_classes(module: ModuleType, parent_class: type) -> Dict[str, Any]:
     """
     'module' should be either a list of paths to look for
