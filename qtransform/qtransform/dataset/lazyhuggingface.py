@@ -26,6 +26,7 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
 
         tokenizer = AutoTokenizer.from_pretrained("gpt2")
         tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
         self.tokenizer = tokenizer
 
         self.max_block_size = tokenizer.model_max_length

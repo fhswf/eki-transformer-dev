@@ -43,9 +43,24 @@ def run(cfg: DictConfig):
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
+
+    from qtransform.model import get_model
+    model = get_model(cfg.model)
+    model.train()
+    print(model.config)
+    #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
+    #this is a problem if a layer uses a non-named Tensor during the forward pass
+    model.to(device=device)
+    # compiling fails export due to https://github.com/pytorch/pytorch/issues/111319
+    #if torch.__version__ >= (2,0) and cfg.run.compile:
+    #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
+    
+    # not sure if it would even work for us
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
     from qtransform.dataset import get_data, get_loader, DatasetWrapper, get_dataset_wrapper, OldDatasetWrapper
     data_wrapper: DatasetWrapper = get_dataset_wrapper(cfg.dataset)
-    data_wrapper.load_dataset()
+    data_wrapper.load_dataset(block_size = model.config.block_size)
     if hasattr(data_wrapper,"dataset_info"):
         dataset_train = data_wrapper.dataset_info.train
         dataset_eval = data_wrapper.dataset_info.eval
@@ -99,18 +114,6 @@ def run(cfg: DictConfig):
         log.info(f"number token ids in tokenizer {max_token_value}")
         # TODO find out what meta data does and ijmportance of max_token_value
     
-    
-    raise NotImplementedError
-
-    from qtransform.model import get_model
-    model = get_model(cfg.model)
-    model.train()
-    print(model.config)
-    #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
-    #this is a problem if a layer uses a non-named Tensor during the forward pass
-    model.to(device=device)
-    #if torch.__version__ >= (2,0) and cfg.run.compile:
-    #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
 
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
@@ -298,7 +301,18 @@ def train_one_epoch(cfg: DictConfig,
             #problematic if datasets are large (openwebtext ~21GB) and testing should be done
             data = next(train_data)
             #token tensor of length block_size (context length)
-            inputs, labels = data
+            inputs = None
+            labels = None
+            if len(data) > 2:
+                inputs = data['input_ids']
+                labels = data['labels']
+                attention_mask = data['attention_mask']
+            elif len(data) == 2:
+                inputs, labels = data
+            else:
+                log.error(f"unsupported dataloader output. len was {len(data)}. ")
+                raise NotImplementedError
+            
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)
             if cfg.model.calc_loss_in_model:
@@ -306,7 +320,7 @@ def train_one_epoch(cfg: DictConfig,
             else:
                 log.warning(f'Loss function outside of model (e.g. for pretrained models) is not fixed yet')
                 outputs, _ = model(inputs)
-                log.critical(output)
+                log.critical(outputs)
                 outputs = F.log_softmax(outputs, dim=2)
                 loss = F.nll_loss(outputs.view(-1, outputs.size(-1)),labels.view(-1), ignore_index=-1)
             loss /= gradient_accumulation_steps #make all mini-batches account as one large batch
@@ -352,7 +366,18 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
         eval_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(eval_data)
     while i < cfg.run.eval_iters:
         vdata = next(eval_data)
-        vinputs, vlabels = vdata
+        vinputs = None
+        vlabels = None
+        if len(vdata) > 2:
+            vinputs = vdata['input_ids']
+            vlabels = vdata['labels']
+            vattention_mask = vdata['attention_mask']
+        elif len(vdata) == 2:
+            vinputs, vlabels = vdata
+        else:
+            log.error(f"unsupported dataloader output. len was {len(vdata)}. ")
+            raise NotImplementedError
+
         vinputs = vinputs.to(device=device_singleton.device)
         vlabels = vlabels.to(device=device_singleton.device)
         if cfg.model.calc_loss_in_model:
