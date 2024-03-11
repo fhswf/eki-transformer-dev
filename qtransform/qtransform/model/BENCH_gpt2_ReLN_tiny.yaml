@@ -6,10 +6,11 @@ args:
   n_embd : 256
   dropout : 0.1 # for pretraining 0 is good, for finetuning try 0.1+
   bias : True # do we use bias inside LayerNorm and Linear layers? # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-  block_size : 256
+  block_size : 128
   vocab_size : 50304
   transformer_active_func: ReLU
-  norm_layer: LayerNorm
+  norm_layer: BatchNormIdPure
   flash: False
   single_output: False
   use_weight_tying: True
+  shift_targets: True

@@ -93,7 +93,7 @@ class BatchNormTranspose(nn.Module):
     def __init__(self, num_features, bias, *args, **kwargs): #arg names need to be identical to torch argnames for quantization support
         super().__init__(*args, **kwargs)
         self.bn = torch.nn.BatchNorm1d(num_features)
-        self.bn.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
+        #self.bn.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
         self.id = nn.Identity()
         
     def forward(self, input, *args, **kwargs):
