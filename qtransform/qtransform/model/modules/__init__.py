@@ -144,6 +144,8 @@ class CausalSelfAttention(nn.Module):
         #torch.mha uses torch.nn.functional.scaled_dot_product_attention, attention mask is added (plus operation) to attention
         #meaning: explicitly use negative infinity to prevent adding zero instead of masking that value during softmax
         bias = bias.masked_fill(bias == 0, float('-inf'))
+        bias = bias.masked_fill(bias == 1, 0)
+        #print(bias)
         self.register_buffer("bias", bias)
         # in case we need to do attention by hand:
         if (not self.flash) or torch.__version__[3] < 2:
