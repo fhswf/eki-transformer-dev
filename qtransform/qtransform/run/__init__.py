@@ -1,5 +1,6 @@
-from typing import Union, List, Dict, Any
-from omegaconf import DictConfig
+from typing import Tuple, Union, List, Dict, Any
+from omegaconf import DictConfig, open_dict
+import os
 from dataclasses import dataclass
 from qtransform.dataset.tokenizer.tokenizer import Tokenizer
 from qtransform.dataset import tokenizer as tokenizer_module
@@ -27,9 +28,9 @@ class ModelData():
     """
     type: InferType 
     model: Union[nn.Module, ModelWrapper]
-    tokenizer: Tokenizer
+    #tokenizer: Tokenizer
     name: str
-    block_size: int
+    #block_size: int
     #TODO: metadata (block_size)
 
 @dataclass
@@ -92,6 +93,7 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
         raise NotImplementedError()
         #TODO: retrieve context length
         models.append(ModelData(type=InferType.ONNX, model=model, tokenizer=tokenizer, name= onnx_model.path))
+
     #torch checkpoint
     if from_checkpoint_path != None:
         #load model from checkpoint
@@ -107,6 +109,9 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
             log.warning(f'No info specified if checkpoint is quantized. Assuming false.')
         elif checkpoint["quantized"]:
             log.warning(f'Behavior might be unexpected as checkpoint possibly contains quantized params.')
+
+
+        
         from qtransform.model import get_model
         model = get_model(model_cfg)
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -116,23 +121,30 @@ def load_model(cfg: DictConfig, device: torch.device) -> List[ModelData]:
         if not isinstance(compile_model, bool):
             log.warning(f'compile should be set to True or False, not {compile_model}. Defaulting to: False')
             compile_model = False
-        if torch.__version__ >= (2,0) and compile_model:
-            model = torch.compile(model) # requires PyTorch 2.0 (optional)
+        # does not work for export atm because of fx trace and jit compile
+        #if torch.__version__ >= (2,0) and compile_model:
+        #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
+            
+
+        # TODO reafactor no tokinzer loading in load model
         #tokenizer for model
         # tokenizer info saved in checkpoint or in hydra config
-        tokenizer_cfg = checkpoint.get("tokenizer_cfg")
-        if tokenizer_cfg is None:
-            log.warning(f'Model checkpoint does not contain tokenizer information. Using tokenizer info from config')
-            tokenizer_cfg = cfg.dataset.get("tokenizer")
-        if tokenizer_cfg is None:
-            log.error(f'Tokenizer configuration neither specified in model checkpoint nor in hydra config.')
-            raise KeyError()
-        tokenizer: Tokenizer = tokenizer_module.get_tokenizer(tokenizer_cfg)
-        #load metadata, including vocabulary for character tokenization
-        log.debug(tokenizer_cfg["meta"])
-        tokenizer.load_metadata(meta=tokenizer_cfg["meta"])
-        block_size = checkpoint["model_args"]["args"]["block_size"]
-        models.append(ModelData(type=InferType.CHECKPOINT, model=model, tokenizer=tokenizer, name = from_checkpoint_path, block_size=block_size))
+            
+
+        # tokenizer_cfg = checkpoint.get("tokenizer_cfg")
+        # if tokenizer_cfg is None:
+        #     log.warning(f'Model checkpoint does not contain tokenizer information. Using tokenizer info from config')
+        #     tokenizer_cfg = cfg.dataset.get("tokenizer")
+        # if tokenizer_cfg is None:
+        #     log.error(f'Tokenizer configuration neither specified in model checkpoint nor in hydra config.')
+        #     raise KeyError()
+        # tokenizer: Tokenizer = tokenizer_module.get_tokenizer(tokenizer_cfg)
+        # #load metadata, including vocabulary for character tokenization
+        # log.debug(tokenizer_cfg["meta"])
+        # tokenizer.load_metadata(meta=tokenizer_cfg["meta"])
+        # block_size = checkpoint["model_args"]["args"]["block_size"]
+        
+        models.append(ModelData(type=InferType.CHECKPOINT, model=model, name = from_checkpoint_path))
     else:
         log.warning(f'Path to checkpoint "{from_checkpoint_path}" is not a file.')
     if len(models) == 0:
@@ -199,3 +211,77 @@ def generate(model_type: InferType, block_size: int, model: Union[nn.Module, Mod
         idx = torch.cat((idx, idx_next), dim=1)
 
     return idx
+
+
+from torch.utils.data import DataLoader
+# block_size = model.config.block_size
+def get_dataloader_and_tokenizer(cfg, block_size) -> Tuple[DataLoader]:
+    """ note that the tokenize ris inside the dataloader wrapper  ...  for now """
+
+    torch.manual_seed(cfg.seed)    
+    log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
+
+    from qtransform.dataset import get_data, get_loader, DatasetWrapper, get_dataset_wrapper, OldDatasetWrapper
+    data_wrapper: DatasetWrapper = get_dataset_wrapper(cfg.dataset)
+    data_wrapper.load_dataset(block_size = block_size)
+    if hasattr(data_wrapper,"dataset_info"):
+        dataset_train = data_wrapper.dataset_info.train
+        dataset_eval = data_wrapper.dataset_info.eval
+    else:
+        dataset_train = data_wrapper.datasets.train
+        dataset_eval = data_wrapper.datasets.eval
+
+    try:
+        if cfg.dataset.sizes.train >= 1.0:
+            log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
+    except:
+        log.warning(f'Old Dataset definitions have not been updated completely')
+        
+    #check if batch_size batches are going to be performed
+    from torch.utils.data import Dataset
+    def check_dataset_size(name: str, dataset: Dataset):
+        batch_size = cfg.dataset.dataloader.batch_size
+        #model which is not an llm is loaded
+        if cfg.dataset.args.get('block_size') is None:
+            log.info(f'Model for dataset {name} presumably is not an LLM as the block size has not been specified')
+            return
+        block_size = cfg.dataset.args.block_size
+        if batch_size * block_size > len(dataset):
+            log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, causing the dataloader to skip batches. Maybe check the split size?')
+    
+    train_dataloader = None
+    eval_dataloader = None
+    bench_dataloader = None
+    if isinstance(data_wrapper, OldDatasetWrapper):
+        check_dataset_size("train", dataset_train)
+        train_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_train)
+        if dataset_eval is not None:
+            check_dataset_size("eval", dataset_eval)
+            eval_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_eval)
+        else:
+            eval_dataloader = None
+
+        #update tokenizer config with metadata to save it in model checkpoints
+        data_wrapper.tokenizer.load_metadata(filepath=os.path.join(data_wrapper.tokenized_dir, cfg.dataset.tokenizer.meta_file))
+        with open_dict(cfg.dataset.tokenizer):
+            cfg.dataset.tokenizer["meta"] = data_wrapper.tokenizer.meta
+        
+        max_token_value = data_wrapper.tokenizer.meta.max_token_value
+        if max_token_value < cfg.model.args.vocab_size:
+            log.warning(f'Vocab size of model is larger than the tokenizer vocab. vocab_size of model: {cfg.model.args.vocab_size}, vocab size of tokenizer {max_token_value}')
+
+            #log.warning(f'Vocab size of model is larger than the tokenizer vocab. Setting vocab_size to: {max_token_value} to prevent errors during inference')
+            #OmegaConf.update(cfg, "model.args.vocab_size", max_token_value, force_add=True)
+    else:
+        train_dataloader = data_wrapper.get_loader('train')
+        eval_dataloader  = data_wrapper.get_loader('eval')
+        bench_dataloader = data_wrapper.get_loader('bench')
+
+        max_token_value = len(data_wrapper.tokenizer.get_vocab())
+        log.info(f"number token ids in tokenizer {max_token_value}")
+        # TODO find out what meta data does and ijmportance of max_token_value
+
+    if bench_dataloader is not None:
+        return (train_dataloader, eval_dataloader, bench_dataloader)
+    else:
+        return (train_dataloader, eval_dataloader)

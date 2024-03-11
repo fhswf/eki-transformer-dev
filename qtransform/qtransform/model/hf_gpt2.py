@@ -3,6 +3,9 @@ from typing import Dict, Union
 from omegaconf import DictConfig
 from torch.nn import Module
 
+import logging
+log = logging.getLogger(__name__)
+
 class HuggingfaceGPT2LMHeadModel(GPT2LMHeadModel):
     """
         Rename class of Hugginface's GPT2 model to be a bit more verbose.
@@ -28,6 +31,7 @@ class HuggingfaceGPT2LMHeadModel(GPT2LMHeadModel):
                 activation_function = config.transformer_active_func.lower()
                 )
             config = GPT2Config(**config)
+        self.config = config
         super().__init__(config)
     def forward(self, input_ids, labels = None):
         #attention mask not necessary as our tokens are not padded
@@ -41,9 +45,11 @@ class PreTrainedGPT2(Module):
     Wrapper around pretrained GPT2 model to make our workflow of finetuning and running inference/benchmarking compatible
     """
     def __init__(self, config: DictConfig):
+        self.config = config
+        print(self.config)
         version = config.version
         if not isinstance(version, str) or version not in PRETRAINED_VERSIONS:
-            log.error(f'Pretrained model should be one of: {PRETRAINED_VERSIONS}, not: {cfg.version}')
+            log.error(f'Pretrained model should be one of: {PRETRAINED_VERSIONS}, not: {config.version}')
             raise ValueError()
         super().__init__()
         self.model = GPT2LMHeadModel.from_pretrained(version)

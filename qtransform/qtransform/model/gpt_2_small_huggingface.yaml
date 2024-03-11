@@ -8,7 +8,8 @@
 #using custom wrapper around huggingface model in order to make return values of forward pass consistent
 cls: PreTrainedGPT2 #use huggingface model
 pretrained: False
-calc_loss_in_model: False
+calc_loss_in_model: True
+shift_targets: True
 args:
   version: gpt2
   block_size: 1024

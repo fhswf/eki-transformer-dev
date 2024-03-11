@@ -2,8 +2,8 @@ from omegaconf import DictConfig
 import logging
 log = logging.getLogger(__name__)
 
+import os
 from itertools import chain
-from typing import Callable, Dict, List, Tuple
 from qtransform.dataset import DatasetSplits, DatasetWrapper
 
 from torch.utils.data import DataLoader, Dataset
@@ -22,7 +22,7 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
     """
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
-        print(self.cfg)
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
         tokenizer = AutoTokenizer.from_pretrained("gpt2")
         tokenizer.pad_token = tokenizer.eos_token
@@ -41,7 +41,8 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
             log.warning("TODO collate_fn via config is not supported yet")
 
         kwargs['collate_fn'] = self.data_collator
-
+        if split not in self.datasets.__dict__.keys():
+            raise KeyError(f"Split {split} not found in avaiable dataset splits. Usually train eval or bench.")
         loader = DataLoader(dataset=self.datasets[split], **kwargs)
         log.debug(f'len of dataset loader: {len(loader)}')
         return loader
@@ -63,6 +64,7 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
         # Also this might be more ressource intensive because of huddingface dataloader workers being a **** sometimes  
         log.info(f"Setting padding and batching via data_collate and grouping function")
         dataset = self.map_dataset(dataset, block_size, batch_size)
+        log.debug(f" Dataset containes {dataset}")
 
         if isinstance(dataset, Dataset):
             log.warning(f"Dataset {self.cfg.name}, subset {self.cfg.get('subset')} has no splits. Setting all splits the same")
@@ -72,7 +74,7 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
         elif isinstance(dataset, dict):
             if self.cfg.get('splits') is not None:
                 for k,v in self.cfg.splits.items():
-                    print(k,v)
+                    log.debug(f"Mapping dataset our key {k} to found key {v} of external dataset")
                     self.datasets[k] = dataset[v]
             else:
                 log.warning("Please use splits mapping. Trying to infer splits with common names")
@@ -87,7 +89,6 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
             log.error(f"Huggingface dataset:  load_dataset return  for {self.cfg.name}, subset {self.cfg.get('subset')} has unsupported type. Type was {type(dataset)}. Needs to be dict with names")
             raise KeyError
 
-        print(self.datasets)
         pass
     
 
