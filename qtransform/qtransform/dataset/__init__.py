@@ -87,6 +87,7 @@ class DatasetWrapper(ABC):
     def get_loader(self, split: str) -> DataLoader:
         raise NotImplementedError
 
+#TODO: OldDatasetWrapper tokenizes by memmap. find a good way to abstract this
 class OldDatasetWrapper(DatasetWrapper):
     """
     Capsule around Dataset, to unify their interfaces.

@@ -1,0 +1,20 @@
+type: ONNX #ONNX or DYNAMIC_CHECKPOINT
+from_file: qonnx_1,64_gpt_2_h2l2e256b64_ReBN_wikitext_2024-03-12_10:27:20__epoch:1.onnx #torch checkpoint or ONNX model path
+
+#model args
+cls: GPT
+calc_loss_in_model: True
+args:
+  n_layer : 2
+  n_head : 2
+  n_embd : 256
+  dropout : 0.0 # for pretraining 0 is good, for finetuning try 0.1+
+  bias : True # do we use bias inside LayerNorm and Linear layers? # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+  block_size : 64
+  vocab_size : 50304
+  transformer_active_func: GELU
+  norm_layer: BatchNorm
+  flash: False
+  single_output: False
+  use_weight_tying: True
+  shift_targets: False

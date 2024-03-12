@@ -35,3 +35,6 @@ class HuggingfaceDatasetWrapper(OldDatasetWrapper):
     
     def load_dataset(self) -> DatasetSplits:
         return None
+
+    def get_loader(self, split: str) -> DataLoader:
+        raise NotImplementedError

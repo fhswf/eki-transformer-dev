@@ -4,6 +4,8 @@ import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig, open_dict
 from . import forward_pass, get_dataloader_and_tokenizer, load_model, ModelData, InferType, generate
+#TODO: make ... import compatible
+from qtransform.model import get_model_wrapper, QTRModelWrapper
 from qtransform import device_singleton
 from qtransform.dataset import get_loader
 from typing import List, Union, Tuple
@@ -35,8 +37,6 @@ def run(cfg : DictConfig):
     # TODO
     #model = onnx.load("model.onnx")
     #input_shapes = [[d.dim_value for d in _input.type.tensor_type.shape.dim] for _input in model.graph.input]
-
-
     #TODO: infer model config (block size)
     row_limit = cfg.run.row_limit
     if not isinstance(row_limit, int):
@@ -44,6 +44,21 @@ def run(cfg : DictConfig):
         row_limit = 10
     elif row_limit < 1:
         row_limit = 10
+    from qtransform.model import QTRModelWrapper
+    model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
+    _, _, bench_dataloader = get_dataloader_and_tokenizer(cfg, model_wrapper.model_cfg.args.block_size)
+    if cfg.run.profile:
+        #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
+        activities = ProfilerActivity.CPU if device.type == 'cpu' else ProfilerActivity.CUDA 
+        with profile(activities=[activities], profile_memory=True, record_shapes=True) as prof:
+            with record_function(f'BENCHMARK: {model_wrapper.model_type}'):
+                log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_wrapper=model_wrapper, bench_dataloader=bench_dataloader)}')
+        log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
+    else:
+        log.info(f'BENCHMARK for : {model_data.type.name}')
+        log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model=model_wrapper, bench_dataloader=bench_dataloader)}')
+
+    """
     #load model
     #TODO: huggingface models are not able to be finetuned this way. implement saving of huggingface checkpoints (as well as their configs)
     if cfg.run.pretrained_model is not None:
@@ -56,11 +71,7 @@ def run(cfg : DictConfig):
                                         model = model, 
                                         #tokenizer = tokenizer, 
                                         name="hf-pretrained-"+cfg.run.pretrained_model,
-                                        #block_size=1024
-                                        )]
-        # TODO get this from yaml config
-        _, _, bench_dataloader = get_dataloader_and_tokenizer(cfg, models[0].model.model.config.n_positions)
-
+                                        block_size=model.config.n_positions)]
     else:
         models: List[ModelData] = load_model(cfg, device)
 
@@ -98,9 +109,9 @@ def run(cfg : DictConfig):
     else:
         for i, model_data in enumerate(models):
             log.info(f'BENCHMARK for : {model_data.type.name}')
-            log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')
-
-def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
+            log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')"""
+  
+def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[str, None]:
     lens = min(len(bench_dataloader), cfg.run.num_samples)
     log.info(f"Datalaoder has {len(bench_dataloader)} number of samples ")
     log.info(f"Running Benchmark for {lens} samples")
@@ -108,20 +119,11 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
 
     perplexity = torch.zeros(lens)
     accuracy = torch.zeros(lens)
-    #other_perplexity = torch.zeros(1)
-    #other_accuracy = torch.zeros(1)
-    if isinstance(model_data.model, torch.nn.Module):
-        model_data.model.eval()
-        #TODO: add training steps in checkpoint data, create meta file for onnx models containing tokenizer data and model structure
-        #meta = model_data.model.config
-    if model_data.type != InferType.CHECKPOINT:
-        log.warning(f'Benchmarking for ONNX models not implemented yet.')
-        return None
+    if isinstance(model_wrapper.model, torch.nn.Module):
+        model_wrapper.model.eval()
     for i, data in enumerate(bench_dataloader): 
-
         if i >= lens:
             break
-
         inputs = None
         labels = None
         if len(data) > 2:
@@ -136,18 +138,17 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
         with torch.no_grad():
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)
-            output = forward_pass(model_data.type, model_data.model, inputs, labels)
+            output = model_wrapper(inputs, labels)
             #log.critical(output)
             if isinstance(output, tuple): # if ...config.calc_loss_in_model
                 logits = output[0]
+                #TODO: var loss not used besides printing
                 loss = output[1]
-                print(loss)
-                print(torch.exp(loss))
+                log.debug(f'Loss: {loss}, Perplexity: {torch.exp(loss)}')
 
                 probs = F.softmax(logits, dim=-1)
-                accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
-
-                if model_data.model.config.shift_targets:
+                accuracy[i] = measure_accuracy(model_wrapper.model, labels=labels, inputs=probs)
+                if model_wrapper.model_cfg.args.shift_targets:
                     logits = logits[..., :-1, :].contiguous()
                     labels = labels[..., 1:].contiguous()
                     perplexity[i] = measure_perplexity(logits, labels)
@@ -158,17 +159,15 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
                 perplexity[i] = measure_perplexity(logits, labels)
                 print("self compute")
                 probs = F.softmax(logits, dim=-1)
-                accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+                accuracy[i] = measure_accuracy(model_wrapper=model_wrapper, labels=labels, inputs=probs)
                 print(perplexity[i])
         #other_perplexity += measure_perplexity(probs, labels)
         #other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
         torch.cuda.empty_cache()
     #table printing from: https://learnpython.com/blog/print-table-in-python/
     #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
-    return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_data.name, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid')
-    #return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_data.name, other_perplexity / counter, other_accuracy / counter]],headers='firstrow', tablefmt='simple_grid')
+    return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_wrapper.model_type, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid')
 
-    
 """
 calculating the perplexity usually occurs with an input of smaller size than the model's max context length
 (https://huggingface.co/docs/transformers/perplexity#calculating-ppl-with-fixed-length-models).
@@ -181,7 +180,7 @@ def measure_perplexity(logits: torch.Tensor, labels: torch.Tensor):
     result = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-1)
     return  torch.exp(result)#F.cross_entropy(logits, labels))
 
-def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs: torch.Tensor = None) -> float:
+def measure_accuracy(model_wrapper: QTRModelWrapper, labels: torch.Tensor, inputs: torch.Tensor = None) -> float:
     """
     Measures how many token predictions of a logit and label are correct. It does so by either generating text based on the start of the label tensor and then
     comparing the result with the actual values within labels or by directly comparing the results if inputs is specified.
@@ -192,16 +191,19 @@ def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs:
     Inputs is either of shape: [N, C, V] or [C, V] with N: batches, C: context, V: vocab_size
     Labels is either of shape: [N, C] or [C] with N: batches, C: context
     """
-    if inputs is None:
+    #unsure if measuring accuracy without labels is needed
+    """if inputs is None:
+        log.warning(f'Not changed for QTRModelWrapper yet')
         #input contains complete batches of samples from dataset, cut a small portion (at max half of tokens) and generate text
         N, C = labels.size()
-        device = labels.device()
+        device = labels.device
         prompt_length = torch.randint(low=1, high=C//2, size=(1,)).item()
         log.debug(f'Begin measuring accuracy with prompt_length: {prompt_length}')
         accuracy_batch = torch.zeros(N).to(device=device)
         for i, batch in enumerate(labels):
             #generate function expects a batch size of 1
-            logits = generate(model_type, model, batch[:prompt_length].unsqueeze(dim=0), max_new_tokens = C - prompt_length)
+            #(model_type: InferType, block_size: int, model: Union[nn.Module, ModelWrapper], idx: torch.Tensor, max_new_tokens: int, temperature: float =1.0, top_k: int =None):
+            logits = generate(model_type, block_size = 256, model = model, idx = batch[:prompt_length].unsqueeze(dim=0), max_new_tokens = C - prompt_length)
             #log.critical(f'{logits}, {labels[i].unsqueeze(dim=0)}')
             #then, compare tokens with label
             _, accuracy = labels[i].unsqueeze(dim=0).eq(logits).unique(return_counts=True)
@@ -209,7 +211,7 @@ def measure_accuracy(model_type: InferType, model, labels: torch.Tensor, inputs:
             #input prompt is always going to be correct
             accuracy = (accuracy[1] - prompt_length) / (C - prompt_length) * 100
             accuracy_batch[i] = accuracy
-        return accuracy_batch.mean().item()
+        return accuracy_batch.mean().item()"""
     #entries ordered as: False, True
     _, accuracy =  inputs.max(dim=-1).indices.eq(labels).unique(return_counts=True)
     #if length is one, then accuracy only contains false values
