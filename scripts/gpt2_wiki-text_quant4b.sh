@@ -8,6 +8,7 @@ for model in ${models[@]}
 do
     for quant in  ${quant_models[@]}
     do
+        echo qtransform run=train model=$model run.epochs=2 $data $tokenizer +export=True quantization=qat quantization/model=$quant
         qtransform run=train model=$model run.epochs=2 $data $tokenizer +export=True quantization=qat quantization/model=$quant
     done
 done
