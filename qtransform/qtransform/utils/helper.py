@@ -2,7 +2,10 @@ import datetime
 import os
 from typing import Any, Dict, Tuple, Union
 import hydra
-from omegaconf import DictConfig
+import hydra
+from pprint import pprint
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import OmegaConf, DictConfig
 import torch
 import logging
 from torch import nn
@@ -94,7 +97,7 @@ def save_checkpoint(cfg: DictConfig,
                 chkpt_folder = os.getcwd()
     os.makedirs(chkpt_folder, exist_ok=True)
     if epoch % cfg.run.save_epoch_interval == 0:
-        checkpoint_path = os.path.join(chkpt_folder,f'{cfg.model.cls}_{dataset}_{timestamp}__epoch:{epoch}')
+        checkpoint_path = os.path.join(chkpt_folder,f"{OmegaConf.to_container(HydraConfig.get().runtime.choices)['model']}_{dataset}_{timestamp}__epoch:{epoch}")
         torch.save(obj={
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),

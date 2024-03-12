@@ -184,15 +184,15 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
                 row_limit = 10
             with profile(activities=activities, **cfg.run.profile.args) as prof:
                 with record_function(f'TRAIN EPOCH {epoch}'):
-                    metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
+                    metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
             log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
         else:
-            metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
+            metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
 
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
-            losses, mean = eval_model(cfg, device, model, iter(eval_data_loader))
+            losses, mean = eval_model(cfg, device, model, eval_data_loader)
             log.info(f'AVERAGE EVAL LOSS FOR EPOCH {epoch}/{cfg.run.epochs}: {mean.item()}')
-        log.info(str(metrics))
+        log.info(f"last train loss was {str(metrics)}")
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
@@ -301,7 +301,7 @@ def train_one_epoch(cfg: DictConfig,
         optimizer.zero_grad(set_to_none=True)  # Zero gradients after gradient accumulation
         running_loss += loss.item() * gradient_accumulation_steps 
         #log loss
-        if i % cfg.run.log_steps_interval == 0:
+        if i % cfg.run.log_steps_interval == cfg.run.log_steps_interval-1:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
             log.info(f'  batch {i} loss: {last_loss}. time: {(time() - train_batch_time)*1000:.2f}ms')
             train_batch_time = time()
@@ -325,8 +325,6 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
         avg_loss: The average of every vloss
     """
     model.eval()
-    vlosses = torch.zeros(cfg.run.eval_iters)
-    i = 0    
     #if isinstance(eval_data, torch_data.DataLoader):
     #    log.debug(f'Casting eval dataloader to iterable.')
     #    eval_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(eval_data)
@@ -339,7 +337,8 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
         max_len = len(eval_data)
         run_len = len(eval_data)
         log.info(f"eval_data len is {max_len}, max_iters set to {None}. Running eval for {run_len}")
-    
+
+    vlosses = torch.zeros(run_len+1)
     #while i < cfg.run.eval_iters:
     for i, vdata in enumerate(eval_data):
         if i > run_len:
@@ -361,13 +360,13 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
         vlabels = vlabels.to(device=device_singleton.device)
         if cfg.model.calc_loss_in_model:
             voutputs, vloss = model(vinputs, vlabels)
+            #print(f"voutputs, vloss {vloss}")
         else:
             voutputs, _ = model(vinputs)
             voutputs_softmax = torch.nn.functional.log_softmax(voutputs, dim=2)
             vloss = torch.nn.functional.nll_loss(voutputs_softmax.view(-1, voutputs_softmax.size(-1)),vlabels.view(-1), ignore_index=-1)
-        # print(vloss)
+        #print(vloss.item())
         vlosses[i] = vloss.item()
-        i += 1
+        #print(vlosses)
     avg_vloss = vlosses.mean()
-    model.train()
     return vlosses, avg_vloss
