@@ -3,7 +3,7 @@ log = logging. getLogger(__name__)
 import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig, open_dict
-from . import forward_pass, load_model, ModelData, InferType, generate
+from . import forward_pass, get_dataloader_and_tokenizer, load_model, ModelData, InferType, generate
 from qtransform import device_singleton
 from qtransform.dataset import get_loader
 from typing import List, Union, Tuple
@@ -36,31 +36,6 @@ def run(cfg : DictConfig):
     #model = onnx.load("model.onnx")
     #input_shapes = [[d.dim_value for d in _input.type.tensor_type.shape.dim] for _input in model.graph.input]
 
-    torch.manual_seed(cfg.seed)    
-    log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
-
-    from qtransform.dataset import get_data, get_loader, DatasetWrapper
-    data_wrapper: DatasetWrapper = get_data(cfg.dataset)
-    #dataset hydra config expects block size, currently set in command line. TODO: infer from onnx metadata or checkpoint metadata
-    data_wrapper.load_dataset()
-    dataset_bench = data_wrapper.dataset_info.bench
-    if cfg.dataset.sizes.train >= 1.0:
-        log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
-    #check if batch_size batches are going to be performed
-    from torch.utils.data import Dataset
-    def check_dataset_size(name: str, dataset: Dataset):
-        batch_size = cfg.dataset.dataloader.batch_size
-        #model which is not an llm is loaded
-        if cfg.dataset.args.get('block_size') is None:
-            log.info(f'Model for dataset {name} presumably is not an LLM as the block size has not been specified')
-            return
-        block_size = cfg.dataset.args.block_size
-        if batch_size * block_size > len(dataset):
-            log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, '\
-             + 'causing the dataloader to skip batches. Maybe check the split size?')
-    check_dataset_size("bench", dataset_bench)
-    bench_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_bench)
-    # copy paste ends here
 
     #TODO: infer model config (block size)
     row_limit = cfg.run.row_limit
@@ -75,16 +50,39 @@ def run(cfg : DictConfig):
         log.info(f'Using pretrained model {cfg.run.pretrained_model}')
         from qtransform.model.hf_gpt2 import PreTrainedGPT2
         from qtransform.dataset.tokenizer.tiktoken import TikTokenizer
-        model = PreTrainedGPT2(DictConfig({"version": cfg.run.pretrained_model})).to(device=device)
-        tokenizer = TikTokenizer({"encoding": "gpt2"})
+        model = PreTrainedGPT2(DictConfig({"version": cfg.run.pretrained_model, "shift_targets": True})).to(device=device)
+        #tokenizer = TikTokenizer({"encoding": "gpt2"})
         models: List[ModelData] = [ModelData(type = InferType.CHECKPOINT, 
                                         model = model, 
-                                        tokenizer = tokenizer, 
+                                        #tokenizer = tokenizer, 
                                         name="hf-pretrained-"+cfg.run.pretrained_model,
                                         block_size=model.config.n_positions)]
     else:
         models: List[ModelData] = load_model(cfg, device)
-    
+
+        _, _, bench_dataloader = get_dataloader_and_tokenizer(cfg, models[0].model.config.block_size)
+
+    #from qtransform.dataset import get_data, get_loader, DatasetWrapper
+    #data_wrapper: DatasetWrapper = get_data(cfg.dataset)
+    ##dataset hydra config expects block size, currently set in command line. TODO: infer from onnx metadata or checkpoint metadata
+    #data_wrapper.load_dataset()
+    #dataset_bench = data_wrapper.dataset_info.bench
+    #if cfg.dataset.sizes.train >= 1.0:
+    #    log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
+    ##check if batch_size batches are going to be performed
+    #from torch.utils.data import Dataset
+    #def check_dataset_size(name: str, dataset: Dataset):
+    #    batch_size = cfg.dataset.dataloader.batch_size
+    #    #model which is not an llm is loaded
+    #    if cfg.dataset.args.get('block_size') is None:
+    #        log.info(f'Model for dataset {name} presumably is not an LLM as the block size has not been specified')
+    #        return
+    #    block_size = cfg.dataset.args.block_size
+    #    if batch_size * block_size > len(dataset):
+    #        log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, causing the dataloader to skip batches. Maybe check the split size?')
+    #check_dataset_size("bench", dataset_bench)
+    #bench_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_bench)
+     
     if cfg.run.profile:
         #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
         activities = ProfilerActivity.CPU if device.type == 'cpu' else ProfilerActivity.CUDA 
@@ -100,6 +98,7 @@ def run(cfg : DictConfig):
 
 def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
     lens = min(len(bench_dataloader), cfg.run.num_samples)
+    log.info(f"Datalaoder has {len(bench_dataloader)} number of samples ")
     log.info(f"Running Benchmark for {lens} samples")
     log.warning(f"Datalaoder length might not be correct")
 
@@ -116,25 +115,47 @@ def benchmark(cfg, model_data: ModelData, bench_dataloader) -> Union[str, None]:
 
         if i >= lens:
             break
-        inputs, labels = data
-        inputs = inputs.to(device_singleton.device)
-        labels = labels.to(device_singleton.device)
-        output = forward_pass(model_data.type, model_data.model, inputs, labels)
-        #log.critical(output)
-        if isinstance(output, tuple):
-            logits = output[0]
-            loss = output[1]
-            #print(loss)
-            #print(torch.exp(loss))
+
+        inputs = None
+        labels = None
+        if len(data) > 2:
+            inputs = data['input_ids']
+            labels = data['labels']
+            attention_mask = data['attention_mask']
+        elif len(data) == 2:
+            inputs, labels = data
         else:
-            logits = output
+            log.error(f"unsupported dataloader output. len was {len(data)}. ")
+            raise NotImplementedError
         with torch.no_grad():
-            probs = F.softmax(logits, dim=-1)
-            #idx_next = torch.multinomial(logits, num_samples=1)
-            idx_next = torch.multinomial(probs, num_samples=1)
-            #model_data.tokenizer.decode(idx_next[0].squeeze())
-            perplexity[i] = measure_perplexity(probs, labels)
-            accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+            inputs = inputs.to(device_singleton.device)
+            labels = labels.to(device_singleton.device)
+            output = forward_pass(model_data.type, model_data.model, inputs, labels)
+            #log.critical(output)
+            if isinstance(output, tuple): # if ...config.calc_loss_in_model
+                logits = output[0]
+                loss = output[1]
+                print(loss)
+                print(torch.exp(loss))
+
+                probs = F.softmax(logits, dim=-1)
+                accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+
+                if model_data.model.config.shift_targets:
+                    logits = logits[..., :-1, :].contiguous()
+                    labels = labels[..., 1:].contiguous()
+                    perplexity[i] = measure_perplexity(logits, labels)
+                else:
+                    perplexity[i] = measure_perplexity(logits, labels)
+            else:
+                logits = output
+                perplexity[i] = measure_perplexity(logits, labels)
+                print("self compute")
+                probs = F.softmax(logits, dim=-1)
+                accuracy[i] = measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
+                print(perplexity[i])
+        #other_perplexity += measure_perplexity(probs, labels)
+        #other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
         torch.cuda.empty_cache()
     #table printing from: https://learnpython.com/blog/print-table-in-python/
     #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)

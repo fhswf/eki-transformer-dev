@@ -33,10 +33,11 @@ def get_model(model_cfg: DictConfig) -> nn.Module:
         with open_dict(model_cfg):
             model_cfg.args.block_size = model.config.n_positions
             model_cfg.args.vocab_size = model.config.vocab_size
-            model_cfg.args.calc_loss_in_model = False
+            model_cfg.args.calc_loss_in_model = True
         return model
     from qtransform import model as _model
     args = model_cfg.get("args")
+
     #models need to specify their hyperparameters in init parameter named "config"
     model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module)
     #construct model if no args have been given

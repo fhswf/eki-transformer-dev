@@ -4,7 +4,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from omegaconf import DictConfig, open_dict
 from qtransform.utils.introspection import get_classes, concat_paths
-from qtransform.dataset import DatasetInfo, DatasetWrapper
+from qtransform.dataset import DatasetSplits, OldDatasetWrapper
 from qtransform.dataset.tokenizer import get_tokenizer, Tokenizer
 import os
 from glob import glob
@@ -15,7 +15,7 @@ from datasets.dataset_dict import DatasetDict
 
 log = logging.getLogger(__name__)
 
-class FileSystemLLMDatasetWrapper(DatasetWrapper):
+class FileSystemLLMDatasetWrapper(OldDatasetWrapper):
     """
         DatasetWrapper used to load .bin files from a dataset file and return a DatasetInfo object containing torch.utils.Dataset instances.
         They can be iterated over with a Dataloader, making the process of retrieving data abstract.

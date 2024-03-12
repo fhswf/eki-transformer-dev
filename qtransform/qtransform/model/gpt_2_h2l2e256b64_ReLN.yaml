@@ -13,3 +13,4 @@ args:
   flash: False
   single_output: False
   use_weight_tying: True
+  shift_targets: True

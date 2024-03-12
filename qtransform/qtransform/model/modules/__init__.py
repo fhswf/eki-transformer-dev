@@ -49,12 +49,13 @@ class BatchNorm(nn.BatchNorm1d):
         self.num_features = num_features
         super().__init__(num_features, *args, **kwargs)
         #self.weight = nn.Parameter(torch.ones(ndim))
-        self.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
+        #self.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
 
     def forward(self, input, *args, **kwargs):
         #dirty workaround to avoid runtimeerrors by adding a padding if the input is smaller than the feature length
         #padding does not artificially lower mean as normalization is performed along the word embeddings
         n,c,l = input.size()
+        #print(n,c,l)
         if c < self.num_features:
             #input tensor should always be three dimensional
             padding = torch.zeros(n, self.num_features - c, l).to(device=input.device)
@@ -93,7 +94,7 @@ class BatchNormTranspose(nn.Module):
     def __init__(self, num_features, bias, *args, **kwargs): #arg names need to be identical to torch argnames for quantization support
         super().__init__(*args, **kwargs)
         self.bn = torch.nn.BatchNorm1d(num_features)
-        self.bn.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
+        #self.bn.bias = nn.Parameter(torch.zeros(num_features)) if bias else None
         self.id = nn.Identity()
         
     def forward(self, input, *args, **kwargs):
@@ -252,8 +253,8 @@ class TransformerBlock(nn.Module):
             self.norm_size = config.n_embd
             #dummy layers which do nothing in order to merge with batchnorm layers
             #that also means including some bloat layers
-            #self.custom_ln1 = nn.Identity()
-            #self.custom_ln2 = nn.Identity()
+            self.custom_ln1 = nn.Identity()
+            self.custom_ln2 = nn.Identity()
         elif config.norm_layer in ["BatchNorm", "InstanceNorm"]:
             self.norm_size = config.block_size
             #self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()

@@ -4,7 +4,7 @@ from .tokenizer import Tokenizer, Metadata
 import logging 
 from omegaconf import DictConfig
 from pprint import PrettyPrinter
-from typing import Union, Dict
+from typing import Union, Dict, Any
 
 log = logging.getLogger(__name__)
 
@@ -32,3 +32,8 @@ def get_tokenizer(tokenizer_cfg: Union[DictConfig, Dict], memmap: np.memmap = No
     log.debug(f'Attempting to retrieve tokenizer with cfg: {PrettyPrinter(indent=1).pformat(tokenizer_cfg)}')
     tokenizer: Tokenizer = get_data(log, package_self, tokenizer_cfg.get("wrapper"), Tokenizer, args={"tokenizer_cfg": tokenizer_cfg, "memmap": memmap})
     return tokenizer
+
+#def get_tokenizer2(cls_name: str, cfg:Union[DictConfig, Dict]) -> Any:
+#    """ get tokenizer and return an instance """
+#    log.debug(f" get tokenizer with config: {cfg}")
+#    return load_class(logger=log, module=package_self, parent_class=Tokenizer2, class_name=cls_name, args=cfg)

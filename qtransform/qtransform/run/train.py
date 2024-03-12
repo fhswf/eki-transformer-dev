@@ -2,6 +2,7 @@ import logging
 from typing import Any, Tuple, Union
 from omegaconf import DictConfig, OmegaConf, open_dict
 import os
+from qtransform.run import get_dataloader_and_tokenizer
 import torch
 from torch import nn
 from torch import optim
@@ -43,55 +44,20 @@ def run(cfg: DictConfig):
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
-    from qtransform.dataset import get_data, get_loader, DatasetWrapper
-    data_wrapper: DatasetWrapper = get_data(cfg.dataset)
-    data_wrapper.load_dataset()
-    dataset_train = data_wrapper.dataset_info.train
-    dataset_eval = data_wrapper.dataset_info.eval
-    if cfg.dataset.sizes.train >= 1.0:
-        log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
-
-
-    #check if batch_size batches are going to be performed
-    from torch.utils.data import Dataset
-    def check_dataset_size(name: str, dataset: Dataset):
-        batch_size = cfg.dataset.dataloader.batch_size
-        #model which is not an llm is loaded
-        if cfg.dataset.args.get('block_size') is None:
-            log.info(f'Model for dataset {name} presumably is not an LLM as the block size has not been specified')
-            return
-        block_size = cfg.dataset.args.block_size
-        if batch_size * block_size > len(dataset):
-            log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, causing the dataloader to skip batches. Maybe check the split size?')
-    check_dataset_size("train", dataset_train)
-    train_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_train)
-    if dataset_eval is not None:
-        check_dataset_size("eval", dataset_eval)
-        eval_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_eval)
-    else:
-        eval_dataloader = None
-
-    #update tokenizer config with metadata to save it in model checkpoints
-    data_wrapper.tokenizer.load_metadata(filepath=os.path.join(data_wrapper.tokenized_dir, cfg.dataset.tokenizer.meta_file))
-    with open_dict(cfg.dataset.tokenizer):
-        cfg.dataset.tokenizer["meta"] = data_wrapper.tokenizer.meta
-    
-    max_token_value = data_wrapper.tokenizer.meta.max_token_value
-    if max_token_value < cfg.model.args.vocab_size:
-        log.warning(f'Vocab size of model is larger than the tokenizer vocab. vocab_size of model: {cfg.model.args.vocab_size}, vocab size of tokenizer {max_token_value}')
-
-        #log.warning(f'Vocab size of model is larger than the tokenizer vocab. Setting vocab_size to: {max_token_value} to prevent errors during inference')
-        #OmegaConf.update(cfg, "model.args.vocab_size", max_token_value, force_add=True)
 
     from qtransform.model import get_model
     model = get_model(cfg.model)
     model.train()
-    print(model.config)
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model.to(device=device)
+    # compiling fails export due to https://github.com/pytorch/pytorch/issues/111319
     #if torch.__version__ >= (2,0) and cfg.run.compile:
     #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
+    
+    print(model)
+
+    train_dataloader, eval_dataloader, _ = get_dataloader_and_tokenizer(cfg, model.config.block_size)
 
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
@@ -143,6 +109,8 @@ def run(cfg: DictConfig):
         #write checkpoint into fifo
         write_to_pipe(cfg, last_checkpoint)
         
+
+
 def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
@@ -218,16 +186,15 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
                 row_limit = 10
             with profile(activities=activities, **cfg.run.profile.args) as prof:
                 with record_function(f'TRAIN EPOCH {epoch}'):
-                    metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
+                    metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
             log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
         else:
-            metrics = train_one_epoch(cfg, device, model, iter(train_data_loader), optimizer, mini_run)
+            metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
 
-        ## eval
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
-            losses, mean = eval_model(cfg, device, model, iter(eval_data_loader))
+            losses, mean = eval_model(cfg, device, model, eval_data_loader)
             log.info(f'AVERAGE EVAL LOSS FOR EPOCH {epoch}/{cfg.run.epochs}: {mean.item()}')
-        log.info(str(metrics))
+        log.info(f"last train loss was {str(metrics)}")
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
@@ -262,32 +229,66 @@ def train_one_epoch(cfg: DictConfig,
     #cfg is entire hydra config
     gradient_accumulation_steps = cfg.run.get('gradient_accumulation_steps', 1)
     #dataloader already iterable, refer to TODO from train function for randomness in samples
-    if isinstance(train_data, torch_data.DataLoader):
-        log.debug(f'Casting dataloader to iterable.')
-        train_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(train_data)
+    #if isinstance(train_data, torch_data.DataLoader):
+    #    log.debug(f'Casting dataloader to iterable.')
+    #    train_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(train_data)
     if not isinstance(gradient_accumulation_steps, int):
         gradient_accumulation_steps = 1
     train_batch_time = time()
     #avoid printing out loss of zero 
-    if cfg.run.max_iters < cfg.run.log_steps_interval:
-        cfg.run.log_steps_interval = cfg.run.max_iters
-    for i in range(1, cfg.run.max_iters+1):
+    if "max_iters" in  cfg.run and cfg.run.max_iters is not None and cfg.run.max_iters > 0:
+        if cfg.run.max_iters < cfg.run.log_steps_interval:
+            cfg.run.log_steps_interval = cfg.run.max_iters
+        max_len = len(train_data)
+        run_len = min(max_len, cfg.run.max_iters)
+        log.info(f"train_data len is {max_len}, max_iters set to {cfg.run.max_iters}. Running training for {run_len}")
+    else:
+        max_len = len(train_data)
+        run_len = len(train_data)
+        log.info(f"train_data len is {max_len}, max_iters set to {None}. Running training for {run_len}")
+
+    #for i in range(1, cfg.run.max_iters+1):
+    for i, data in enumerate(train_data):
+        if i > run_len:
+            break
         loss = None #remember last loss of mini-batch
         #break one iteration down into multiple batches to simulate a larger batch size
         for micro_step in range(gradient_accumulation_steps):
             #dataloaders iterate through entire dataset
             #problematic if datasets are large (openwebtext ~21GB) and testing should be done
-            data = next(train_data)
+            #data = next(train_data)
             #token tensor of length block_size (context length)
-            inputs, labels = data
+            #print(data)
+            inputs = None
+            labels = None
+            # dataloader from hf with additional attention_mask for 
+            if len(data) > 2:
+                inputs = data['input_ids']
+                labels = data['labels']
+                attention_mask = data['attention_mask']
+                if not torch.all(attention_mask == 1):
+                    log.error(f"mask for {i} is not all 1, BUT MASK IS IGNORED ATM")
+                    log.error(data)
+            elif len(data) == 2:
+                inputs, labels = data
+            else:
+                log.error(f"unsupported dataloader output. len was {len(data)}. ")
+                raise NotImplementedError
+
             inputs = inputs.to(device_singleton.device)
-            labels = labels.to(device_singleton.device)
+            labels = labels.to(device_singleton.device)            
             if cfg.model.calc_loss_in_model:
+                if "shift_targets" in model.config.__dict__.keys() and not model.config.shift_targets:
+                    log.warning(f"model does not shift_targets accoring to config but calculates loss inside model, this might not work")
                 outputs, loss = model(inputs, labels)
             else:
+                # model does not shift targets => do it our self if dataset also does not do this 
+                if "shift_targets" in model.config.keys() and not model.config.shift_targets:
+                    outputs = outputs[..., :-1, :].contiguous()
+                    labels = labels[..., 1:].contiguous()
                 log.warning(f'Loss function outside of model (e.g. for pretrained models) is not fixed yet')
                 outputs, _ = model(inputs)
-                log.critical(output)
+                log.critical(outputs)
                 outputs = F.log_softmax(outputs, dim=2)
                 loss = F.nll_loss(outputs.view(-1, outputs.size(-1)),labels.view(-1), ignore_index=-1)
             loss /= gradient_accumulation_steps #make all mini-batches account as one large batch
@@ -302,7 +303,7 @@ def train_one_epoch(cfg: DictConfig,
         optimizer.zero_grad(set_to_none=True)  # Zero gradients after gradient accumulation
         running_loss += loss.item() * gradient_accumulation_steps 
         #log loss
-        if i % cfg.run.log_steps_interval == 0:
+        if i % cfg.run.log_steps_interval == cfg.run.log_steps_interval-1:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
             log.info(f'  batch {i} loss: {last_loss}. time: {(time() - train_batch_time)*1000:.2f}ms')
             train_batch_time = time()
@@ -326,25 +327,48 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
         avg_loss: The average of every vloss
     """
     model.eval()
-    vlosses = torch.zeros(cfg.run.eval_iters)
-    i = 0    
-    if isinstance(eval_data, torch_data.DataLoader):
-        log.debug(f'Casting eval dataloader to iterable.')
-        eval_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(eval_data)
-    while i < cfg.run.eval_iters:
-        vdata = next(eval_data)
-        vinputs, vlabels = vdata
+    #if isinstance(eval_data, torch_data.DataLoader):
+    #    log.debug(f'Casting eval dataloader to iterable.')
+    #    eval_data: torch_data.dataloader._MultiProcessingDataLoaderIter = iter(eval_data)
+
+    if "max_iters" in  cfg.run and cfg.run.max_iters is not None and cfg.run.max_iters > 0:
+        max_len = len(eval_data)
+        run_len = min(max_len, cfg.run.max_iters)
+        log.info(f"eval_data len is {max_len}, max_iters set to {cfg.run.max_iters}. Running eval for {run_len}")
+    else:
+        max_len = len(eval_data)
+        run_len = len(eval_data)
+        log.info(f"eval_data len is {max_len}, max_iters set to {None}. Running eval for {run_len}")
+
+    vlosses = torch.zeros(run_len+1)
+    #while i < cfg.run.eval_iters:
+    for i, vdata in enumerate(eval_data):
+        if i > run_len:
+            break
+
+        vinputs = None
+        vlabels = None
+        if len(vdata) > 2:
+            vinputs = vdata['input_ids']
+            vlabels = vdata['labels']
+            vattention_mask = vdata['attention_mask']
+        elif len(vdata) == 2:
+            vinputs, vlabels = vdata
+        else:
+            log.error(f"unsupported dataloader output. len was {len(vdata)}. ")
+            raise NotImplementedError
+
         vinputs = vinputs.to(device=device_singleton.device)
         vlabels = vlabels.to(device=device_singleton.device)
         if cfg.model.calc_loss_in_model:
             voutputs, vloss = model(vinputs, vlabels)
+            #print(f"voutputs, vloss {vloss}")
         else:
             voutputs, _ = model(vinputs)
             voutputs_softmax = torch.nn.functional.log_softmax(voutputs, dim=2)
             vloss = torch.nn.functional.nll_loss(voutputs_softmax.view(-1, voutputs_softmax.size(-1)),vlabels.view(-1), ignore_index=-1)
-        # print(vloss)
+        #print(vloss.item())
         vlosses[i] = vloss.item()
-        i += 1
+        #print(vlosses)
     avg_vloss = vlosses.mean()
-    model.train()
     return vlosses, avg_vloss

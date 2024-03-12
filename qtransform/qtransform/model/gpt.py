@@ -46,6 +46,8 @@ class GPTConfig:
     single_output: bool = False # use mini runtime optimization to only predict last token, saven on some runtime but poentially currupts onnx export
     use_weight_tying: bool = True # same weights for input emb and outputi proj https://paperswithcode.com/method/weight-tying
     custom_ln: bool = False #use CustomBatchNorm1d before BatchNorm
+    use_causal: bool = False
+    shift_targets: bool = False # True: labels are shifted by one to the right inside the model, False: shifting is done by dataloader
 
 from dataclasses import fields
 class GPT(nn.Module):
@@ -78,7 +80,7 @@ class GPT(nn.Module):
             self.norm_size = None
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
-        log.debug(print(config.vocab_size, config.n_embd))
+        log.debug(f" config.vocab_size {config.vocab_size}, config.n_embd {config.n_embd}")
         if self.norm_size:
             ln_out = getattr(custom_nn, config.norm_layer, None)
             self.transformer = nn.ModuleDict(dict(
@@ -141,6 +143,7 @@ class GPT(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, idx, targets=None):
+
         device = idx.device
         b, t = idx.size()
         #print(f'{idx}----------{idx.size()}')
@@ -168,11 +171,19 @@ class GPT(nn.Module):
             if targets is not None:
                 #squeeze batch and block_size dimension together, retain non-softmaxed word probabilities
                 #logits become a 1d tensor, containing the index of the next word
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-                #if not self.training:
-                    #print(loss, logits.size(), targets.size())
-                    #print(logits)
-                    #print(logits.view(-1, logits.size(-1)) , targets.view(-1))
+                if self.config.shift_targets:
+                    # move labels to correct device to enable model parallelism
+                    targets = targets.to(logits.device)
+                    # Shift so that tokens < n predict n
+                    shift_logits = logits[..., :-1, :].contiguous()
+                    shift_labels = targets[..., 1:].contiguous()
+                    # Flatten the tokens
+                    from torch.nn import CrossEntropyLoss
+                    loss_fct = CrossEntropyLoss()
+                    loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+                else:
+                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
+
         return logits, loss
 
     def crop_block_size(self, block_size):
