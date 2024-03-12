@@ -142,9 +142,9 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
             #log.critical(output)
             if isinstance(output, tuple): # if ...config.calc_loss_in_model
                 logits = output[0]
+                #TODO: var loss not used besides printing
                 loss = output[1]
-                log.critical(loss)
-                log.critical(torch.exp(loss))
+                log.debug(f'Loss: {loss}, Perplexity: {torch.exp(loss)}')
 
                 probs = F.softmax(logits, dim=-1)
                 accuracy[i] = measure_accuracy(model_wrapper.model, labels=labels, inputs=probs)
@@ -166,9 +166,8 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
         torch.cuda.empty_cache()
     #table printing from: https://learnpython.com/blog/print-table-in-python/
     #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
-    return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_data.name, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid')
+    return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_wrapper.model_type, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid')
 
-    
 """
 calculating the perplexity usually occurs with an input of smaller size than the model's max context length
 (https://huggingface.co/docs/transformers/perplexity#calculating-ppl-with-fixed-length-models).

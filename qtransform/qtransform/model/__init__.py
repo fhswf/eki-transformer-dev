@@ -105,11 +105,18 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         self.model_type = ModelType.CHECKPOINT
 
     def from_file(self, path):
-        raise NotImplementedError()
-        #load_checkpoint(cfg) TODO: checkpoints require run config
+        cfg = DictConfig({
+            "run.from_checkpoint": path
+        })
+        from_epoch, checkpoint = load_checkpoint(cfg)
+        model_cfg = checkpoint["model_cfg"]
+        model = get_model(DictConfig(model_cfg))
+        self.model = model
+        self.model_cfg = model_cfg
 
-    def save_model(self):
-        #save_checkpoint(cfg, model, dataset, optimizer, timestamp, metrics, epoch, model_cfg, tokenizer_cfg)
+
+    def save_model(self, cfg: DictConfig):
+        #save_checkpoint(cfg, model = cfg.model, dataset = cfg.dataset, optimizer = cfg.optimizer, timestamp, metrics, epoch, model_cfg, tokenizer_cfg)
         raise NotImplementedError()
 
     #TODO: no idea if modelwrapper should be able to point to different models
@@ -118,13 +125,13 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         self.model_cfg = model_cfg
 
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
-        model.eval()
         if labels is not None:
-            logits, loss = model(idx_cond, labels)
+            logits, loss = self.model(idx_cond, labels)
         else:
-            logits, loss = model(idx_cond)
+            logits, loss = self.model(idx_cond)
         return logits, loss
     
+
 
 class ONNXQTRModelWrapper(QTRModelWrapper):
 
