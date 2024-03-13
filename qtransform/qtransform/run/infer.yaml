@@ -12,15 +12,8 @@ compile: False #use torch.compile
 #path of directory create files containing the infered samples. if empty, write onto stdout. 
 #the file name is composed as: INFER_<datetime>_<ONNX or CHECKPOINT>.out
 out_dir: 
-
-#TODO: make this better in terms of boilerplate
-onnx_model: #absolute path of onnx model to run inference on. either use onnx_model or from_checkpoint
-  path: 
-  tokenizer: #specify tokenizer config manually as it cannot be saved in onnx model
-    module: tiktoken
-    encoding: gpt2
-    meta_path: #usually only necessary for character tokenization
-from_checkpoint:  #filename of checkpoint to load
-pretrained_model: gpt2 #instead of checkpoint, load huggingface model. TODO: make this consistent to our current workflow
+#redundancy with model config
+#from_file: #filepath of checkpoint or onnx model
+#type: CHECKPOINT #ONNX, CHECKPOINT, PRETRAINED
 
 debug: False #use karpathy's inference

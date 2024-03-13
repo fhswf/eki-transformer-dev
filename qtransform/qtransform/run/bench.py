@@ -3,7 +3,7 @@ log = logging. getLogger(__name__)
 import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig, open_dict
-from . import forward_pass, get_dataloader_and_tokenizer, load_model, ModelData, InferType, generate
+from . import get_dataloader_and_tokenizer, generate
 #TODO: make ... import compatible
 from qtransform.model import get_model_wrapper, QTRModelWrapper
 from qtransform import device_singleton
@@ -46,6 +46,7 @@ def run(cfg : DictConfig):
         row_limit = 10
     from qtransform.model import QTRModelWrapper
     model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
+    model_wrapper.to(device=device)
     _, _, bench_dataloader = get_dataloader_and_tokenizer(cfg, model_wrapper.model_cfg.args.block_size)
     if cfg.run.profile:
         #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
@@ -58,59 +59,6 @@ def run(cfg : DictConfig):
         log.info(f'BENCHMARK for : {model_data.type.name}')
         log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model=model_wrapper, bench_dataloader=bench_dataloader)}')
 
-    """
-    #load model
-    #TODO: huggingface models are not able to be finetuned this way. implement saving of huggingface checkpoints (as well as their configs)
-    if cfg.run.pretrained_model is not None:
-        log.info(f'Using pretrained model {cfg.run.pretrained_model}')
-        from qtransform.model.hf_gpt2 import PreTrainedGPT2
-        from qtransform.dataset.tokenizer.tiktoken import TikTokenizer
-        model = PreTrainedGPT2(DictConfig({"version": cfg.run.pretrained_model, "shift_targets": True})).to(device=device)
-        #tokenizer = TikTokenizer({"encoding": "gpt2"})
-        models: List[ModelData] = [ModelData(type = InferType.CHECKPOINT, 
-                                        model = model, 
-                                        #tokenizer = tokenizer, 
-                                        name="hf-pretrained-"+cfg.run.pretrained_model,
-                                        block_size=model.config.n_positions)]
-    else:
-        models: List[ModelData] = load_model(cfg, device)
-
-        _, _, bench_dataloader = get_dataloader_and_tokenizer(cfg, models[0].model.config.block_size)
-
-    #from qtransform.dataset import get_data, get_loader, DatasetWrapper
-    #data_wrapper: DatasetWrapper = get_data(cfg.dataset)
-    ##dataset hydra config expects block size, currently set in command line. TODO: infer from onnx metadata or checkpoint metadata
-    #data_wrapper.load_dataset()
-    #dataset_bench = data_wrapper.dataset_info.bench
-    #if cfg.dataset.sizes.train >= 1.0:
-    #    log.warning(f'Training on the entirety of the dataset without leaving some data for testing.')
-    ##check if batch_size batches are going to be performed
-    #from torch.utils.data import Dataset
-    #def check_dataset_size(name: str, dataset: Dataset):
-    #    batch_size = cfg.dataset.dataloader.batch_size
-    #    #model which is not an llm is loaded
-    #    if cfg.dataset.args.get('block_size') is None:
-    #        log.info(f'Model for dataset {name} presumably is not an LLM as the block size has not been specified')
-    #        return
-    #    block_size = cfg.dataset.args.block_size
-    #    if batch_size * block_size > len(dataset):
-    #        log.warning(f'The product of batch_size {batch_size} and block_size {block_size} is larger than the dataset {name}, causing the dataloader to skip batches. Maybe check the split size?')
-    #check_dataset_size("bench", dataset_bench)
-    #bench_dataloader = get_loader(dataloader_cfg = cfg.dataset.dataloader, data = dataset_bench)
-     
-    if cfg.run.profile:
-        #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
-        activities = ProfilerActivity.CPU if device.type == 'cpu' else ProfilerActivity.CUDA 
-        for i, model_data in enumerate(models):
-            with profile(activities=[activities], profile_memory=True, record_shapes=True) as prof:
-                with record_function(f'BENCHMARK: {model_data.type.name}'):
-                    log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')
-            log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
-    else:
-        for i, model_data in enumerate(models):
-            log.info(f'BENCHMARK for : {model_data.type.name}')
-            log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')"""
-  
 def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[str, None]:
     lens = min(len(bench_dataloader), cfg.run.num_samples)
     log.info(f"Datalaoder has {len(bench_dataloader)} number of samples ")
@@ -212,6 +160,7 @@ def measure_accuracy(model_wrapper: QTRModelWrapper, labels: torch.Tensor, input
             accuracy = (accuracy[1] - prompt_length) / (C - prompt_length) * 100
             accuracy_batch[i] = accuracy
         return accuracy_batch.mean().item()"""
+    #get the index of the highest predicted word and compare it to the actual tokens
     #entries ordered as: False, True
     _, accuracy =  inputs.max(dim=-1).indices.eq(labels).unique(return_counts=True)
     #if length is one, then accuracy only contains false values
