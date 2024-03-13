@@ -70,6 +70,7 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
     if isinstance(model_wrapper.model, torch.nn.Module):
         model_wrapper.model.eval()
     for i, data in enumerate(bench_dataloader): 
+        log.debug(f'Iteration: {i}')
         if i >= lens:
             break
         inputs = None
@@ -96,6 +97,7 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
 
                 probs = F.softmax(logits, dim=-1)
                 accuracy[i] = measure_accuracy(model_wrapper.model, labels=labels, inputs=probs)
+                log.info(model_wrapper.model_cfg)
                 if model_wrapper.model_cfg.args.shift_targets:
                     logits = logits[..., :-1, :].contiguous()
                     labels = labels[..., 1:].contiguous()
@@ -105,10 +107,9 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
             else:
                 logits = output
                 perplexity[i] = measure_perplexity(logits, labels)
-                print("self compute")
+                log.debug(f"self compute loss and accuracy. perplexity: {perplexity[i]}")
                 probs = F.softmax(logits, dim=-1)
                 accuracy[i] = measure_accuracy(model_wrapper=model_wrapper, labels=labels, inputs=probs)
-                print(perplexity[i])
         #other_perplexity += measure_perplexity(probs, labels)
         #other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
         torch.cuda.empty_cache()

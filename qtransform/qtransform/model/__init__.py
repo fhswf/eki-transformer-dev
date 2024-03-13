@@ -12,6 +12,7 @@ from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_
 from typing import Union, Tuple
 from abc import ABC, abstractmethod
 import transformers
+import onnxruntime
 
 log = logging.getLogger(__name__)
 
@@ -80,35 +81,56 @@ def get_onnx(path: str) -> ModelWrapper:
 
 #basically the same as GPTConfig, TODO: use GPTConfig structure for other models
 @dataclass
-class ModelCfg():
-    n_layer: int
-    n_head: int
-    n_embd: int
-    dropout: float # for pretraining 0 is good, for finetuning try 0.1+
-    bias: bool # do we use bias inside LayerNorm and Linear layers? # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-    block_size: int
-    vocab_size: int
-    transformer_active_func: str
-    norm_layer: str
-    flash: bool
-    single_output: bool
-    use_weight_tying: bool
-    shift_targets: bool
-    version: str = None #pretrained hf models
+class ModelArgs():
+    block_size: int = 1024
+    vocab_size: int = 50304 # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
+    n_layer: int = 12
+    n_head: int = 12
+    n_embd: int = 768
+    dropout: float = 0.0
+    bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    flash: bool = False # cuda flas hattention
+    transformer_active_func: str = 'ReLU' #specify which activation function to use in MLP (feed forwad neural network)
+    norm_layer: str = 'BatchNorm' # note that this is a name for a adapter module in this repository und model.modules
+    single_output: bool = False # use mini runtime optimization to only predict last token, saven on some runtime but poentially currupts onnx export
+    use_weight_tying: bool = True # same weights for input emb and outputi proj https://paperswithcode.com/method/weight-tying
+    custom_ln: bool = False #use CustomBatchNorm1d before BatchNorm
+    use_causal: bool = False
+    shift_targets: bool = False # True: labels are shifted by one to the right inside the model, False: shifting is done by dataloader
+
+@dataclass
+class ModelConfig():
+    type: str #ONNX or DYNAMIC_CHECKPOINT
+    cls: str
+    calc_loss_in_model: bool
+    args: ModelArgs
+    from_file: str = None #torch checkpoint or ONNX model path
+
+    def __setattr__(self, name, value):
+        if name == "args" and not isinstance(value, ModelArgs):
+            value = ModelArgs(**value)
+        self.__dict__[name] = value
 
 class QTRModelWrapper(ABC):
     """QTRModelWrapper instead of ModelWrapper to avoid naming conflicts with ONNX models"""
     #TODO: properties
     model: Union[ModelWrapper, nn.Module] 
     model_type: ModelType
+    _model_cfg: ModelConfig #missing args from config are replaced with default values of dataclass
 
-    def __init__(self, model_cfg: DictConfig):
-        self.model_cfg = model_cfg
+    def __init__(self, model_cfg: Union[ModelConfig, DictConfig]):
         self.load_model(model_cfg)
-        #self.config = None
+
+    @property
+    def model_cfg(self):
+        return self._model_cfg
+    
+    @model_cfg.setter
+    def model_cfg(self, value: Union[ModelConfig, DictConfig]):
+        self._model_cfg = value if isinstance(value, ModelConfig) else ModelConfig(**value)
 
     @abstractmethod
-    def load_model(self, model_cfg: DictConfig):
+    def load_model(self, model_cfg: Union[ModelConfig, DictConfig]):
         pass
 
     @abstractmethod
@@ -146,7 +168,9 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         })
         from_epoch, checkpoint = load_checkpoint(cfg)
         model_cfg = checkpoint["model_cfg"]
-        #TODO: missing args in checkpoint can crash script
+        #support for older checkpoints
+        with open_dict(model_cfg):
+            model_cfg["type"] = "CHECKPOINT"
         model = get_model(DictConfig(model_cfg))
         self.model = model
         self.model_cfg = model_cfg
@@ -210,13 +234,24 @@ class PretrainedHuggingfaceQRTModelWrapper(QTRModelWrapper):
         #loss can be None if no labels are supplied
         return (out.logits, out.loss if out.loss is not None else None)
 
+    """
+    TODO: 
+        using onnxruntime-gpu yields CUDA usage of: 
+            Self CPU time total: 2.055s
+            Self CUDA time total: 7.967ms
+        without CUDA usage:
+            Self CPU time total: 1.993s
+            Self CUDA time total: 8.410ms
 
+        maybe due to: https://onnxruntime.ai/docs/performance/tune-performance/troubleshooting.html#why-is-my-model-running-slower-on-gpu-than-on-cpu
+    """
 class ONNXQTRModelWrapper(QTRModelWrapper):
 
     def __init__(self, model_cfg: DictConfig):
         super().__init__(model_cfg=model_cfg)
         self.model_type = ModelType.ONNX
         self.ONNX_LABELS_WARNING = True
+        log.info(f'ONNX model is on: {onnxruntime.get_device()}')
 
     def load_model(self, model_cfg: DictConfig):
         self.from_file(model_cfg.from_file)
