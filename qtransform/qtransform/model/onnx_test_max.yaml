@@ -1,5 +1,5 @@
 type: ONNX # ONNX or DYNAMIC_CHECKPOINT CHECKPOINT
-from_file: qonnx_1_128_BENCH_gpt2_ReLN_tiny_wikitext_2024-03-13_10:59:27__epoch:1.onnx #torch checkpoint or ONNX model path
+from_file: qonnx_1_128_BENCH_gpt2_ReBNT_tiny_wikitext_2024-03-13_12:43:38__epoch:1.onnx #torch checkpoint or ONNX model path
 
 #model args
 cls: GPT

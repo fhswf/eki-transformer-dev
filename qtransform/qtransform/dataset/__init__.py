@@ -76,6 +76,7 @@ import os
 class DatasetWrapper(ABC):
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__()
+        log.info(f"DatasetWrapper config:  {cfg}")
         self.cfg = cfg
         self.datasets: DatasetSplits = DatasetSplits()
 

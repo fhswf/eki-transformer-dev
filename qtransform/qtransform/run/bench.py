@@ -45,6 +45,7 @@ def run(cfg : DictConfig):
     elif row_limit < 1:
         row_limit = 10
     from qtransform.model import QTRModelWrapper
+    log.debug(f"Model config {cfg.model}")
     model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
     _, _, bench_dataloader = get_dataloader_and_tokenizer(cfg, model_wrapper.model_cfg.args.block_size)
     if cfg.run.profile:
@@ -55,7 +56,7 @@ def run(cfg : DictConfig):
                 log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_wrapper=model_wrapper, bench_dataloader=bench_dataloader)}')
         log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
     else:
-        log.info(f'BENCHMARK for : {model_data.type.name}')
+        log.info(f'BENCHMARK for : {model_wrapper.model.type.name}')
         log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model=model_wrapper, bench_dataloader=bench_dataloader)}')
 
     """
@@ -112,7 +113,12 @@ def run(cfg : DictConfig):
             log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model_data=model_data, bench_dataloader=bench_dataloader)}')"""
   
 def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[str, None]:
-    lens = min(len(bench_dataloader), cfg.run.num_samples)
+    print(model_wrapper.model)
+    if "num_samples" not in cfg.run:
+        lens = min(len(bench_dataloader), cfg.run.max_iters)
+    else:
+        lens = min(len(bench_dataloader), cfg.run.num_samples)
+
     log.info(f"Datalaoder has {len(bench_dataloader)} number of samples ")
     log.info(f"Running Benchmark for {lens} samples")
     log.warning(f"Datalaoder length might not be correct")
@@ -138,29 +144,66 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
         with torch.no_grad():
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)
-            output = model_wrapper(inputs, labels)
-            #log.critical(output)
-            if isinstance(output, tuple): # if ...config.calc_loss_in_model
-                logits = output[0]
-                #TODO: var loss not used besides printing
-                loss = output[1]
-                log.debug(f'Loss: {loss}, Perplexity: {torch.exp(loss)}')
 
-                probs = F.softmax(logits, dim=-1)
-                accuracy[i] = measure_accuracy(model_wrapper.model, labels=labels, inputs=probs)
-                if model_wrapper.model_cfg.args.shift_targets:
-                    logits = logits[..., :-1, :].contiguous()
-                    labels = labels[..., 1:].contiguous()
-                    perplexity[i] = measure_perplexity(logits, labels)
+            cond_model_shifts_targets_internally = model_wrapper.model_cfg.args.get("shift_targets") and model_wrapper.model_cfg.get("calc_loss_in_model")
+            cond_labels_eq_input = torch.all(inputs == labels).item()   # data loader supplies labels and inputs without shifted labels to the right => needs to be done by model
+
+            # TODO maybe we can support this but then would would need 8 if else statements here
+            if not model_wrapper.model_cfg.args.get("shift_targets") and model_wrapper.model_cfg.get("calc_loss_in_model"):
+                log.error(f"unsupported combination of model args shift_targets {model_wrapper.model_cfg.args.get('shift_targets')} and calc_loss_in_model {model_wrapper.model_cfg.get('calc_loss_in_model')}")
+                raise ValueError(f"unsupported combination of model args shift_targets {model_wrapper.model_cfg.args.get('shift_targets')} and calc_loss_in_model {model_wrapper.model_cfg.get('calc_loss_in_model')}")
+            if model_wrapper.model_cfg.args.get("shift_targets") and not model_wrapper.model_cfg.get("calc_loss_in_model"):
+                log.error(f"unsupported combination of model args shift_targets {model_wrapper.model_cfg.args.get('shift_targets')} and calc_loss_in_model {model_wrapper.model_cfg.get('calc_loss_in_model')}")
+                raise ValueError(f"unsupported combination of model args shift_targets {model_wrapper.model_cfg.args.get('shift_targets')} and calc_loss_in_model {model_wrapper.model_cfg.get('calc_loss_in_model')}")
+          
+            logits = None
+            loss = None
+            if hasattr(log,"trace"): log.trace(f"cond_model_shifts_targets_internally {cond_model_shifts_targets_internally}")
+            if hasattr(log,"trace"): log.trace(f"cond_labels_eq_input {cond_labels_eq_input}")
+            #print(cond_model_shifts_targets_internally)
+            #print(cond_labels_eq_input)
+            if cond_model_shifts_targets_internally and cond_labels_eq_input:
+                output = model_wrapper(inputs, labels)
+                if not isinstance(output, tuple):
+                    raise ValueError(f"as model shifts internally and computes loss, model output needs to be a tuple")
+                logits, loss = output
+                
+            elif not cond_model_shifts_targets_internally and cond_labels_eq_input: 
+                # here we shit labels our selfs and only feed inputs to the model, potentially just ignore labels and loss if returned
+                output = model_wrapper(inputs, None)
+                if isinstance(output, tuple):
+                    logits = output[0]
                 else:
-                    perplexity[i] = measure_perplexity(logits, labels)
+                    logits = output
+                # print("=======")
+                # torch.set_printoptions(edgeitems=5000)
+                # print(logits[0][0])
+                # torch.set_printoptions(edgeitems=3)
+                # print(logits.size())
+                # print(labels.size())
+                # print(logits)
+                # print(labels)
+                # thats the shift
+                logits = logits[..., :-1, :].contiguous()
+                labels = labels[..., 1:].contiguous()
+                # print("---------")
+                # print(logits)
+                # print(labels)
+                # get regular crossentropy loss
+                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1), ignore_index=-1)
+            elif not cond_model_shifts_targets_internally and not cond_labels_eq_input:
+                pass
+            elif cond_model_shifts_targets_internally and not cond_labels_eq_input:
+                raise NotImplementedError(f"cond_model_shifts_targets_internally {cond_model_shifts_targets_internally} and cond_labels_eq_input {cond_labels_eq_input}")
             else:
-                logits = output
-                perplexity[i] = measure_perplexity(logits, labels)
-                print("self compute")
-                probs = F.softmax(logits, dim=-1)
-                accuracy[i] = measure_accuracy(model_wrapper=model_wrapper, labels=labels, inputs=probs)
-                print(perplexity[i])
+                raise NotImplementedError(f"cond_model_shifts_targets_internally {cond_model_shifts_targets_internally} and cond_labels_eq_input {cond_labels_eq_input}")
+
+            probs = F.softmax(logits, dim=-1)
+            accuracy[i] = measure_accuracy(model_wrapper.model, labels=labels, inputs=probs)
+            perplexity[i] = torch.exp(loss)
+            print(f'Loss: {loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}')
+            log.debug(f'Loss: {loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}')
+            
         #other_perplexity += measure_perplexity(probs, labels)
         #other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
         torch.cuda.empty_cache()

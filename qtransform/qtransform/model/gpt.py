@@ -172,11 +172,18 @@ class GPT(nn.Module):
                 #squeeze batch and block_size dimension together, retain non-softmaxed word probabilities
                 #logits become a 1d tensor, containing the index of the next word
                 if self.config.shift_targets:
+                    
                     # move labels to correct device to enable model parallelism
                     targets = targets.to(logits.device)
                     # Shift so that tokens < n predict n
                     shift_logits = logits[..., :-1, :].contiguous()
                     shift_labels = targets[..., 1:].contiguous()
+                    print(logits)
+                    print(targets)
+                    print("========")
+                    print(idx)
+                    print(shift_logits)
+                    print(shift_labels)
                     # Flatten the tokens
                     from torch.nn import CrossEntropyLoss
                     loss_fct = CrossEntropyLoss()
