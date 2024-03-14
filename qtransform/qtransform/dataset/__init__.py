@@ -74,7 +74,7 @@ from abc import ABC, abstractmethod
 import os
 
 class DatasetWrapper(ABC):
-    def __init__(self, cfg: DictConfig) -> None:
+    def __init__(self, cfg: DictConfig, *args, **kwargs) -> None:
         super().__init__()
         log.info(f"DatasetWrapper config:  {cfg}")
         self.cfg = cfg
