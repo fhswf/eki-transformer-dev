@@ -147,7 +147,10 @@ class GPT(nn.Module):
         device = idx.device
         b, t = idx.size()
         #print(f'{idx}----------{idx.size()}')
-        assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
+
+        # remove this line because it messed with fx.trace, do shape check before hand!
+        #assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
+      
         pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0) # shape (1, t)
 
         # forward the GPT model itself
@@ -178,12 +181,12 @@ class GPT(nn.Module):
                     # Shift so that tokens < n predict n
                     shift_logits = logits[..., :-1, :].contiguous()
                     shift_labels = targets[..., 1:].contiguous()
-                    print(logits)
-                    print(targets)
-                    print("========")
-                    print(idx)
-                    print(shift_logits)
-                    print(shift_labels)
+                    # print(logits)
+                    # print(targets)
+                    # print("========")
+                    # print(idx)
+                    # print(shift_logits)
+                    # print(shift_labels)
                     # Flatten the tokens
                     from torch.nn import CrossEntropyLoss
                     loss_fct = CrossEntropyLoss()

@@ -9,6 +9,7 @@ from qtransform.model import get_model_wrapper, QTRModelWrapper
 from qtransform import device_singleton
 from qtransform.dataset import get_loader
 from typing import List, Union, Tuple
+from time import time
 from datetime import datetime
 from torch.profiler import profile, record_function, ProfilerActivity
 from tabulate import tabulate
@@ -47,7 +48,19 @@ def run(cfg : DictConfig):
     from qtransform.model import QTRModelWrapper
     log.debug(f"Model config {cfg.model}")
     model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
-    _, _, bench_dataloader = get_dataloader_and_tokenizer(cfg, model_wrapper.model_cfg.args.block_size)
+
+    data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model_wrapper.model_cfg.args.block_size)
+    if len(data_loader_tuples) == 3:
+        _, _, bench_dataloader  = data_loader_tuples
+    elif len(data_loader_tuples) == 2:
+        log.warning("using eval dataloader as benchmarking, as no bench_dataloader was provided")
+        _, bench_dataloader = data_loader_tuples
+    elif len(data_loader_tuples) == 1:
+        log.warning("get_dataloader_and_tokenizer did only return one dataloader, be careful this dataset split was not used for training ")
+        bench_dataloader = data_loader_tuples
+    else:
+        raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
+
     if cfg.run.profile:
         #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
         activities = ProfilerActivity.CPU if device.type == 'cpu' else ProfilerActivity.CUDA 
@@ -122,6 +135,11 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
     log.info(f"Datalaoder has {len(bench_dataloader)} number of samples ")
     log.info(f"Running Benchmark for {lens} samples")
     log.warning(f"Datalaoder length might not be correct")
+
+    # for logging only:
+    running_loss = 0
+    last_loss = 0
+    batch_time = time()
 
     perplexity = torch.zeros(lens)
     accuracy = torch.zeros(lens)
@@ -201,9 +219,17 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
             probs = F.softmax(logits, dim=-1)
             accuracy[i] = measure_accuracy(model_wrapper.model, labels=labels, inputs=probs)
             perplexity[i] = torch.exp(loss)
-            print(f'Loss: {loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}')
+            #print(f'Loss: {loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}')
             log.debug(f'Loss: {loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}')
             
+            #log loss
+            running_loss += loss.item()
+            if i % cfg.run.log_steps_interval == cfg.run.log_steps_interval-1:
+                last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
+                log.info(f'  batch {i} Loss: {last_loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}. time: {(time() - batch_time)*1000:.2f}ms')
+                batch_time = time()
+                running_loss = 0
+
         #other_perplexity += measure_perplexity(probs, labels)
         #other_accuracy += measure_accuracy(model_type=model_data.type, model=model_data.model, labels=labels, inputs=probs)
         torch.cuda.empty_cache()

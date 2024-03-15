@@ -51,12 +51,18 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
             log.warning("TODO collate_fn via config is not supported yet")
 
         kwargs['collate_fn'] = self.data_collator
-        if split not in self.datasets.__dict__.keys():
-            raise KeyError(f"Split {split} not found in avaiable dataset splits. Usually train eval or bench.")
-        loader = DataLoader(dataset=self.datasets[split], **kwargs)
-        log.debug(f'len of dataset loader: {len(loader)}')
-        return loader
-    
+        #print(type(self.datasets[split]))
+        #print(self.datasets[split])
+        ds_split = self.datasets.__dict__.get(split, None)
+        if ds_split is None:
+            log.warning(f"Split {split} not found in avaiable dataset splits. Usually train eval or bench.")
+            return None
+        else:
+            loader = DataLoader(dataset=self.datasets[split], **kwargs)
+            log.debug(f'len of dataset loader: {len(loader)}')
+            return loader
+        pass
+
     def load_dataset(self, block_size=None, batch_size=None):
         if block_size is None:
             block_size = self.max_block_size
@@ -98,7 +104,7 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
         elif isinstance(dataset, dict):
             if self.cfg.get('splits') is not None:
                 for k,v in self.cfg.splits.items():
-                    log.debug(f"Mapping dataset our key {k} to found key {v} of external dataset")
+                    log.debug(f"Mapping dataset; our key: {k} -> to found key: {v} of external dataset")
                     self.datasets[k] = dataset[v]
             else:
                 log.warning("Please use splits mapping. Trying to infer splits with common names")
