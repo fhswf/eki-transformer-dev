@@ -15,6 +15,13 @@ import transformers
 import onnxruntime
 from qtransform.quantization import get_quantizer, ModelQuantConfig, Quantizer
 
+from functools import lru_cache
+
+# Keep track of 10 different messages and then warn again
+@lru_cache(1)
+def warn_once(logger: logging.Logger, msg: str):
+    logger.warning(msg)
+
 log = logging.getLogger(__name__)
 
 #TODO: dataclass for model args (block_size, embd_dim, vocab_size ...)
@@ -138,14 +145,14 @@ class QTRModelWrapper(ABC):
     #TODO: inference needs model cfg even though it only needs pathname to model
     #      ONNX models need model property to get config though
     def from_file(self, path: str):
-        pass
+        raise NotImplementedError
 
     def __call__(self, idx_cond: Tensor, labels = None):
         return self.forward(idx_cond, labels)
     
     @abstractmethod
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def save_model(self):
@@ -295,13 +302,22 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
 
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         device = idx_cond.device
-        idict = {"input": idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
+        if labels is not None:
+            idict = {"input": idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
+            warn_once(log, "labels are givin to external forwards pass wrapper but they are ignored inside onns models atm")
+        else:
+            idict = {"input": idx_cond.cpu().numpy()}
         # use infer_shapes()
         #forward pass of gpt model returns the non-softmaxed token predictions
+<<<<<<< HEAD
         if labels is not None and self.ONNX_LABELS_WARNING:
             log.warning("labels are given to external forwards pass wrapper but they are ignored atm for onnx runs. Suppressing this warning")
             self.ONNX_LABELS_WARNING = False
         odict = execute_onnx(self.model, idict)
+=======
+        odict = execute_onnx(self.model, idict)
+        # log.trace(odict)
+>>>>>>> origin/develop
         logits = from_numpy(odict["output"]).to(device=device)
         return logits 
 
