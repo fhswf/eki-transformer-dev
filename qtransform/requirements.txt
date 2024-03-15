@@ -13,7 +13,7 @@ typing_inspect
 numpy>=1.24.1
 qonnx
 onnxoptimizer
-onnxruntime-gpu
+onnxruntime-gpu #make onnx models run on CUDA
 python-dateutil
 aiohttp
 pyyaml

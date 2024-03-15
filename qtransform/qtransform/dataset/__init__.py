@@ -42,7 +42,6 @@ class DatasetSplits:
     """
     train: Dataset = None
     eval: Dataset = None
-    test: Dataset = None
     bench: Dataset = None
 
     # make class subscritable aka: self['train'] works
@@ -88,6 +87,7 @@ class DatasetWrapper(ABC):
         raise NotImplementedError
 
 #TODO: OldDatasetWrapper tokenizes by memmap. find a good way to abstract this
+#      another alternative would be to store huggingface apache arrow datasets
 class OldDatasetWrapper(DatasetWrapper):
     """
     Capsule around Dataset, to unify their interfaces.
@@ -213,7 +213,10 @@ class OldDatasetWrapper(DatasetWrapper):
         #each sample of split contains amount of tokens to derive size of memmap
         length_splits = {split:sum(dataset_splits[split]["length"]) for split in dataset_splits}
         tokenizer.meta.num_tokens = sum(length_splits.values())
-        #write tokens into memmap
+        
+        #
+        #MEMMAP processing begins here
+        #TODO: put this in class like MemmapDatasetWriter and huggingface datasets in HuggingfaceDatasetWriter
         for split, path in untokenized_splits.items():
             offset = 0
             try:

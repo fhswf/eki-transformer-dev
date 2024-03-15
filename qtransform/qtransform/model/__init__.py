@@ -13,6 +13,7 @@ from typing import Union, Tuple
 from abc import ABC, abstractmethod
 import transformers
 import onnxruntime
+from qtransform.quantization import get_quantizer, ModelQuantConfig, Quantizer
 
 log = logging.getLogger(__name__)
 
@@ -149,16 +150,23 @@ class QTRModelWrapper(ABC):
     @abstractmethod
     def save_model(self):
         raise NotImplementedError
-    
+
     #mainly to avoid conflicts with onnx models
     def to(self, **kwargs):
         self.model.to(**kwargs)
 
 class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
 
+    #only if ptq/ qat is performed
+    replace_layers_later: ModelQuantConfig
+    quant_cfg: ModelQuantConfig
+    quantizer: Quantizer
+
     def __init__(self, model_cfg):
         super().__init__(model_cfg=model_cfg)
         self.model_type = ModelType.CHECKPOINT
+        self.replace_layers_later = None
+        self.quant_cfg = None
     
     def from_file(self, path):
         cfg = DictConfig({
@@ -171,8 +179,12 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         #support for older checkpoints
         with open_dict(model_cfg):
             model_cfg["type"] = "CHECKPOINT"
-        model = get_model(DictConfig(model_cfg))
-        self.model = model
+        self.model = get_model(DictConfig(model_cfg))
+        #quantize layers to load state dict
+        if checkpoint.get("quantize", False) or checkpoint.get("quant_cfg", False):
+            #TODO: self.model is set to quantized model before state_dict is loaded
+            self.quantize_model(checkpoint["quant_cfg"])
+        self.model.load_state_dict(checkpoint["model_state_dict"])
         self.model_cfg = model_cfg
 
 
@@ -183,6 +195,24 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
     def load_model(self, model_cfg: DictConfig):
         self.model = get_model(model_cfg)
         self.model_cfg = model_cfg
+
+    def quantize_model(self, quant_cfg: DictConfig):
+        """
+        Quantizes a loaded model with the specified config. It is expected that the quant_cfg is applicable
+        to the currently saved 'model' attribute.
+        """
+        #TODO: discuss if quantizing huggingface models with our framework is possible and a good idea
+        #quantize missing layers first
+        #TODO: param quant_cfg not really necessary if replace_layers_later is used
+        #TODO 2: quantizer used for replace_layers_later could be different from param quant_cfg
+        #TODO 3: if any changes to the module have been made, the references to model from quant_cfg need to be updated
+        """if self.replace_layers_later is None: 
+            log.warning(f'replace_layers_later not tested yet')
+            self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
+            self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.replace_layers_later)
+            self.quant_cfg.model = self.model"""
+        self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
+        self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.quant_cfg)
 
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         if labels is not None:
