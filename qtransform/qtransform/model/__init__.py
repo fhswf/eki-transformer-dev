@@ -309,15 +309,10 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
             idict = {"input": idx_cond.cpu().numpy()}
         # use infer_shapes()
         #forward pass of gpt model returns the non-softmaxed token predictions
-<<<<<<< HEAD
         if labels is not None and self.ONNX_LABELS_WARNING:
             log.warning("labels are given to external forwards pass wrapper but they are ignored atm for onnx runs. Suppressing this warning")
             self.ONNX_LABELS_WARNING = False
         odict = execute_onnx(self.model, idict)
-=======
-        odict = execute_onnx(self.model, idict)
-        # log.trace(odict)
->>>>>>> origin/develop
         logits = from_numpy(odict["output"]).to(device=device)
         return logits 
 
