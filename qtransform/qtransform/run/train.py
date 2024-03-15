@@ -57,7 +57,16 @@ def run(cfg: DictConfig):
     
     print(model)
 
-    train_dataloader, eval_dataloader, _ = get_dataloader_and_tokenizer(cfg, model.config.block_size)
+    data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model.config.block_size)
+    if len(data_loader_tuples) == 3:
+        train_dataloader, eval_dataloader, _  = data_loader_tuples
+    elif len(data_loader_tuples) == 2:
+        train_dataloader, eval_dataloader = data_loader_tuples
+    elif len(data_loader_tuples) == 1:
+        train_dataloader = data_loader_tuples
+        eval_dataloader = None
+    else:
+        raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
 
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
@@ -169,6 +178,9 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
     #make sure we are on the target device
     model = model.to(device_singleton.device)
 
+    if eval_data_loader is None:
+        log.warning(f"Not running eval. Eval Dataloader is None")
+
     if cfg.optim.scheduler.warmup_epochs > epochs_to_run.stop -1:
         log.warning(f'Warmup epochs are larger than epochs to run, causing scheduler to never adjust learning rate.')
     # training loop
@@ -194,6 +206,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
             losses, mean = eval_model(cfg, device, model, eval_data_loader)
             log.info(f'AVERAGE EVAL LOSS FOR EPOCH {epoch}/{cfg.run.epochs}: {mean.item()}')
+        
         log.info(f"last train loss was {str(metrics)}")
 
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 

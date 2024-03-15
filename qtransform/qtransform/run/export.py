@@ -112,7 +112,7 @@ def run(cfg: DictConfig, **kwargs):
     #    log.error(f'root_path {root_path} is not a directory.')
     #    raise ValueError()
 
-    model_name = f"{str(cfg.run.export_fn)}_{','.join(map(str,input_dim))}_" + filename
+    model_name = f"{str(cfg.run.export_fn)}_{'_'.join(map(str,input_dim))}_" + filename
     from qtransform.utils.introspection import concat_paths
     model_path = concat_paths([root_path, model_name])
 
