@@ -54,9 +54,7 @@ def run(cfg: DictConfig):
     # compiling fails export due to https://github.com/pytorch/pytorch/issues/111319
     #if torch.__version__ >= (2,0) and cfg.run.compile:
     #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
-    
-    print(model)
-
+    log.info(f"unquantized {model}")
     data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model.config.block_size)
     if len(data_loader_tuples) == 3:
         train_dataloader, eval_dataloader, _  = data_loader_tuples
@@ -79,17 +77,19 @@ def run(cfg: DictConfig):
     # lets go
     quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:    
-        log.debug(f'Running quantized model')
+        log.info(f'Running quantized model')
         from qtransform.quantization import get_quantizer
         quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
         model.to(device=device)
         # TODO make this a decorator so it can return stuff
+        log.debug(f"quantized Model:{model}")
         last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
         #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 
         if replace_layers_later is not None:
             model, _ = quantizer.get_quantized_model(replace_layers_later)
     else:
+        
         #if hasattr(log,"trace"): log.trace(model)
         last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
     # maybe subsequent jobs can be managed by hydra in the future?
@@ -198,10 +198,10 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
                 row_limit = 10
             with profile(activities=activities, **cfg.run.profile.args) as prof:
                 with record_function(f'TRAIN EPOCH {epoch}'):
-                    metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
+                    metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
             log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
         else:
-            metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
+            metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
 
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
             losses, mean = eval_model(cfg, device, model, eval_data_loader)
@@ -223,10 +223,11 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
                 tokenizer_cfg=cfg.dataset.tokenizer,
                 quant_cfg = cfg.get('quantization', None))
         # advance learning rate
-        if scheduler is not None:
-            scheduler.step()
-            new_lr = scheduler.get_last_lr()[0]
-            log.debug(f'New learning rate: {new_lr}')
+        if cfg.run.scheduler_step_type == 'epoch':
+            if scheduler is not None:
+                scheduler.step()
+                new_lr = scheduler.get_last_lr()[0]
+                log.info(f'New learning rate: {new_lr}')
     return last_checkpoint
 
 def train_one_epoch(cfg: DictConfig, 
@@ -234,7 +235,12 @@ def train_one_epoch(cfg: DictConfig,
         model: nn.Module, 
         train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],
         optimizer: optim.Optimizer, 
-        mini_run: bool=False) -> Any:
+        mini_run: bool=False, 
+        eval_data_loader:Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter] = None,
+        epoch: int = -1,
+        timestamp = None,
+        scheduler = None,
+        ) -> Any:
     """ training loop over steps/batches """
     model.train() #if it was quantized, it could have been set to eval
     last_loss = 0
@@ -324,6 +330,36 @@ def train_one_epoch(cfg: DictConfig,
             ## TODO tensorboard logging and other types of reporting
         if mini_run and i>=200: # run for more than one data point
             break
+        
+        # eval for long epochs aka dataset with a LOT of data
+        if i % cfg.run.eval_steps_interval == 0 and eval_data_loader is not None:
+            losses, mean = eval_model(cfg, device, model, eval_data_loader)
+            model.train()
+            log.info(f'AVERAGE EVAL LOSS FOR BATCHES {i}/{run_len}: {mean.item()}')
+
+        if i % cfg.run.save_steps_interval == 0: 
+            ## interval or end of training, epochs is also 1 for mini_run
+            # last_checkpoint is the absolute filepath of the saved checkpoint
+            last_checkpoint: str = save_checkpoint(cfg=cfg, 
+                model=model, 
+                optimizer=optimizer, 
+                dataset=cfg.dataset.name,
+                timestamp=timestamp, 
+                epoch=epoch, 
+                metrics=loss, 
+                model_cfg=cfg.model, 
+                tokenizer_cfg=cfg.dataset.tokenizer,
+                quant_cfg = cfg.get('quantization', None),
+                steps=i,
+                )
+            
+        # advance learning rate
+        if cfg.run.scheduler_step_type == 'steps':
+            _s = cfg.run.get('scheduler_steps_interval')
+            if _s is not None and _s > 0 and i % cfg.run.scheduler_steps_interval == (_s-1) and scheduler is not None:
+                scheduler.step()
+                new_lr = scheduler.get_last_lr()[0]
+                log.info(f'New learning rate: {new_lr}')
 
     return last_loss 
 
@@ -354,7 +390,7 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
         log.info(f"eval_data len is {max_len}, max_iters set to {None}. Running eval for {run_len}")
 
     vlosses = torch.zeros(run_len+1)
-    #while i < cfg.run.eval_iters:
+    # TODO use cfg.run.eval_iters for eval iter limits when we need it
     for i, vdata in enumerate(eval_data):
         if i > run_len:
             break

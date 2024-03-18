@@ -9,6 +9,7 @@ from brevitas.inject.defaults import Uint8ActPerTensorFloat
 from brevitas.nn.quant_layer import ActQuantType
 from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 from qtransform import device_singleton
+from brevitas import nn as qnn
 
 __all__ = ['EltwiseAdd']
 
@@ -138,7 +139,8 @@ class CausalSelfAttention(nn.Module):
         self.block_size = config.block_size
         self.mha = nn.MultiheadAttention(config.n_embd, config.n_head, dropout=self.dropout, batch_first=True)
         self.flash = config.flash
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        # i think this is alerady part of mha, so we dont need this, at least if we want to replicate gpt2 :
+        #self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         self.resid_dropout = nn.Dropout(config.dropout)
         #since synthesis cannot use is_causal due to bool dtype and brevitas mha does not have is_causal in forward pass function
         bias = torch.ones(config.block_size, config.block_size).tril(diagonal=0)
@@ -148,12 +150,15 @@ class CausalSelfAttention(nn.Module):
         #attention is added to tensor
         bias = bias.masked_fill(bias == 1, 0)
         self.register_buffer("bias", bias)
+
+        # TODO figure out we still need this:
+
         # in case we need to do attention by hand:
-        if (not self.flash) or torch.__version__[3] < 2:
-            log.warn("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.2")
-            # causal mask to ensure that attention is only applied to the left in the input sequence
-            self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-            self.attn_dropout = nn.Dropout(config.dropout)
+        #if (not self.flash) or torch.__version__[3] < 2:
+        #    log.warn("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.2")
+        #    # causal mask to ensure that attention is only applied to the left in the input sequence
+        #    self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        #    self.attn_dropout = nn.Dropout(config.dropout)
         #print(self.flash)
         #print(torch.__version__[2])
 
@@ -198,7 +203,8 @@ class CausalSelfAttention(nn.Module):
             #      tensors during eval mode
             #due to inference, input features can be lower than specified max context length which causes problem during attention calculation
             y, weights = self.mha(x, x, x, attn_mask=self.bias[:C,:C], need_weights=False) # Q, K, V, attn_mask y
-        y = self.resid_dropout(self.c_proj(y))
+        #y = self.resid_dropout(self.c_proj(y))
+        y = self.resid_dropout(y)
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
         return y
 from logging import getLogger
@@ -272,6 +278,7 @@ class TransformerBlock(nn.Module):
         self.attn = CausalSelfAttention(config)
 
     def forward(self, x):
+        # Ident for possible quantization before resudials or norm layers?
         if self.norm_size:
             x = self.ln_1(x)
             x = self.residual1(x, self.attn(x))

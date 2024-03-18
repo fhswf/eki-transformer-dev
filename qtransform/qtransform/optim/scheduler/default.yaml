@@ -5,6 +5,6 @@ schedulers: #dictionary to support field overwriting
     name: StepLR #should be name of torch class within torch.optim, e.g. StepLR, ExponentialLR
     args: #parameters of class
       step_size: 1 #steplr lowers lr after step_size epochs. avoid lowering lr to be negligible
-      gamma: 0.1
+      gamma: 0.95
 milestones: #specify after what epoch each scheduler should step. order of entries reflect order of schedulers. if only one scheduler is used, leave empty
 warmup_epochs: 2 #currently does nothing.
