@@ -28,9 +28,9 @@ class ModelData():
     """
     type: InferType 
     model: Union[nn.Module, ModelWrapper]
-    #tokenizer: Tokenizer
+    tokenizer: Tokenizer
     name: str
-    #block_size: int
+    block_size: int
     #TODO: metadata (block_size)
 
 @dataclass
@@ -199,7 +199,10 @@ def generate(model_type: InferType, block_size: int, model: Union[nn.Module, Mod
         # the results should not be softmaxed yet as they will be later within this function
         logits, _ = forward_pass(model_type, model, idx_cond)
         # pluck the logits at the final step and scale by desired temperature
-        logits = logits[:, -1, :] / temperature
+        if temperature is not None and temperature > 0 and  temperature > 1.0e-10:
+            logits = logits[:, -1, :] / temperature
+        else:
+            logits = logits[:, -1, :] 
         # optionally crop the logits to only the top k options
         if top_k is not None:
             v, _ = torch.topk(logits, min(top_k, logits.size(-1)))

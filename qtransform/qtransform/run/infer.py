@@ -66,12 +66,26 @@ def infer(cfg: DictConfig, device: Any):
     out_dir = infer_cfg.out_dir
     # -----------------------------------------------------------------------------
     #TODO: huggingface models are not able to be finetuned this way. implement saving of huggingface checkpoints (as well as their configs)
+
+
     if cfg.run.pretrained_model is not None:
         log.info(f'Using pretrained model {cfg.run.pretrained_model}')
         from qtransform.model.hf_gpt2 import PreTrainedGPT2
-        from qtransform.dataset.tokenizer.tiktoken import TikTokenizer
+        if cfg.get("dataset") is not None and cfg.get("dataset").get("tokenizer") is not None and cfg.get("dataset").get("tokenizer").get("wrapper") is not None:
+            log.info(f'using tokenizer cfg from supplied dataset {cfg.get("dataset").get("tokenizer").get("wrapper")}')
+            # TODO note that this is temporary!!!
+            from qtransform.dataset import get_data, get_loader, DatasetWrapper, get_dataset_wrapper, OldDatasetWrapper
+            data_wrapper: DatasetWrapper = get_dataset_wrapper(cfg.dataset)
+            max_token_value = len(data_wrapper.tokenizer.get_vocab())
+            log.info(f"number token ids in tokenizer {max_token_value}")
+            tokenizer = data_wrapper.tokenizer
+
+        else:
+            log.info(f'using tokenizer TikTokenizer with enc gpt2')
+            from qtransform.dataset.tokenizer.tiktoken import TikTokenizer
+            tokenizer = TikTokenizer({"encoding": "gpt2"})
+
         model = PreTrainedGPT2(DictConfig({"version": cfg.run.pretrained_model})).to(device=device)
-        tokenizer = TikTokenizer({"encoding": "gpt2"})
         models: List[ModelData] = [ModelData(type = InferType.CHECKPOINT, 
                                         model = model, 
                                         tokenizer = tokenizer, 
@@ -84,6 +98,8 @@ def infer(cfg: DictConfig, device: Any):
     if start.startswith('FILE:'):
         with open(start[5:], 'r', encoding='utf-8') as f:
             start = f.read()
+            start = start[:-1]
+            print(start)
 
     def write_inference(model_data: ModelData) -> str:
         """
