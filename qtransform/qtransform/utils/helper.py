@@ -83,7 +83,9 @@ def save_checkpoint(cfg: DictConfig,
     epoch:int, 
     model_cfg: Any,
     tokenizer_cfg: Any,
-    quant_cfg: Union[DictConfig, None] = None) -> str:
+    quant_cfg: Union[DictConfig, None] = None,
+    steps:int = None,
+    ) -> str:
     """save torch model checkpoint from training, returns path to saved file."""
     
     chkpt_folder = get_default_chkpt_folder()
@@ -97,12 +99,17 @@ def save_checkpoint(cfg: DictConfig,
                 chkpt_folder = os.getcwd()
     os.makedirs(chkpt_folder, exist_ok=True)
     if epoch % cfg.run.save_epoch_interval == 0:
-        checkpoint_path = os.path.join(chkpt_folder,f"{OmegaConf.to_container(HydraConfig.get().runtime.choices)['model']}_{dataset.replace('/', '__')}_{timestamp}__epoch:{epoch}")
+        if steps is not None:
+            checkpoint_path = os.path.join(chkpt_folder,f"{OmegaConf.to_container(HydraConfig.get().runtime.choices)['model']}_{dataset.replace('/', '__')}_{timestamp}__epoch:{epoch}")
+        else:
+            checkpoint_path = os.path.join(chkpt_folder,f"{OmegaConf.to_container(HydraConfig.get().runtime.choices)['model']}_{dataset.replace('/', '__')}_{timestamp}__epoch:{epoch}__steps:{steps}")
+
         log.info(f"Model checkpoint saving to {checkpoint_path}")
         torch.save(obj={
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "epoch": epoch,
+                "steps": steps,
                 "model_cfg": model_cfg,
                 "tokenizer_cfg": tokenizer_cfg, 
                 "metrics": metrics,
