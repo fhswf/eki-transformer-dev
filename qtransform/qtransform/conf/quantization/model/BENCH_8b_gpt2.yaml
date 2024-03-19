@@ -1,26 +1,25 @@
 cls: gpt ## has to match cls in config for qtransform.model ? it is arbitrary, as the model is passed to the quantizer during training
 throw_errors_on_duplicate : False #If the same layer has multiple configs within this file, pick the last one and throw warnings. Otherwise, throw an error and exit
 layers:
-  transformer.r'w[tp]e': 
-    quantize: True
-    layer_type: Embedding
-    quantizers: 
-      weight: 
-        #type: weight
-        #order of overriding: default_quantizer, then template, then args
-        default_quantizer: Int8WeightPerTensorFloat
-        args:
-          bit_width: 8
+  # please write this in order of sequence for readability
+  ##########################
+  # Model input (embeddings)
+  ##########################
 
-      #output:
-      #  default_quantizer: Int8ActPerTensorFloat
-      #  args:
-      #    bit_width: 8
-        
-  transformer.dropout: 
-    quantize: True
-    layer_type: Dropout #no quantizers for dropout possible, what is the default behavior then?
+  # regex for both position and token emb
+  #   note that quantizing this layer has a significant impact on model performace (acc/loss/etc...)
+  #transformer.r'w[tp]e': 
+  #  quantize: True
+  #  layer_type: Embedding
+  #  quantizers: 
+  #    weight: 
+  #      #type: weight
+  #      #order of overriding: default_quantizer, then template, then args
+  #      default_quantizer: Int8WeightPerTensorFloat
+  #      args:
+  #        bit_width: 32
 
+  # dummy layer for embeddings addition so that we can add quantizer
   transformer.emb_add:
     quantize: True
     layer_type: EltwiseAdd
@@ -33,7 +32,20 @@ layers:
         default_quantizer: Int8ActPerTensorFloat
         args:
           bit_width: 8
+    args:
+      return_quant_tensor: True
 
+  # dropout layer get replaced with an empty ident from brevitas, needs no params
+  transformer.dropout: 
+    quantize: True
+    layer_type: Dropout 
+
+
+  ####################
+  # Transformer Blocks
+  ####################
+
+  ###  residual1 is around MHA and residual2 is around MLP
   # transformer element add, to be reaplced with brevtas Quant Version to handle residuals
   transformer.layer.r'[0-9]+'.residual1:
     quantize: True
@@ -43,10 +55,11 @@ layers:
         default_quantizer: Int8ActPerTensorFloat
         args:
           bit_width: 8
-      
+      # output Left empty on purpose to be None
       output:
-    #args:
-    #  return_quant_tensor: True
+    args:
+      return_quant_tensor: True
+
   transformer.layer.r'[0-9]+'.residual2:
     quantize: True
     layer_type: EltwiseAdd
@@ -55,30 +68,14 @@ layers:
         default_quantizer: Int8ActPerTensorFloat
         args:
           bit_width: 8
-        # output Left empty on purpose
+      # output Left empty on purpose to be None
       output: 
-    #args:
-    #  return_quant_tensor: True
-
-  # transformer Ident after BatchNorm heads 
-  transformer.layer.r'[0-9]+'.r'ln_[0-9].id':
-    quantize: True
-    layer_type: Identity
-    quantizers: 
-      #weight:
-      #  default_quantizer: Int8WeightPerTensorFloat
-      #  args:
-      #    bit_width: 8
-      act:
-        default_quantizer: Int8ActPerTensorFloat
-        args:
-          bit_width: 8
     args:
       return_quant_tensor: True
 
-  ############
-  # NormLayers
-  ############
+  ##########################
+  # Transformer Norm Layers
+
   #transformer.layer.r'[0-9]+'.ln_1: #r'ln_[0-9]':
   #  quantize: True
   #  #it still is open whether a custom layer with their own weights and biases shoud entirely replace batchnorm (CustomBatchNorm1d)
@@ -89,15 +86,15 @@ layers:
   #    weight:
   #      default_quantizer: Int8WeightPerTensorFloat
   #      args: 
-  #        bit_width: 4
+  #        bit_width: 8
   #    input:
   #      default_quantizer: Int8ActPerTensorFloat
   #      args: 
-  #        bit_width: 4
+  #        bit_width: 8
   #    bias:
   #      default_quantizer: Int32Bias
   #      args: 
-  #        bit_width: 4
+  #        bit_width: 8
   #  args:
   #    replace_bn: True #replace with CustomBatchNorm1d, lose running_mean and running_var
   #    merge_bn:  custom_ln1 #name of the layer that batchnorm should be merged with.
@@ -109,26 +106,43 @@ layers:
   #    weight:
   #      default_quantizer: Int8WeightPerTensorFloat
   #      args: 
-  #        bit_width: 4
+  #        bit_width: 8
   #    input:
   #      default_quantizer: Int8ActPerTensorFloat
   #      args: 
-  #        bit_width: 4
+  #        bit_width: 8
   #    bias:
   #      default_quantizer: Int32Bias
   #      args: 
-  #        bit_width: 4
+  #        bit_width: 8
   #  args:
   #    replace_bn: True
   #    merge_bn: custom_ln2
 
+  ### for Transposed Norm or other cusotm norem with ident
+  ### right now this layer causes double quant back to back wich finn does not like 
 
+  # transformer Ident after BatchNorm heads 
+  #transformer.layer.r'[0-9]+'.r'ln_[0-9].id':
+  #  quantize: True
+  #  layer_type: Identity
+  #  quantizers: 
+  #    #weight:
+  #    #  default_quantizer: Int8WeightPerTensorFloat
+  #    #  args:
+  #    #    bit_width: 8
+  #    act:
+  #    #  default_quantizer: Int8ActPerTensorFloat
+  #    #  args:
+  #    #    bit_width: 8
+  #  args:
+  #    return_quant_tensor: True
 
-  ############
-  # MLP
-  ############
+  ##################
+  #  Transformer MLP
+
   #Feed forward neural network
-  transformer.layer.r'[0-9]+'.mlp.r'c_.+':
+  transformer.layer.r'[0-9]+'.mlp.c_fc:
     quantize: True
     layer_type: Linear
     quantizers: 
@@ -146,6 +160,8 @@ layers:
         default_quantizer: Int8Bias
         args:
           bit_width: 8
+    args:
+      return_quant_tensor: True
 
   transformer.layer.r'[0-9]+'.mlp.active:
     quantize: True
@@ -159,11 +175,38 @@ layers:
         default_quantizer: Int8ActPerTensorFloat
         args:
           bit_width: 8
+    args:
+      return_quant_tensor: True
+
+  transformer.layer.r'[0-9]+'.mlp.c_proj:
+    quantize: True
+    layer_type: Linear
+    quantizers: 
+      weight:
+        default_quantizer: Int8WeightPerTensorFloat
+        args:
+          bit_width: 8
+      # input already quantizewd from activation layer output
+      input:
+      #  default_quantizer: Int8ActPerTensorFloat
+      #  args:
+      #    bit_width: 8
+      # either: use input_quant=Int8ActPerTensorFloat as an input quantizer for reusing the same scaler as the weight quantizer
+      # or: use a bias quantizer with its own scaling: e.g. bias_quant=Int8BiasPerTensorFloatInternalScaling
+      bias:
+        default_quantizer: Int8Bias
+        args:
+          bit_width: 8
+    args:
+      return_quant_tensor: True
 
   transformer.layer.r'[0-9]+'.mlp.dropout:
     quantize: True
     layer_type: Dropout
 
+  #######################
+  # Transformer MHA
+  
   #Multi Head attention, all default args except bit width of 8
   transformer.layer.r'[0-9]+'.attn.r'.+dropout':
     quantize: True
@@ -222,3 +265,4 @@ layers:
     args:
       packed_in_proj: False
       batch_first: True
+      return_quant_tensor: True
