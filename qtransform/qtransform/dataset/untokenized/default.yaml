@@ -1,10 +1,8 @@
-wrapper: HuggingfaceDatasetWrapper
-module: huggingface
-name: ???
-subset: #actual name of dataset if dataset contains sub datasets (e.g. name: wikitext, subset: wikitext-103-raw-v1) 
-type: huggingface
-
-
+type: ??? 
+name: 
+  path: ???
+  args:
+    subset: 
 #for tokenization
 splits: 
   names: #mapping of our split names to huggingface split names
@@ -12,19 +10,14 @@ splits:
     eval: validation
     bench: test
   sizes:
-    train: 0.9 #
+    train: 0.9 
     eval: 0.05
     bench: 0.05
-args:
-  #for tokenized dataset
-  block_size: ${model.args.block_size}
-  #for untokenized
+tokenization_args:
   cache_dir: #directorry where cached datasets are stored. default: ~/.cache/huggingface
   data_column_name: text #name of the column that contains the training data. usually "text"
   batches: 1000 #split dataset into shards to perform tokenization more efficiently
   chunking: True #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
   chunk_size: 100 
 
-defaults:
-  - dataloader/default
-  - tokenizer: transformers
+tokenizer_cfg: ${tokenizer} #create tokenizer from specified hydra config

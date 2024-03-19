@@ -2,7 +2,7 @@ from typing import List, Dict, Union
 from omegaconf import DictConfig
 import logging
 
-from qtransform.dataset.tokenizer.tokenizer import Tokenizer2
+from qtransform.tokenizer.tokenizer import Tokenizer2
 log = logging.getLogger(__name__)
 
 from numpy import array, dtype

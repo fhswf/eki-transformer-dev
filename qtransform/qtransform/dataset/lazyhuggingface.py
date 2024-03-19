@@ -5,6 +5,8 @@ log = logging.getLogger(__name__)
 import os
 from itertools import chain
 from qtransform.dataset import DatasetSplits, DatasetWrapper
+from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
+
 
 from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset, DatasetDict
@@ -25,10 +27,10 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
     def __init__(self, cfg: DictConfig, tokenizer=None, *args, **kwargs) -> None:
         super().__init__(cfg)
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        print(f"{cfg}")
-        self.tokinzer_name = cfg.tokenizer.get("name")
+        log.debug(f"{cfg}")
+        self.tokinzer_name = tokenizer_singleton.tokenizer.meta.encoding
         if tokenizer is None:
-            tokenizer = AutoTokenizer.from_pretrained(cfg.tokenizer.name, use_fast=False)
+            tokenizer = AutoTokenizer.from_pretrained(self.tokinzer_name, use_fast=False)
             self.tokenizer = tokenizer
         else: 
             self.tokenizer = tokenizer
@@ -118,8 +120,6 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
         else:
             log.error(f"Huggingface dataset:  load_dataset return  for {self.cfg.name}, subset {self.cfg.get('subset')} has unsupported type. Type was {type(dataset)}. Needs to be dict with names")
             raise KeyError
-
-        pass
     
 
     def map_dataset(self, dataset:DatasetDict, block_size, batch_size, cache_file_prefix):

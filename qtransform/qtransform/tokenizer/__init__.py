@@ -14,7 +14,7 @@ from .transformers import TransformersTokenizer
 
 __all__ = ['CharacterTokenizer', 'TikTokenizer', 'TransformersTokenizer']
 
-import qtransform.dataset.tokenizer as package_self
+import qtransform.tokenizer as package_self
 
 def get_tokenizer(tokenizer_cfg: Union[DictConfig, Dict], memmap: np.memmap = None) -> Tokenizer:
     """

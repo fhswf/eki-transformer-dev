@@ -11,6 +11,7 @@ defaults:
   - _self_
   - model: 
   - dataset: 
+  - tokenizer: 
   - optim: default
   - optim/scheduler: default
   - run: ???
@@ -42,10 +43,10 @@ dataset:
     eval: 0.05
     bench: 0.05
 
-  #TODO: uncouple dataset and tokenizer from eachother
-  tokenizer: 
-      dtype: ${data.dtype}
-      meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
+#TODO: dataset and tokenizer are decoupled via a TokenizerSingleton
+tokenizer: 
+  dtype: ${data.dtype}
+  meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
 seed: 1234567890
 
 # DDP settings

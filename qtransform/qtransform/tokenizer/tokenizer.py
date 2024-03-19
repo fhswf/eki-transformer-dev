@@ -67,6 +67,7 @@ class Tokenizer(ABC):
         object to be used to write the tokens onto the harddrive. Alternatively, one could use the tokenize()
         method to retrieve a list of tokens from a text.
     """
+    #TODO: remove memmap from tokenizer
     _memmap: np.memmap
     _meta: Metadata
     PADDING_TOKEN: str
@@ -88,7 +89,7 @@ class Tokenizer(ABC):
         #tokenization can use memmap directly or simply return a list of integers
         if memmap is not None:
             self.memmap = memmap
-
+    #TODO: move this to memmap dataset
     @property
     def memmap(self):
         return self._memmap

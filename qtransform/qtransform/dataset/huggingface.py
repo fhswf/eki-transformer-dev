@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import Callable, List, Tuple
 from qtransform.dataset import DatasetSplits, OldDatasetWrapper
-from qtransform.dataset.tokenizer import get_tokenizer
-from qtransform.dataset.tokenizer.tokenizer import Tokenizer2
+from qtransform.tokenizer import get_tokenizer
+from qtransform.tokenizer.tokenizer import Tokenizer2
 from qtransform.utils.introspection import get_classes
 import torch
 from torch.utils.data import DataLoader, Dataset

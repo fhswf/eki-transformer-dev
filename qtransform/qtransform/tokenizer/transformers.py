@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from qtransform.dataset.tokenizer import Tokenizer, Metadata
+from qtransform.tokenizer import Tokenizer, Metadata
 from numpy import memmap, array
 from omegaconf import DictConfig, open_dict
 import logging

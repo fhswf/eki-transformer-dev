@@ -287,7 +287,6 @@ def train_one_epoch(cfg: DictConfig,
             else:
                 log.error(f"unsupported dataloader output. len was {len(data)}. ")
                 raise NotImplementedError
-
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)            
             if cfg.model.calc_loss_in_model:

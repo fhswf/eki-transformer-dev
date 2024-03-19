@@ -10,4 +10,3 @@ splits:
 
 defaults:
   - dataloader/default
-  - tokenizer: huggingface

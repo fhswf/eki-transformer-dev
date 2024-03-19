@@ -1,6 +1,6 @@
 from typing import List, Dict
 from tiktoken import get_encoding, Encoding
-from qtransform.dataset.tokenizer import Tokenizer, Metadata
+from qtransform.tokenizer import Tokenizer, Metadata
 from omegaconf import DictConfig
 import logging
 from numpy import array, dtype
