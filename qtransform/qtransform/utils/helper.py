@@ -33,6 +33,7 @@ def generate_meta(cfg: DictConfig, model: Union[torch.nn.Module, ModelWrapper]) 
     #dataset
     #tokenizer
     #model
+    #quant_cfg
     dump()
 
 def get_default_chkpt_folder() -> str:

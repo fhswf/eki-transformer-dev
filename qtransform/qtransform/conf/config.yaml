@@ -10,12 +10,14 @@ hydra:
 defaults:
   - _self_
   - model: 
-  - dataset: 
+  - dataset/tokenized: default
+  - dataset/untokenized: default
+  - dataset:
   - tokenizer: 
   - optim: default
   - optim/scheduler: default
   - run: ???
-  - quantization: None
+  - quantization: default
   - override hydra/job_logging: perlevel
   - override hydra/help: main
   #- override hydra/job_logging: colorlog
@@ -27,8 +29,6 @@ device : 'cuda'
 debug: False
 
 dataset:
-  wrapper: ??? #name of dataset wrapper to use which returns an instance of type Dataset
-  module: ??? #name of python file which declares wrapper class
   name: ???
   root_path: ~/.qtransform/datasets
   #points to the directory containing the dataset used for training/validation etc. 
@@ -38,12 +38,9 @@ dataset:
     - ${dataset.root_path}
     - ${dataset.module}
     - ${dataset.name}
-  sizes:
-    train: 0.9 #leave 10% of dataset for eval and benchmarking 
-    eval: 0.05
-    bench: 0.05
+  defaults:
+    - dataloader/default
 
-#TODO: dataset and tokenizer are decoupled via a TokenizerSingleton
 tokenizer: 
   dtype: ${data.dtype}
   meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used

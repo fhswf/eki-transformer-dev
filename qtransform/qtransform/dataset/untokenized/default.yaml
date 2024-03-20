@@ -1,8 +1,11 @@
-type: ??? 
-name: 
-  path: ???
-  args:
-    subset: 
+#for now, the type of tokenized and untokenized data is the same
+
+#type: ??? 
+#name: 
+#  path: ???
+#  args:
+#    subset: 
+type: ${dataset.tokenized.type}
 #for tokenization
 splits: 
   names: #mapping of our split names to huggingface split names
@@ -13,7 +16,7 @@ splits:
     train: 0.9 
     eval: 0.05
     bench: 0.05
-tokenization_args:
+args:
   cache_dir: #directorry where cached datasets are stored. default: ~/.cache/huggingface
   data_column_name: text #name of the column that contains the training data. usually "text"
   batches: 1000 #split dataset into shards to perform tokenization more efficiently

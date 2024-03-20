@@ -21,12 +21,24 @@ class TokenizerSingleton():
         return self._tokenizer
 
     @tokenizer.setter
-    def tokenizer(self, value: Tokenizer):
+    def tokenizer(self, value: Union[Dict, DictConfig, Tokenizer]):
         if isinstance(value, Union[Dict, DictConfig]):
-            value = get_tokenizer(value)
+            value: Tokenizer = get_tokenizer(value)
         elif not isinstance(value, Union[Tokenizer, None]):
             raise TypeError(f'Tokenizer is not of type Tokenizer or None')
-        self._tokenizer = value
+        self._tokenizer: Tokenizer = value
+
+    @property
+    def cfg(self):
+        return self._cfg
+
+    @cfg.setter
+    def cfg(self, value: Union[Dict, DictConfig]):
+        if not isinstance(value, Union[Dict, DictConfig]):
+            raise TypeError(f'cfg is not of type Dict or DictConfig')
+        self.tokenizer = value
+        self._tokenizer: Tokenizer = value
 
 #no idea how to make class with properties into a singleton without constructing objects
+#idea: metaclasses (https://refactoring.guru/design-patterns/singleton/python/example)
 tokenizer_singleton = TokenizerSingleton()

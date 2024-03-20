@@ -61,14 +61,10 @@ from abc import ABC, abstractmethod
 import os
 
 class TokenizedDatasetGenerator(ABC):
-    def __init__(self, tokenized_cfg: DictConfig, untokenized_cfg: DictConfig, *args, **kwargs) -> None:
+    def __init__(self, cfg: DictConfig, *args, **kwargs) -> None:
         super().__init__()
         log.info(f"TokenizedDatasetGenerator config:  {cfg}")
-        self.tokenized_cfg = tokenized_cfg
-        self.untokenized_cfg: UntokenizedData = UntokenizedData(**untokenized_cfg)
-        if self.untokenized_cfg.get('tokenization_args') is None:
-            with open_dict(self.cfg):
-                self.cfg["tokenization_args"] = {}
+        self.cfg = cfg
 
     @abstractmethod
     def get_tokenized_dataset(self, *args, **kwargs) -> DatasetSplits:
