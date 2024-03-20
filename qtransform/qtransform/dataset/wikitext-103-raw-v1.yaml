@@ -1,0 +1,7 @@
+name: wikitext
+subset: wikitext-103-raw-v1
+tokenized:
+  type: huggingface #name of python module which implements a class of type TokenizedDatasetGenerator
+#untokenized: 
+
+#specify args for (un)tokenized from files with "default"

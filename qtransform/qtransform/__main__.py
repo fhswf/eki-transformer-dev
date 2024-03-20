@@ -35,7 +35,7 @@ def main(cfg: DictConfig):
         log.debug("DEBUG ENABLED")
     import json
     if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
-    
+    log.debug(f'LAUNCHED WITH CONFIG: {cfg}')
     if "command" not in cfg.run:
         log.error("No run command found in run config, run config was: " + str(cfg.run))
         raise KeyError

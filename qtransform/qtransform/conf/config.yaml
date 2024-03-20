@@ -12,6 +12,7 @@ defaults:
   - model: 
   - dataset/tokenized: default
   - dataset/untokenized: default
+  - dataset/dataloader: default
   - dataset:
   - tokenizer: 
   - optim: default
@@ -38,8 +39,6 @@ dataset:
     - ${dataset.root_path}
     - ${dataset.module}
     - ${dataset.name}
-  defaults:
-    - dataloader/default
 
 tokenizer: 
   dtype: ${data.dtype}

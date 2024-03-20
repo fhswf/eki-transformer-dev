@@ -4,7 +4,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from omegaconf import DictConfig, open_dict
 from qtransform.utils.introspection import get_classes, concat_paths, get_dtype
-from qtransform.dataset import DatasetSplits, OldDatasetWrapper, TokenizedDatasetGenerator
+from qtransform.dataset import DatasetSplits, TokenizedDatasetGenerator
 from qtransform.tokenizer import get_tokenizer, Tokenizer
 import os
 from glob import glob

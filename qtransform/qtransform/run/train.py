@@ -33,7 +33,6 @@ def run(cfg: DictConfig):
 
     if "dataloader" not in cfg.dataset:
         log.error(f"dataloder not specified for dataset: {cfg.dataset.name}. Use dataset=huggingface to get one automaticly.")
-
     device_singleton.device = cfg.device
     device = device_singleton.device
     if device.type == 'cuda':
@@ -57,16 +56,20 @@ def run(cfg: DictConfig):
     
     print(model)
 
-    data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model.config.block_size)
-    if len(data_loader_tuples) == 3:
-        train_dataloader, eval_dataloader, _  = data_loader_tuples
-    elif len(data_loader_tuples) == 2:
-        train_dataloader, eval_dataloader = data_loader_tuples
-    elif len(data_loader_tuples) == 1:
-        train_dataloader = data_loader_tuples
-        eval_dataloader = None
-    else:
-        raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
+    #data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model.config.block_size)
+    #if len(data_loader_tuples) == 3:
+    #    train_dataloader, eval_dataloader, _  = data_loader_tuples
+    #elif len(data_loader_tuples) == 2:
+    #    train_dataloader, eval_dataloader = data_loader_tuples
+    #elif len(data_loader_tuples) == 1:
+    #    train_dataloader = data_loader_tuples
+    #    eval_dataloader = None
+    #else:
+    #    raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
+    from qtransform.dataset import DataLoaderWrapper
+    dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
+    train_dataloader = dataloader_wrapper.get_loader("train")
+    eval_dataloader = dataloader_wrapper.get_loader("eval")
 
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")

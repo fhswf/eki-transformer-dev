@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Callable, List, Tuple
-from qtransform.dataset import DatasetSplits, OldDatasetWrapper
+from qtransform.dataset import DatasetSplits
 from qtransform.tokenizer import get_tokenizer
 from qtransform.tokenizer.tokenizer import Tokenizer2
 from qtransform.utils.introspection import get_classes
@@ -16,7 +16,7 @@ from datasets.dataset_dict import DatasetDict
 import logging
 log = logging.getLogger(__name__)
 #https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes
-class HuggingfaceDatasetWrapper(OldDatasetWrapper):
+class HuggingfaceDatasetWrapper():
     """
         Retrieves a huggingface datasetand returns a DatasetInfo object. Under the hood, the datasets are tokenized and written
         into a numpy memmap file on the local user's harddrive for performance reasons. It also avoids having to load and tokenize 

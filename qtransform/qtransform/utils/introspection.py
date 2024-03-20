@@ -15,6 +15,7 @@ def load_class(logger: logging.Logger, module: ModuleType, parent_class: type, c
     """
     logger.info(f"Loading class {module.__name__}.{class_name}(parent: {parent_class})")
     found_classes = get_classes(module, parent_class)
+    log.debug(f'found_classes: {found_classes}')
     if class_name not in found_classes:
         logger.error(f"{parent_class.__name__} {class_name} not found in {module.__name__}")
         raise KeyError
