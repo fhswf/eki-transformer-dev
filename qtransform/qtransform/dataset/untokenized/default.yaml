@@ -1,11 +1,9 @@
 #for now, the type of tokenized and untokenized data is the same
 
-#type: ??? 
-#name: 
-#  path: ???
+type: ??? 
+name: 
 #  args:
 #    subset: 
-type: ${dataset.tokenized.type}
 #for tokenization
 splits: 
   names: #mapping of our split names to huggingface split names

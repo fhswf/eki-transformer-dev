@@ -5,14 +5,13 @@ log = logging.getLogger(__name__)
 import os
 from itertools import chain
 from qtransform.dataset import DatasetSplits, TokenizedDatasetGenerator
-from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
+from qtransform.tokenizer import tokenizer_singleton, Tokenizer
 
 
 from torch.utils.data import DataLoader, Dataset
 from datasets import load_dataset, DatasetDict
 from datasets import config as hf_config
 from transformers import AutoTokenizer
-from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
 from transformers import default_data_collator
 
 
@@ -24,27 +23,12 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         the same datasets multiple times.
         When tokenizer is givin during construction the givin tokenizer will be usesd, otherwise the toknizer will be infered from the hydra config.
     """
-    def __init__(self, cfg: DictConfig, tokenizer=None, *args, **kwargs) -> None:
+    def __init__(self, cfg: DictConfig, *args, **kwargs) -> None:
         super().__init__(cfg)
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         log.debug(f"{cfg}")
-        self.tokinzer_name = tokenizer_singleton.tokenizer.meta.encoding
-        if tokenizer is None:
-            tokenizer = AutoTokenizer.from_pretrained(self.tokinzer_name, use_fast=False)
-            self.tokenizer = tokenizer
-        else: 
-            self.tokenizer = tokenizer
-
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
-
-        #https://github.com/huggingface/datasets/issues/3638
-        self.tokenizer("Call init Tokenier", "to enable cacheing bug", truncation=True)
-
-        #model_max_length has a different name for our tokenizers
-        #self.max_block_size = self.tokenizer.model_max_length
-        self.max_block_size = None
-        log.warning(f'max_block_size set to None to explicitly debug later')
+        #retrieve tokenizer from singleton
+        self.tokenizer = tokenizer_singleton.tokenizer
 
     def prepare_data(self):
         log.warning(f'Does nothing currently')
@@ -61,8 +45,8 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             batch_size = self.cfg.tokenized.dataloader.batch_size
         log.info(f"Batch size = dataloader batch size {batch_size}")
 
-        # workaround for tokinzer cache invalidation because hash of tokinzer changes for no reason
-        hf_cache_file_name =  "cache-"  + self.tokinzer_name.replace('/', '__')  + "-" + str(block_size) + "-"
+        # workaround for tokenizer cache invalidation because hash of tokenizer changes for no reason
+        hf_cache_file_name =  "cache-"  + self.tokenizer_name.replace('/', '__')  + "-" + str(block_size) + "-"
         hf_cache_file_name = hf_cache_file_name.lower()
         if self.cfg.get('subset') is not None:
             dataset_name = self.cfg.name + "_" +  self.cfg.get('subset')

@@ -1,0 +1,3 @@
+#idea: override specific fields from default list. TODO: actually figure out how that can work
+#maybe with https://hydra.cc/docs/patterns/extending_configs/ and https://stackoverflow.com/questions/72500521/hydra-override-an-interpolated-dict-value-in-yaml-config
+type: files 

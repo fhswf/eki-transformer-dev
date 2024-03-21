@@ -1,6 +1,5 @@
 import numpy as np
 from qtransform.classloader import get_data
-from .tokenizer import Tokenizer, Metadata
 import logging 
 from omegaconf import DictConfig
 from pprint import PrettyPrinter
@@ -8,6 +7,8 @@ from typing import Union, Dict, Any
 
 log = logging.getLogger(__name__)
 
+
+from .tokenizer import Tokenizer, Metadata
 from .character import CharacterTokenizer
 from .tiktoken import TikTokenizer
 from .transformers import TransformersTokenizer

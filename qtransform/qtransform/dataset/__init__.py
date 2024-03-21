@@ -13,7 +13,8 @@ from qtransform.tokenizer import Tokenizer, get_tokenizer
 import datasets
 from datasets.dataset_dict import DatasetDict
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
-
+import qtransform.dataset as package_self
+from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
 #TokenizedDatasetWrapper
 
 
@@ -61,31 +62,75 @@ class DatasetSplits:
                 log.error(f'DatasetSplits field {field.name} expects field type {field.type}, not {type(current_attr)}')
                 raise TypeError()
 
+class DataCollatorWrapper():
+    pass
+
+class TokenizedDatasetFactory():
+    @classmethod
+    def get_tokenized_data(cfg: DictConfig) -> (DatasetSplits, DataCollatorWrapper):
+        tokenized_dataset_generator: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.tokenized.type, cfg)
+        #tokenized_splits: [x for x in tokenized_dataset_generator.check_tokenized(cfg)
+        #log.info(f'Tokenized splits: {[x for x in tokenized_splits if tokenized_splits[x] == True]}')
+        tokenized_dataset_generator: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.untokenized.type, cfg)
+        untokenized_data = tokenized_dataset_generator.get_untokenized_data()
+        tokenized_data = tokenized_dataset_generator.tokenize_data(untokenized_data)
+
+        #TODO: collator
+
+
+    @classmethod
+    def get_collator(cfg: DictConfig) -> DataCollatorWrapper:
+        pass
+
+
 from abc import ABC, abstractmethod
 import os
 
 class TokenizedDatasetGenerator(ABC):
-    def __init__(self, cfg: DictConfig, *args, **kwargs) -> None:
+
+    FILE_EXTENSION: str
+
+    def __init__(self, cfg: DictConfig):
         super().__init__()
         log.info(f"TokenizedDatasetGenerator config:  {cfg}")
         self.cfg = cfg
 
+    @classmethod
     @abstractmethod
-    def get_tokenized_dataset(self, *args, **kwargs) -> DatasetSplits:
+    def get_tokenized_dataset(self,) -> DatasetSplits:
         raise NotImplementedError
     
+    def get_cache_filepaths(self):
+        cache_dir = concat_paths(cfg.cache_dir)
+        cache_file_prefix = cfg.cache_filename_prefix
+        splits = [x.name for x in fields(DatasetSplits)]
+        return [os.path.join(cache_dir, cache_file_prefix + "-" + split + "-tokenized."+FILE_EXTENSION) for x in splits]
+
+    @classmethod
+    def check_tokenized(cfg: DictConfig) -> Dict[str,  bool]:
+        
+        #if splits do not exist in base untokenized dataset, entire untokenized dataset will be loaded 
+        missing_splits = {x:os.path.exists() for x in splits}
+        return missing_splits
+
+    @classmethod
     @abstractmethod
-    def prepare_data(self) -> None:
+    def tokenize_data(self, untokenized_data: DatasetDict) -> None:
+        raise NotImplementedError
+    
+    @classmethod
+    @abstractmethod
+    def get_untokenized_data(self) -> DatasetDict:
         raise NotImplementedError
 
 #TODO: factories and singletons could work here
 class DataLoaderWrapper():
 
     def __init__(self, cfg):
-        self.tokenized_dataset_generator = get_tokenized_dataset_generator(cfg)
-        self.tokenized_datasets: DatasetSplits = self.tokenized_dataset_generator.get_tokenized_dataset()
         self.dataloader_cfg = cfg.dataloader
         log.info(f'Dataloader cfg: {self.dataloader_cfg}')
+        self.tokenized_dataset_splits: DatasetSplits = TokenizedDatasetFactory.get_tokenized_data(cfg)
+        self.collator = TokenizedDatasetFactory.get_collator(cfg)
 
     def get_loader(self, split: str) -> DataLoader:
         log.debug(f"get_loader config: {self.dataloader_cfg} for split {split}")
@@ -136,11 +181,19 @@ def get_dataset_wrapper(dataset_cfg: DictConfig) -> DatasetWrapper:
     log.info(f"loading dataset wrapper {dataset_cfg.get('wrapper')} with config: {dataset_cfg}")
     return load_class(logger=log, module=qtransform.dataset, class_name=dataset_cfg.get("wrapper"), parent_class=DatasetWrapper, args={"cfg": dataset_cfg})
 
-# idea: only specify type (huggingface) without having to specify wrapper etc. in config files
-def get_tokenized_dataset_generator(dataset_cfg: DictConfig) -> TokenizedDatasetGenerator:
-    generator_module = dataset_cfg.tokenized.get('type')
+def get_tokenized_dataset_generator(generator_module: str, dataset_cfg: DictConfig) -> TokenizedDatasetGenerator:
+    """
+    Basically does the same thing as get_dataset_wrapper without having to specify the name of the wrapper class.
+    """
     log.info(f"loading tokenized dataset generator from module {generator_module} with config: {dataset_cfg}")
-    #classes =  get_classes(, parent_class=TokenizedDatasetGenerator)
+    module_name = package_self.__package__ + "." + generator_module
+    classes =  get_classes(package_self, parent_class=TokenizedDatasetGenerator).values()
+    log.debug(f'Found classes: {classes}')
+    found_class = list(filter(lambda x: x.__module__ == module_name , classes))
+    if len(found_class) == 0:
+        log.error(f'Could not find TokenizedDatasetGenerator in module: {module_name} with specified type: {generator_module}')
+        raise ValueError()
+    return found_class[0](dataset_cfg)
 
 def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:
     log.debug(f"get_loader config: {dataloader_cfg}")
