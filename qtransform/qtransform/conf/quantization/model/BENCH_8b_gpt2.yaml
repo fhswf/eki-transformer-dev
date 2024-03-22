@@ -25,15 +25,15 @@ layers:
     layer_type: EltwiseAdd
     quantizers: 
       input: 
-        default_quantizer: Int8ActPerTensorFloat
-        args:
-          bit_width: 8
+      #  default_quantizer: Int8ActPerTensorFloat
+      #  args:
+      #    bit_width: 8
       output:
         default_quantizer: Int8ActPerTensorFloat
         args:
           bit_width: 8
-    args:
-      return_quant_tensor: True
+    #args:
+    #  return_quant_tensor: True
 
   # dropout layer get replaced with an empty ident from brevitas, needs no params
   transformer.dropout: 
@@ -44,6 +44,24 @@ layers:
   ####################
   # Transformer Blocks
   ####################
+
+  ###  block entry dummy layer
+  #transformer.layer.r'[0-9]+'.in_id:
+  #  quantize: True
+  #  layer_type: Identity
+  #  quantizers: 
+  #    #input: 
+  #    #  default_quantizer: Int8ActPerTensorFloat
+  #    #  args:
+  #    #    bit_width: 8
+  #    act: 
+  #    #  default_quantizer: Int8ActPerTensorFloat
+  #    #  args:
+  #    #    bit_width: 8
+  #    # output Left empty on purpose to be None
+  #    output:
+  #  #args:
+  #  #  return_quant_tensor: True
 
   ###  residual1 is around MHA and residual2 is around MLP
   # transformer element add, to be reaplced with brevtas Quant Version to handle residuals
@@ -57,8 +75,8 @@ layers:
           bit_width: 8
       # output Left empty on purpose to be None
       output:
-    args:
-      return_quant_tensor: True
+    #args:
+    #  return_quant_tensor: True
 
   transformer.layer.r'[0-9]+'.residual2:
     quantize: True
@@ -70,8 +88,8 @@ layers:
           bit_width: 8
       # output Left empty on purpose to be None
       output: 
-    args:
-      return_quant_tensor: True
+    #args:
+    #  return_quant_tensor: True
 
   ##########################
   # Transformer Norm Layers
@@ -123,20 +141,20 @@ layers:
   ### right now this layer causes double quant back to back wich finn does not like 
 
   # transformer Ident after BatchNorm heads 
-  #transformer.layer.r'[0-9]+'.r'ln_[0-9].id':
-  #  quantize: True
-  #  layer_type: Identity
-  #  quantizers: 
-  #    #weight:
-  #    #  default_quantizer: Int8WeightPerTensorFloat
-  #    #  args:
-  #    #    bit_width: 8
-  #    act:
-  #    #  default_quantizer: Int8ActPerTensorFloat
-  #    #  args:
-  #    #    bit_width: 8
-  #  args:
-  #    return_quant_tensor: True
+  # transformer.layer.r'[0-9]+'.r'ln_[0-9].id':
+  #   quantize: True
+  #   layer_type: Identity
+  #   quantizers: 
+  #     #weight:
+  #     #  default_quantizer: Int8WeightPerTensorFloat
+  #     #  args:
+  #     #    bit_width: 8
+  #     act:
+  #       default_quantizer: Int8ActPerTensorFloat
+  #       args:
+  #         bit_width: 8
+  #   args:
+  #     return_quant_tensor: True
 
   ##################
   #  Transformer MLP
@@ -172,9 +190,9 @@ layers:
         args:
           bit_width: 8
       input:
-        default_quantizer: Int8ActPerTensorFloat
-        args:
-          bit_width: 8
+      #  default_quantizer: Int8ActPerTensorFloat
+      #  args:
+      #    bit_width: 8
     args:
       return_quant_tensor: True
 
@@ -193,6 +211,10 @@ layers:
       #    bit_width: 8
       # either: use input_quant=Int8ActPerTensorFloat as an input quantizer for reusing the same scaler as the weight quantizer
       # or: use a bias quantizer with its own scaling: e.g. bias_quant=Int8BiasPerTensorFloatInternalScaling
+      #output_quant:
+      #  default_quantizer: Int8ActPerTensorFloat
+      #  args:
+      #    bit_width: 8
       bias:
         default_quantizer: Int8Bias
         args:
@@ -260,7 +282,8 @@ layers:
         default_quantizer: Int32Bias
         args: 
           bit_width: 8
-      # out_proj_output_quant=None,
+      out_proj_output_quant:
+        #none
     ## extra args:
     args:
       packed_in_proj: False
