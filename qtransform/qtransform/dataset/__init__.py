@@ -6,7 +6,7 @@ from qtransform.utils.introspection import _get_module, get_classes, concat_path
 import qtransform
 from qtransform import classloader
 from dataclasses import dataclass, fields
-from enum import Enum
+from enum import IntEnum
 from os import listdir
 from os.path import join
 from qtransform.tokenizer import Tokenizer, get_tokenizer
@@ -21,65 +21,67 @@ from transformers import DataCollatorForLanguageModeling, DataCollatorWithPaddin
 
 log = logging.getLogger(__name__)
 
-class DatasetSplitType(Enum):
-    TRAIN = "train"
-    EVAL = "eval"
-    BENCH = "bench"
+
+#TODO: python 3.11 could support StrEnum
+class DatasetSplitType(IntEnum):
+    TRAIN = 0
+    EVAL = 1
+    BENCH = 2
 
 
-#could extend DatasetSplits with ExtendedEnums (https://stackoverflow.com/a/78090753)
 @dataclass
 class DatasetSplits:
     """
         Dataclass containing the datasets for training, eval, testing, benchmark along with the name of the dataset.
-        After construction, a simple type check is done with the __post_init__ hook.
     """
-    train: Dataset = None
-    eval: Dataset = None
-    bench: Dataset = None
-
+    splits: InitVar[Dict[DatasetSplitType, Dataset]] = None
+    
+    def __init__(self):
+        #access splits with Enum values
+        #DatasetSplits.eval not possible, DatasetSplits[DatasetSplitType.EVAL] possible
+        self.splits = {
+            DatasetSplitType.TRAIN: None,
+            DatasetSplitType.EVAL: None,
+            DatasetSplitType.BENCH: None
+        }
+    
     # make class subscritable aka: self['train'] works
     def __getitem__(self, item):
-        return getattr(self, item)
-    
+        return self.splits[item]
+
+    #TODO: setting split to any value theoretically possible
     def __setitem__(self, index, item):
-        setattr(self, index, item)
-
-    """def __setattr__(self, __name, __value):
-        if __name not in self.fields.keys():
-            log.error(f DatasetSplits should only contain fields: {self.fields.keys()}')
-            raise KeyError()
-        field = self.fields[__name]
-        current_attr = getattr(self, field.name)
-        if current_attr is not None and not isinstance(current_attr, field.type):
-                log.error(f DatasetSplits field {field.name} expects field type {field.type}, not {type(current_attr)}')
-                raise TypeError()"""
-
-    def __post_init__(self):
-        self.fields = {x.name:x for x in fields(self)}
-        for field in self.fields.values():
-            current_attr = getattr(self, field.name)
-            if current_attr is not None and not isinstance(current_attr, field.type):
-                log.error(f'DatasetSplits field {field.name} expects field type {field.type}, not {type(current_attr)}')
-                raise TypeError()
+        self.splits[index] = item
 
 
 class TokenizedDatasetFactory():
     @classmethod
-    def get_tokenized_data(cfg: DictConfig) -> (DatasetSplits, DataCollatorWrapper):
-        tokenized_dataset_generator: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.tokenized.type, cfg)
-        status_splits = tokenized_dataset_generator.check_tokenized()
+    def get_tokenized_data(cfg: DictConfig) -> (DatasetSplits, Callable):
+        """
+        Loads tokenized data and returns a DatasetSplits instance along with the collate_fn to iterate with a torch DataLoader.
+        If the tokenized data does not exist locally, the untokenized data is processed.
+
+        Arguments:
+        cfg: Config containing dataset fields (e.g. tokenized and untokenized)
+
+        Returns:
+            Tuple of DatasetSplits and Callable (collate_fn)
+        """
+        dataset_splits = DatasetSplits()
+        tokenized_data_fetcher: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.tokenized.type, cfg)
+        untokenized_data_fetcher: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.untokenized.type, cfg)
+        status_splits = tokenized_data_fetcher.check_tokenized()
+        untokenized_splits = {}
+        #split is DatasetSplitType enum
         for split, status in status_splits.items():
             if not status["exists"]:
                 log.info(f'Split "{split}" under path "{status["filepath"]}" does not exist. Tokenizing now')
-            
-        #tokenized_splits: [x for x in tokenized_dataset_generator.check_tokenized(cfg)
-        #log.info(f'Tokenized splits: {[x for x in tokenized_splits if tokenized_splits[x] == True]}')
-        tokenized_dataset_generator: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.untokenized.type, cfg)
-        untokenized_data = tokenized_dataset_generator.get_untokenized_data()
-        tokenized_data = tokenized_dataset_generator.tokenize_data(untokenized_data)
-
-        #TODO: collator
+                untokenized_splits[split.name.lower()] = untokenized_data_fetcher.get_untokenized_data(split=split)
+        if len(untokenized_splits) > 0:
+            tokenized_data_fetcher.tokenize_data(untokenized_splits)
+        tokenized_splits = tokenized_data_fetcher.get_tokenized_dataset()
+        collator_fn = tokenized_data_fetcher.get_collator()
+        return (tokenized_splits, collator_fn)
 
 
 
@@ -106,18 +108,29 @@ class TokenizedDatasetGenerator(ABC):
     def get_tokenized_dataset(self) -> DatasetSplits:
         raise NotImplementedError
 
-    def check_tokenized(self) -> Dict[str,  bool]:
-        splits = [x.name for x in fields(DatasetSplits)]
-        filepath_splits =  {split: os.path.join(self.DATASET_FILE_PATH, self.cache_file_prefix + "-" + split +self.DATASET_FILE_SUFFIX) for split in splits}
+    def check_tokenized(self) -> Dict[DatasetSplitType,  Dict[str, Union[bool, str]]]:
+        """
+        
+        {
+            <DatasetSplitType.TRAIN: 0>: {
+                'exists': False,
+                'filepath': 'cfg-path-to-file'
+            }
+        }
+        """
+        splits = [split for split in DatasetSplitType]
+        filepath_splits =  {split: os.path.join(self.DATASET_FILE_PATH, self.cache_file_prefix + "-" + split.name.lower() +self.DATASET_FILE_SUFFIX) for split in splits}
         status_splits = {split:{"exists": os.path.exists(filepath_splits[split]), "filepath": filepath_splits[split]} for x in splits}
         return status_splits
 
     @abstractmethod
     def tokenize_data(self, untokenized_data: DatasetDict) -> None:
+        #slice spits: https://huggingface.co/docs/datasets/loading#slice-splits
+        #keys of DatasetDict are split types
         raise NotImplementedError
     
     @abstractmethod
-    def get_untokenized_data(self) -> DatasetDict:
+    def get_untokenized_data(self, split: DatasetSplitType) -> datasets.Dataset:
         raise NotImplementedError
 
     @abstractmethod
