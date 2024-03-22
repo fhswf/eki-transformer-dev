@@ -1,4 +1,4 @@
-from typing import Any, Union, Dict
+from typing import Any, Union, Dict, Callable
 from omegaconf import DictConfig, open_dict
 import logging
 from torch.utils.data import Dataset, DataLoader
@@ -21,12 +21,13 @@ from transformers import DataCollatorForLanguageModeling, DataCollatorWithPaddin
 
 log = logging.getLogger(__name__)
 
-class DatasetRunType(Enum):
+class DatasetSplitType(Enum):
     TRAIN = "train"
     EVAL = "eval"
     BENCH = "bench"
 
 
+#could extend DatasetSplits with ExtendedEnums (https://stackoverflow.com/a/78090753)
 @dataclass
 class DatasetSplits:
     """
@@ -62,13 +63,16 @@ class DatasetSplits:
                 log.error(f'DatasetSplits field {field.name} expects field type {field.type}, not {type(current_attr)}')
                 raise TypeError()
 
-class DataCollatorWrapper():
-    pass
 
 class TokenizedDatasetFactory():
     @classmethod
     def get_tokenized_data(cfg: DictConfig) -> (DatasetSplits, DataCollatorWrapper):
         tokenized_dataset_generator: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.tokenized.type, cfg)
+        status_splits = tokenized_dataset_generator.check_tokenized()
+        for split, status in status_splits.items():
+            if not status["exists"]:
+                log.info(f'Split "{split}" under path "{status["filepath"]}" does not exist. Tokenizing now')
+            
         #tokenized_splits: [x for x in tokenized_dataset_generator.check_tokenized(cfg)
         #log.info(f'Tokenized splits: {[x for x in tokenized_splits if tokenized_splits[x] == True]}')
         tokenized_dataset_generator: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.untokenized.type, cfg)
@@ -78,50 +82,47 @@ class TokenizedDatasetFactory():
         #TODO: collator
 
 
-    @classmethod
-    def get_collator(cfg: DictConfig) -> DataCollatorWrapper:
-        pass
-
 
 from abc import ABC, abstractmethod
 import os
 
 class TokenizedDatasetGenerator(ABC):
 
-    FILE_EXTENSION: str
+    #contains file extension and other distinguishing factors (e.g. block_size, tokenized or grouped..)
+    #split is prepended to suffix (cache_file_prefix, split, DATASET_FILE_SUFFIX)
+    DATASET_FILE_SUFFIX: str
+    DUMP_FILE_PATH: str #path for intermediate result of tokenization (tokenized but not grouped)
+    DATASET_FILE_PATH: str #by default: cache_dir from config
 
     def __init__(self, cfg: DictConfig):
         super().__init__()
         log.info(f"TokenizedDatasetGenerator config:  {cfg}")
         self.cfg = cfg
+        #TODO: name_args (subset etc.) in DATASET_FILE_PATH
+        self.DATASET_FILE_PATH = concat_paths(self.cfg.cache_dir)
+        self.cache_file_prefix = self.cfg.cache_filename_prefix
 
-    @classmethod
     @abstractmethod
-    def get_tokenized_dataset(self,) -> DatasetSplits:
+    def get_tokenized_dataset(self) -> DatasetSplits:
         raise NotImplementedError
-    
-    def get_cache_filepaths(self):
-        cache_dir = concat_paths(cfg.cache_dir)
-        cache_file_prefix = cfg.cache_filename_prefix
+
+    def check_tokenized(self) -> Dict[str,  bool]:
         splits = [x.name for x in fields(DatasetSplits)]
-        return [os.path.join(cache_dir, cache_file_prefix + "-" + split + "-tokenized."+FILE_EXTENSION) for x in splits]
+        filepath_splits =  {split: os.path.join(self.DATASET_FILE_PATH, self.cache_file_prefix + "-" + split +self.DATASET_FILE_SUFFIX) for split in splits}
+        status_splits = {split:{"exists": os.path.exists(filepath_splits[split]), "filepath": filepath_splits[split]} for x in splits}
+        return status_splits
 
-    @classmethod
-    def check_tokenized(cfg: DictConfig) -> Dict[str,  bool]:
-        
-        #if splits do not exist in base untokenized dataset, entire untokenized dataset will be loaded 
-        missing_splits = {x:os.path.exists() for x in splits}
-        return missing_splits
-
-    @classmethod
     @abstractmethod
     def tokenize_data(self, untokenized_data: DatasetDict) -> None:
         raise NotImplementedError
     
-    @classmethod
     @abstractmethod
     def get_untokenized_data(self) -> DatasetDict:
         raise NotImplementedError
+
+    @abstractmethod
+    def get_collator(self) -> Callable:
+        pass
 
 #TODO: factories and singletons could work here
 class DataLoaderWrapper():

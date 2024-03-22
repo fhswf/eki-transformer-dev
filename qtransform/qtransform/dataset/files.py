@@ -16,6 +16,10 @@ from datasets.dataset_dict import DatasetDict
 log = logging.getLogger(__name__)
 
 class MemmapTokenizedDatasetGenerator(TokenizedDatasetGenerator):
+    """
+    Creates and loads one dimensional numpy arrays from local disk. The numpy arrays contain the input ids of a dataset and are
+    returned as a DatasetSplit instance. 
+    """
     def __init__(self, tokenized_cfg: DictConfig, untokenized_cfg: DictConfig, *args, **kwargs) -> None:
         super().__init__()
         self.dataset_files = {}
@@ -193,9 +197,13 @@ class MemmapDataset(Dataset):
     
     def __init__(self, token_file: str, dtype: np.dtype, block_size: int, start: float=0.0, end: float = 1.0):
         """
-            Creates a dataset which loads a numpy array from a file. 
+            Creates a dataset which loads a one dimensional numpy array from a file. 
+            
             Slices of the dataset can be retrieved with the start and end parameters. 
             They specify the starting and ending range of the dataset in percent.
+            This is not really useful at the moment however.
+        
+
         """
         super().__init__()
         if not isinstance(start, float) or start < 0.0 or start >= 1.0:
