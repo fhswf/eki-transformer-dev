@@ -1,9 +1,14 @@
+import os
+import re
+import time
+import numpy as np
 from omegaconf import DictConfig, open_dict
 from qtransform.classloader import get_data
 from torch import nn, Tensor, from_numpy
 import logging
 from dataclasses import dataclass
-from qonnx.core.onnx_exec import execute_onnx
+from qonnx.core.onnx_exec import execute_onnx as qonnx_execute_onnx
+from finn.core.onnx_exec import execute_onnx as finn_execute_onnx
 from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
@@ -13,6 +18,8 @@ from typing import Union, Tuple
 from abc import ABC, abstractmethod
 
 from functools import lru_cache
+
+import torch
 
 # Keep track of 10 different messages and then warn again
 @lru_cache(1)
@@ -56,9 +63,14 @@ def get_model(model_cfg: DictConfig) -> nn.Module:
             model_cfg.args.vocab_size = model.config.vocab_size
             model_cfg.args.calc_loss_in_model = True
         return model
+    
+    #from qtransform.model import get_model as _get_model
+    #model = _get_model(model_cfg)
+
+    # TODO find out what went wrong here!
+    
     from qtransform import model as _model
     args = model_cfg.get("args")
-
     #models need to specify their hyperparameters in init parameter named "config"
     model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module)
     #construct model if no args have been given
@@ -144,6 +156,7 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
 
     def __init__(self, model_cfg: DictConfig):
         super().__init__(model_cfg=model_cfg)
+        print(model_cfg)
         self.model_type = ModelType.ONNX
 
     def load_model(self, model_cfg: DictConfig):
@@ -156,16 +169,55 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
 
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         device = idx_cond.device
+        # defaults:
+        input_name =  "input"
+        run_fn = qonnx_execute_onnx
+        # determine if finn onnx or qonnx
+        _a = re.findall(r"\.finn", str(self.model_cfg.from_file))
+        if len(_a) == 1 and _a[0] == ".finn":  # check if model name contains "finn flag" 
+            input_name =  "global_in"
+            run_fn = finn_execute_onnx
+        # elif self.model_cfg.get("runtime") is not None:
+        #     if self.model_cfg.get("runtime") == "finn":
+        #         input_name =  "global_in"
+        #         run_fn = finn_execute_onnx
+        #     elif self.model_cfg.get("runtime") == "qonnx":
+        #         input_name =  "input"
+        #         run_fn = qonnx_execute_onnx
+        #     elif self.model_cfg.get("runtime") == "onnx":
+        #         input_name =  "input"
+        #         run_fn = qonnx_execute_onnx
+        else: # defaults
+            input_name =  "input"
+            run_fn = qonnx_execute_onnx
+
+        #log.info(f"input_name for onnx graph run {input_name},  using function {run_fn.__name__}")
+        # finn removes batch so we do it here
+        if input_name ==  "global_in":
+            idx_cond = torch.squeeze(idx_cond)
+            #print(idx_cond.cpu().numpy())
+            #print(idx_cond.cpu().numpy().size)
+            #np.save("global_in.npy", idx_cond.cpu().numpy())
+
         if labels is not None:
-            idict = {"input": idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
+            idict = {input_name: idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
             warn_once(log, "labels are givin to external forwards pass wrapper but they are ignored inside onns models atm")
         else:
-            idict = {"input": idx_cond.cpu().numpy()}
+            idict = {input_name: idx_cond.cpu().numpy()}
         # use infer_shapes()
         #forward pass of gpt model returns the non-softmaxed token predictions
-        odict = execute_onnx(self.model, idict)
-        # log.trace(odict)
-        logits = from_numpy(odict["output"]).to(device=device)
+        odict = run_fn(self.model, idict)
+        # print(odict)
+        if "global_out" in odict.keys():
+            #print(odict["global_out"])
+            #print(odict["global_out"].size)
+            #np.save("global_out.npy", )
+
+            logits = from_numpy(odict["global_out"]).to(device=device)
+            logits = torch.unsqueeze(logits, 0)
+        else:
+            logits = from_numpy(odict["output"]).to(device=device)
+
         return logits 
 
     def save_model(self):

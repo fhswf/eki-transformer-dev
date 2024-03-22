@@ -409,10 +409,15 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
 
         vinputs = vinputs.to(device=device_singleton.device)
         vlabels = vlabels.to(device=device_singleton.device)
+        #print(i, vinputs.size(), vlabels.size())
+        #print(vinputs, vlabels)
         if cfg.model.calc_loss_in_model:
             voutputs, vloss = model(vinputs, vlabels)
-            #print(f"voutputs, vloss {vloss}")
+            #print(voutputs)
+            #print(f" loss {vloss}")
+         #   log.debug(f" loss {vloss}")
         else:
+            # this is wrong!
             voutputs, _ = model(vinputs)
             voutputs_softmax = torch.nn.functional.log_softmax(voutputs, dim=2)
             vloss = torch.nn.functional.nll_loss(voutputs_softmax.view(-1, voutputs_softmax.size(-1)),vlabels.view(-1), ignore_index=-1)

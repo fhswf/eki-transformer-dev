@@ -136,8 +136,12 @@ def load_onnx_model(path: str) -> ModelWrapper:
     log.info(f'Loading ONNX model from "{path}"')
     #qonnx lib also works with onnx models
     model = ModelWrapper(path)    
-    infered_shapes = infer_shapes(model.model)
-    return ModelWrapper(infered_shapes)
+    try:
+        model = infer_shapes(model.model)
+        return ModelWrapper(model)
+    except Exception as e:
+        log.warning(f"shape infernce faild due to {e}. Continue without infer_shapes. Good luck!")
+    return model
 
 def write_to_pipe(cfg: DictConfig, content: str) -> None:
     """
