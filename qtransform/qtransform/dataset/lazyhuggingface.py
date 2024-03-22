@@ -45,8 +45,8 @@ class LazyHuggingfaceDatasetWrapper(DatasetWrapper):
         log.debug(f"get_loader config: {self.cfg.dataloader} for split {split}")
         # loader = DataLoader(data, generator=torch.Generator(device='cuda'), **dataloader_cfg) # does no work for dataloader forks
         kwargs = {**self.cfg.dataloader}
-        if split=='train':
-            kwargs['shuffle'] = False
+        #if split=='train':
+        kwargs['shuffle'] = False
         if self.cfg.get('collate_fn'):
             log.warning("TODO collate_fn via config is not supported yet")
 

@@ -1,19 +1,19 @@
-type: ONNX # ONNX or DYNAMIC_CHECKPOINT CHECKPOINT
-from_file: attention.transformed.onnx #torch checkpoint or ONNX model path
+type: ONNX # ONNX or DYNAMIC_CHECKPOINT CHECKPOINT NEW FINN_ONNX same as onny but uses other runtime execution
+from_file: "qonnx_1_24_BENCH_gpt2_ReBNT_nano_roneneldan__TinyStories_2024-03-22_13:29:22__epoch:1__steps:None.onnx" #torch checkpoint or ONNX model path
 runtime: "finn"  #qonnx, finn 
 #model args
 cls: GPT
 calc_loss_in_model: False
 args:
-  n_layer : 2
+  n_layer : 1
   n_head : 2
-  n_embd : 256
+  n_embd : 32
   dropout : 0.0 # for pretraining 0 is good, for finetuning try 0.1+
   bias : True # do we use bias inside LayerNorm and Linear layers? # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-  block_size : 128
-  vocab_size : 50304
-  transformer_active_func: GELU
-  norm_layer: BatchNorm
+  block_size : 16
+  vocab_size : 50257
+  transformer_active_func: ReLU
+  norm_layer: BatchNormTranspose
   flash: False
   single_output: False
   use_weight_tying: True

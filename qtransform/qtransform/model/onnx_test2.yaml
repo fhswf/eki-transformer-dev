@@ -1,6 +1,6 @@
 type: CHECKPOINT # ONNX or DYNAMIC_CHECKPOINT CHECKPOINT
 from_file: /home/kuhmichel/git/eki-transformer-dev/outputs/models/BENCH_gpt2_ReLN_tiny_wikitext_2024-03-13_10:59:27__epoch:1 #torch checkpoint or ONNX model path
-
+runtime: "finn"  #qonnx, finn 
 #model args
 cls: GPT
 calc_loss_in_model: True

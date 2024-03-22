@@ -2,6 +2,7 @@
 from copy import deepcopy
 import logging
 from typing import Any
+import numpy as np
 from omegaconf import DictConfig
 import hydra
 import os
@@ -122,12 +123,20 @@ def run(cfg: DictConfig, **kwargs):
         "qcdq": f'{export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__}',
         "onnx": f'{export.__module__}.{export.__name__}'
     }
+
+    model.eval()
+    o = model(sample_tensor)
+    print(o)
+    # Save the input and output data for verification purposes later
+    np.save("inp.npy", sample_tensor.detach().numpy())
+    np.save("out.npy", o[0].detach().numpy())
     #only write something into pipe if no errors occur
     try:
         shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
         match cfg.run.export_fn:
             case "qonnx":
                 export_qonnx(model, shape, export_path=model_path, **kwargs)
+                export_qonnx(model, shape, export_path="attention.onnx", **kwargs)
             case "qcdq":
                 export_onnx_qcdq(model, shape, export_path=model_path, **kwargs)
             case "onnx":
@@ -138,6 +147,16 @@ def run(cfg: DictConfig, **kwargs):
     except Exception:
         log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)
         raise RuntimeError()
+    
+    # these step sare to verify model outpus matches onnx export
+    from qonnx.core.onnx_exec import execute_onnx
+    from qonnx.core.modelwrapper import ModelWrapper as QModelWrapper
+    onnx_model = QModelWrapper(model_path)
+    from onnx.shape_inference import infer_shapes
+    onnx_model = infer_shapes(onnx_model._model_proto)
+    onnx_model = QModelWrapper(onnx_model)
+    o =  execute_onnx(onnx_model, {"input": sample_tensor.cpu().numpy()})
+    print(o)
     #write path to fifo
     from qtransform.utils.helper import write_to_pipe
     write_to_pipe(cfg, model_path)

@@ -1,6 +1,7 @@
 import logging
 log = logging. getLogger(__name__)
 import torch
+import re
 import torch.nn.functional as F
 from omegaconf import DictConfig, open_dict
 from . import forward_pass, get_dataloader_and_tokenizer, load_model, ModelData, InferType, generate
@@ -48,8 +49,17 @@ def run(cfg : DictConfig):
     from qtransform.model import QTRModelWrapper
     log.debug(f"Model config {cfg.model}")
     model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
-
-    data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model_wrapper.model_cfg.args.block_size)
+    print(" ")
+    print(cfg.model)
+    block_size = None
+    _a = re.findall(r"qonnx_[0-9]+_[0-9]+", str(cfg.model.get("from_file")))
+    if len(_a) == 1: # get block size from filename "qonnx_1_128_..." if present otherwise use config
+        block_size = int(re.findall(r"[0-9]+$", _a[0])[0])
+    else:
+        if model_wrapper.model_cfg.get("args", None) is not None and model_wrapper.model_cfg.args.get("block_size") is not None:
+            block_size = model_wrapper.model_cfg.args.get("block_size")
+    print(block_size)
+    data_loader_tuples  = get_dataloader_and_tokenizer(cfg, block_size)
     if len(data_loader_tuples) == 3:
         _, _, bench_dataloader  = data_loader_tuples
     elif len(data_loader_tuples) == 2:
@@ -128,7 +138,10 @@ def run(cfg : DictConfig):
 def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[str, None]:
     print(model_wrapper.model)
     if "num_samples" not in cfg.run:
-        lens = min(len(bench_dataloader), cfg.run.max_iters)
+        if "max_iters" in cfg.run:
+            lens = min(len(bench_dataloader), cfg.run.max_iters)
+        else:
+            lens = len(bench_dataloader)
     else:
         lens = min(len(bench_dataloader), cfg.run.num_samples)
 
@@ -146,6 +159,7 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
     if isinstance(model_wrapper.model, torch.nn.Module):
         model_wrapper.model.eval()
     for i, data in enumerate(bench_dataloader): 
+       
         if i >= lens:
             break
         inputs = None
@@ -162,7 +176,8 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
         with torch.no_grad():
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)
-
+            print(i, inputs.size(), labels.size())
+            print(inputs, labels)
             cond_model_shifts_targets_internally = model_wrapper.model_cfg.args.get("shift_targets") and model_wrapper.model_cfg.get("calc_loss_in_model")
             cond_labels_eq_input = torch.all(inputs == labels).item()   # data loader supplies labels and inputs without shifted labels to the right => needs to be done by model
 
@@ -180,8 +195,10 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
             if hasattr(log,"trace"): log.trace(f"cond_labels_eq_input {cond_labels_eq_input}")
             #print(cond_model_shifts_targets_internally)
             #print(cond_labels_eq_input)
+            #print(inputs.size())
             if cond_model_shifts_targets_internally and cond_labels_eq_input:
                 output = model_wrapper(inputs, labels)
+                #print(output)
                 if not isinstance(output, tuple):
                     raise ValueError(f"as model shifts internally and computes loss, model output needs to be a tuple")
                 logits, loss = output
@@ -193,6 +210,7 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
                     logits = output[0]
                 else:
                     logits = output
+                #print(output)
                 # print("=======")
                 # torch.set_printoptions(edgeitems=5000)
                 # print(logits[0][0])
@@ -220,6 +238,7 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
             accuracy[i] = measure_accuracy(model_wrapper.model, labels=labels, inputs=probs)
             perplexity[i] = torch.exp(loss)
             #print(f'Loss: {loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}')
+            print(logits)
             log.debug(f'Loss: {loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}')
             
             #log loss

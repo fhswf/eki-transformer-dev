@@ -154,7 +154,7 @@ class GPT(nn.Module):
         pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0) # shape (1, t)
 
         # forward the GPT model itself
-        #TODO: add padding for FINN support
+        #TODO: add padding for FINN support ?
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
         x = self.transformer.emb_add(tok_emb, pos_emb)
@@ -181,13 +181,7 @@ class GPT(nn.Module):
                     # Shift so that tokens < n predict n
                     shift_logits = logits[..., :-1, :].contiguous()
                     shift_labels = targets[..., 1:].contiguous()
-                    # print(logits)
-                    # print(targets)
-                    # print("========")
-                    # print(idx)
-                    # print(shift_logits)
-                    # print(shift_labels)
-                    # Flatten the tokens
+
                     from torch.nn import CrossEntropyLoss
                     loss_fct = CrossEntropyLoss()
                     loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))

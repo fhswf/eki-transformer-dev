@@ -269,16 +269,21 @@ class TransformerBlock(nn.Module):
             self.norm_size = None
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
+    
         if self.norm_size:
             ln_1 = getattr(custom_nn, config.norm_layer, None)
             ln_2 = getattr(custom_nn, config.norm_layer, None)
             self.ln_1 = ln_1(self.norm_size, config.bias)
             self.ln_2 = ln_2(self.norm_size, config.bias)
-
+        # dummy ident for block entry
+        self.in_id = nn.Identity()
+        
         self.attn = CausalSelfAttention(config)
 
     def forward(self, x):
         # Ident for possible quantization before resudials or norm layers?
+        x = self.in_id(x)
+
         if self.norm_size:
             x = self.ln_1(x)
             x = self.residual1(x, self.attn(x))
