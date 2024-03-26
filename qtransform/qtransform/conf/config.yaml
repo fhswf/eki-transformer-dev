@@ -33,17 +33,14 @@ debug: False
 
 dataset:
   name: ???
-  name_args: #criteria to idenfity dataset (e.g. subset from huggingface dataset)
+  name_args: #criteria to distinguish dataset (e.g. subset from huggingface dataset)
   root_path: ~/.qtransform/datasets #~/.cache/huggingface/datasets/qtransform/
-  #points to the directory containing the dataset used for training/validation etc. 
-  #the list is composed of subentries under root_path (root_path included) in hierarchical order
-  #the filename of the dataset is not included as it could be split into multiple files (take MNIST for example)
   cache_dir: #directory where tokenized datasets are stored
     - ${dataset.root_path}
     - ${dataset.tokenized.type}
     - ${dataset.name}
-    #TODO: include name_args in cache_dir
-  cache_filename_prefix: cache-${tokenizer.encoding}-${model.args.block_size} #"cache-gpt2-128. datasetgenerator has their own suffix
+  #filename of tokenized split: <cache_filename_prefix>-<split>-<dataset_suffix>. "dataset_suffix" is specified by the format of tokenized data
+  cache_filename_prefix: cache-${tokenizer.encoding}-${model.args.block_size}- #leads to: "cache-gpt2-128-". 
 
 
 

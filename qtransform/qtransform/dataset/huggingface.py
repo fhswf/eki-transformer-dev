@@ -1,131 +1,88 @@
+from qtransform.dataset import TokenizedDatasetGenerator, DatasetSplits, DatasetSplitType
+from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
+from typing import Union, Callable, Dict, List, Tuple
 from omegaconf import DictConfig
-import logging
-log = logging.getLogger(__name__)
-
-import os
-from itertools import chain
-from qtransform.dataset import DatasetSplits, TokenizedDatasetGenerator
-from qtransform.tokenizer import tokenizer_singleton, Tokenizer
-
-
-from torch.utils.data import DataLoader, Dataset
-from datasets import load_dataset, DatasetDict
+from datasets import DatasetDict, Dataset, load_dataset
 from datasets import config as hf_config
 from transformers import AutoTokenizer
+from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
 from transformers import default_data_collator
+from os.path import join
+from os import makedirs
+from itertools import chain
+from logging import getLogger
+import requests
 
+log = getLogger(__name__)
 
-#https://huggingface.co/docs/datasets/v2.15.0/en/package_reference/main_classes
+#TODO: no check if tokenized but not grouped data exists
 class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
     """
-        Retrieves a huggingface datasetand returns a DatasetInfo object. Under the hood, the datasets are tokenized and written
-        into a numpy memmap file on the local user's harddrive for performance reasons. It also avoids having to load and tokenize 
-        the same datasets multiple times.
-        When tokenizer is givin during construction the givin tokenizer will be usesd, otherwise the toknizer will be infered from the hydra config.
+    TokenizedDatasetGenerator used to load huggingface datasets and tokenize datasets into arrow files.
     """
-    def __init__(self, cfg: DictConfig, *args, **kwargs) -> None:
+    #contains file extension and other distinguishing factors (e.g. block_size, tokenized or grouped..)
+    #split is prepended to suffix (cache_file_prefix, split, DATASET_FILE_SUFFIX)
+    DATASET_FILE_SUFFIX: str
+    DUMP_FILE_PATH: str #path for intermediate result of tokenization (tokenized but not grouped)
+    DATASET_FILE_PATH: str #by default: cache_dir from config
+    API_URL: str #get split names from huggingface API endpoint
+
+    def __init__(self, cfg: DictConfig):
         super().__init__(cfg)
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        log.debug(f"{cfg}")
-        #retrieve tokenizer from singleton
-        self.tokenizer = tokenizer_singleton.tokenizer
+        self.cfg = cfg
+        self.block_size = cfg.tokenized.args.block_size
+        self.DATASET_FILE_SUFFIX = "grouped.arrow"
+        self.API_URL = "https://datasets-server.huggingface.co/splits?dataset=" + self.cfg.name
 
-    def prepare_data(self):
-        log.warning(f'Does nothing currently')
+        self.subset = self.cfg.name_args.get('subset', None)
+        if self.subset is not None:
+            self.DATASET_FILE_PATH = join(self.DATASET_FILE_PATH, self.subset, "")
+            self.API_URL += "&config=" + self.subset
+        log.debug(f'API_URL: {self.API_URL}\nDATASET_FILE_PATH: {self.DATASET_FILE_PATH}')
+        self.DUMP_FILE_PATH = join(self.DATASET_FILE_PATH, "tokenized", "") #tokenized datasets are not grouped to block_size yet
 
+        #make __post_init__?
+        makedirs(self.DUMP_FILE_PATH, exist_ok=True)
+        makedirs(self.DATASET_FILE_PATH, exist_ok=True)
 
-    #TODO: unsure if cache files are ever loaded
-    def get_tokenized_dataset(self, block_size = None, batch_size = None) -> DatasetSplits:
-        if block_size is None:
-            block_size = self.cfg.tokenized.args.block_size
-        log.info(f"Block size = seq length {block_size}")
-        
-        self.data_collator = DataCollatorWithPadding(tokenizer=self.tokenizer, padding='max_length', max_length=block_size)
+    def get_tokenized_dataset(self) -> DatasetSplits:
+        dataset_splits = DatasetSplits()
+        for split, dataset_split_filename in self.CACHE_FILENAME_PREFIXES.items():
+            try:
+                dataset_splits[split] = Dataset.from_file(self.DATASET_FILE_PATH + dataset_split_filename + self.DATASET_FILE_SUFFIX)
+            except FileNotFoundError as e:
+                log.error(f'Split {split.name} not found locally.')
+                raise e
+        return dataset_splits
+
+    def tokenize_data(self, untokenized_data: DatasetDict) -> None:
+        #slice spits: https://huggingface.co/docs/datasets/loading#slice-splits
+        #keys of DatasetDict are split types
+        log.debug(f'Tokenizing data: {untokenized_data}')
+        batch_size = self.cfg.untokenized.args.batches
         if batch_size is None:
-            batch_size = self.cfg.tokenized.dataloader.batch_size
-        log.info(f"Batch size = dataloader batch size {batch_size}")
+            batch_size = 1000 #default for huggingface
+        text_column_name = untokenized_data[list(untokenized_data.keys())[0]].column_names[0] #check if data is not in text column
 
-        # workaround for tokenizer cache invalidation because hash of tokenizer changes for no reason
-        hf_cache_file_name =  "cache-"  + self.tokenizer_name.replace('/', '__')  + "-" + str(block_size) + "-"
-        hf_cache_file_name = hf_cache_file_name.lower()
-        if self.cfg.get('subset') is not None:
-            dataset_name = self.cfg.name + "_" +  self.cfg.get('subset')
-        else:
-            dataset_name = self.cfg.name
-        dataset_name = dataset_name.replace('/', '__').lower()
-        cache_file_path = os.path.join(hf_config.HF_DATASETS_CACHE, "qtransform_tokenized" , dataset_name)
-        cache_file_full_prefix = os.path.join(cache_file_path,  hf_cache_file_name)
-        log.info(f"dataset cache_file_prefix for tokenizer set to {cache_file_full_prefix}")
-        os.makedirs(cache_file_path, exist_ok=True)
+        def tokenizer_function(batch):
+            return {"input_ids": [tokenizer_singleton.tokenizer.encode(x) for x in batch[text_column_name]]}
 
-        # load dataset to disk (might trigger expensive downloads)
-        log.info(f"Beginn loading HF dataset. This might take a while")
-        dataset = load_dataset(self.cfg.name, name=self.cfg.get('subset'))
-        # configure padding and batching via data_collate and grouping function
-        # Note that this might be done differently in other DatasetWrappers.
-        # Also this might be more ressource intensive because of huddingface dataloader workers being a **** sometimes  
-        log.info(f"Setting padding and batching via data_collate and grouping function")
-        dataset = self.map_dataset(dataset, block_size, batch_size, cache_file_prefix=cache_file_full_prefix)
-        log.debug(f" Dataset containes {dataset}")
+        dump_file_names = {split.name: self.DUMP_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + "tokenized.arrow" for split in DatasetSplitType}
 
-        datasets: DatasetSplits = DatasetSplits()
-
-        if isinstance(dataset, Dataset):
-            log.warning(f"Dataset {self.cfg.name}, subset {self.cfg.get('subset')} has no splits. Setting all splits the same")
-            datasets.train = dataset
-            datasets.eval = dataset
-            datasets.bench = dataset
-        elif isinstance(dataset, dict):
-            if self.cfg.get('splits') is not None:
-                for k,v in self.cfg.splits.items():
-                    log.debug(f"Mapping dataset; our key: {k} -> to found key: {v} of external dataset")
-                    datasets[k] = dataset[v]
-            else:
-                log.warning("Please use splits mapping. Trying to infer splits with common names")
-                try:
-                    datasets.train = dataset['train']
-                    datasets.eval = dataset['validation']
-                    datasets.bench = dataset['test']
-                except Exception as e:
-                    log.error(f"Infer of common dataset splits failed, Error was {e}", exc_info=1)
-                    raise e
-        else:
-            log.error(f"Huggingface dataset:  load_dataset return  for {self.cfg.name}, subset {self.cfg.get('subset')} has unsupported type. Type was {type(dataset)}. Needs to be dict with names")
-            raise KeyError
-        return datasets
-    
-
-    def map_dataset(self, dataset:DatasetDict, block_size, batch_size, cache_file_prefix):
-        """apllies mapping and tokenizer do dataset"""
-
-        log.info(f"Dataset has  column names: {dataset.column_names}. Only using \'text\' and cutting all other")
-        if isinstance(dataset, dict) and 'train' in dataset.keys():
-            text_column_name = "text" if "text" in dataset['train'].column_names else dataset['train'].column_names[0]
-            column_names = dataset['train'].column_names
-        else:
-            text_column_name = "text" if "text" in dataset.column_names else dataset.column_names[0]
-            column_names = dataset.column_names
-            
-        def tokenize_function(examples):
-            return self.tokenizer(examples[text_column_name])
-
-        cache_file_names = {
-          'test':  cache_file_prefix + "tokenized-" + 'test.arrow',
-          'train': cache_file_prefix + "tokenized-" + 'train.arrow',
-          'validation': cache_file_prefix +  "tokenized-" + 'validation.arrow'
-        }
-        
-        tokenized_datasets = dataset.map(
-            tokenize_function,
+        #tokenize them
+        tokenized_datasets = untokenized_data.map(
+            tokenizer_function,
             batched=True,
-            remove_columns=column_names,
+            #batch_size = batch_size,
+            remove_columns=[text_column_name],
             desc="Running tokenizer on dataset",
-            cache_file_names=cache_file_names
+            cache_file_names=dump_file_names
         )
-        
+
         # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
         def group_texts(examples):
             # Concatenate all texts.
+            log.critical(examples)
             concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
             total_length = len(concatenated_examples[list(examples.keys())[0]])
             # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
@@ -139,17 +96,62 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             result["labels"] = result["input_ids"].copy()
             return result
 
-        cache_file_names = {
-          'test':  cache_file_prefix + "grouped-" + 'test.arrow',
-          'train': cache_file_prefix + "grouped-" + 'train.arrow',
-          'validation': cache_file_prefix +  "grouped-" + 'validation.arrow'
-        }
+        cache_file_names = {split.name: self.DATASET_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + self.DATASET_FILE_SUFFIX for split in DatasetSplitType}
+        log.debug(f'tokenized_datasets: {tokenized_datasets}')
 
         lm_datasets = tokenized_datasets.map(
             group_texts,
             batched=True,
-            desc=f"Grouping texts in chunks of {block_size}",
+            #batch_size=batch_size,
+            desc=f"Grouping texts in chunks of {self.cfg.tokenized.args.block_size}",
             cache_file_names=cache_file_names
         )
 
-        return lm_datasets
+    
+    def get_split_mapping(self, split: DatasetSplitType) -> Tuple[str, float]:
+        """
+        Get the mapping of a split as specified in the untokenized dataset config.
+        It includes the name of the original dataset split and the size if the split does not exist.
+        """
+        splits = self.cfg.untokenized.splits
+        name = splits.names.get(split.name.lower())
+        size = splits.sizes.get(split.name.lower())
+        return (name, size)
+    
+    def get_hf_splits() -> List[str]:
+        """
+        Get names of splits from dataset without loading them into memory. 
+        A hf API endpoint is used.
+        """
+        headers = {}
+        response = requests.get(self.API_URL, headers=headers)
+        if response.status_code != 200:
+            log.error(f'Could not fetch splits from Huggingface API endpoint')
+            return None
+        data = response.json()
+        return [split["split"] for split in data["splits"]] 
+
+    def get_untokenized_data(self, splits: List[DatasetSplitType]) -> DatasetDict:
+        dataset_splits = {}
+
+        for split in splits:
+            split_name, split_size = self.get_split_mapping(split)
+            try:
+                dataset_split: Dataset = load_dataset(self.cfg.name, name=self.subset, split=split_name)
+            except ValueError as split_not_found_error:
+                log.warning(f'Subset "{self.subset}" for dataset "{self.cfg.name}" does not exist. Creating split from first split.')
+                #TODO: dataset is loaded multiple times if splits do not exist
+                dataset_split = load_dataset(self.cfg.name, name=self.subset)
+                dataset_split = dataset_split[list(dataset_split.keys())[0]]
+                dataset_split = dataset_split.train_test_split(split_size)[split_name]
+            except FileNotFoundError as dataset_not_found_error:
+                log.error(f'Dataset "{self.cfg.name}" with subset: "{self.subset}" does not exist.')
+                raise FileNotFoundError()
+            #TODO: config flag column_name not used, is it necessary?
+            text_column_name = "text" if "text" in dataset_split.column_names else dataset_split.column_names[0]
+            dataset_split = dataset_split.select_columns(text_column_name)
+            dataset_splits[split.name] = dataset_split #from eval to EVAL for easy enum support
+        return DatasetDict(dataset_splits)
+
+    def get_collator(self) -> Callable:
+        return DataCollatorWithPadding(tokenizer=tokenizer_singleton.tokenizer, padding='max_length', max_length=self.cfg.tokenized.args.block_size)

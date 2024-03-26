@@ -1,10 +1,4 @@
-#for now, the type of tokenized and untokenized data is the same
-
-type: ??? 
-name: 
-#  args:
-#    subset: 
-#for tokenization
+type: ${dataset.tokenized.type} #by default, file format remains the same  
 splits: 
   names: #mapping of our split names to huggingface split names
     train: train
@@ -16,9 +10,7 @@ splits:
     bench: 0.05
 args:
   cache_dir: #directorry where cached datasets are stored. default: ~/.cache/huggingface
-  data_column_name: text #name of the column that contains the training data. usually "text"
+  data_column_name: text #name of the column that contains the training data. usually "text". NOT USED CURRENTLY
   batches: 1000 #split dataset into shards to perform tokenization more efficiently
   chunking: True #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
   chunk_size: 100 
-
-tokenizer_cfg: ${tokenizer} #create tokenizer from specified hydra config

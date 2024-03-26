@@ -66,10 +66,10 @@ def run(cfg: DictConfig):
     #    eval_dataloader = None
     #else:
     #    raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
-    from qtransform.dataset import DataLoaderWrapper
+    from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
-    train_dataloader = dataloader_wrapper.get_loader("train")
-    eval_dataloader = dataloader_wrapper.get_loader("eval")
+    train_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
+    eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
 
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
