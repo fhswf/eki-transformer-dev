@@ -1,12 +1,13 @@
 from qtransform.dataset import TokenizedDatasetGenerator, DatasetSplits, DatasetSplitType
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
-from typing import Union, Callable, Dict, List, Tuple
+from qtransform.tokenizer import TransformersTokenizer
+from typing import Union, Callable, Dict, List, Tuple, Optional, Mapping
 from omegaconf import DictConfig
 from datasets import DatasetDict, Dataset, load_dataset
 from datasets import config as hf_config
-from transformers import AutoTokenizer
 from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
-from transformers import default_data_collator
+from transformers.utils.generic import TensorType
+from transformers.tokenization_utils_base import EncodedInput, PaddingStrategy, BatchEncoding
 from os.path import join
 from os import makedirs
 from itertools import chain
@@ -15,7 +16,6 @@ import requests
 
 log = getLogger(__name__)
 
-#TODO: no check if tokenized but not grouped data exists
 class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
     """
     TokenizedDatasetGenerator used to load huggingface datasets and tokenize datasets into arrow files.
@@ -62,11 +62,10 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         batch_size = self.cfg.untokenized.args.batches
         if batch_size is None:
             batch_size = 1000 #default for huggingface
-        text_column_name = untokenized_data[list(untokenized_data.keys())[0]].column_names[0] #check if data is not in text column
+        text_column_name = untokenized_data[list(untokenized_data.keys())[0]].column_names[0] #check in what column name the data is stored
 
         def tokenizer_function(batch):
             return {"input_ids": [tokenizer_singleton.tokenizer.encode(x) for x in batch[text_column_name]]}
-
         dump_file_names = {split.name: self.DUMP_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + "tokenized.arrow" for split in DatasetSplitType}
 
         #tokenize them
@@ -82,9 +81,9 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
         def group_texts(examples):
             # Concatenate all texts.
-            log.critical(examples)
             concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
             total_length = len(concatenated_examples[list(examples.keys())[0]])
+            block_size = self.cfg.tokenized.args.block_size
             # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
             # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
             total_length = (total_length // block_size) * block_size
@@ -96,7 +95,7 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             result["labels"] = result["input_ids"].copy()
             return result
 
-        cache_file_names = {split.name: self.DATASET_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + self.DATASET_FILE_SUFFIX for split in DatasetSplitType}
+        cache_file_names = {split.name: self.get_filepath_split(split) for split in DatasetSplitType}
         log.debug(f'tokenized_datasets: {tokenized_datasets}')
 
         lm_datasets = tokenized_datasets.map(
@@ -106,6 +105,8 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             desc=f"Grouping texts in chunks of {self.cfg.tokenized.args.block_size}",
             cache_file_names=cache_file_names
         )
+        log.debug(f'Grouped datasets: {lm_datasets}')
+        #log.debug(f'First sample: {len(lm_datasets[DatasetSplitType.EVAL.name]["input_ids"][0])}') #make sure it is the length of block_size
 
     
     def get_split_mapping(self, split: DatasetSplitType) -> Tuple[str, float]:
@@ -154,4 +155,62 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         return DatasetDict(dataset_splits)
 
     def get_collator(self) -> Callable:
-        return DataCollatorWithPadding(tokenizer=tokenizer_singleton.tokenizer, padding='max_length', max_length=self.cfg.tokenized.args.block_size)
+        tokenizer = tokenizer_singleton.tokenizer
+        #DataCollatorWithPadding pads with tokenizer's pad method which is primarily implemented by hf's tokenizers
+        if not isinstance(tokenizer, TransformersTokenizer):
+            log.debug(f'Setting custom padding function')
+            #setattr(tokenizer, 'pad', pad)
+        else:
+            #no need as transformers tokenizers have pad method
+            tokenizer = tokenizer_singleton.tokenizer.tokenizer
+        #TODO: returns dict of structure: {input_ids: tokens, labels: tokens}
+        return DataCollatorWithPadding(tokenizer=tokenizer, padding='max_length', max_length=self.cfg.tokenized.args.block_size)
+        
+
+
+
+def pad(self,
+        encoded_inputs: Union[
+            BatchEncoding,
+            List[BatchEncoding],
+            Dict[str, EncodedInput],
+            Dict[str, List[EncodedInput]],
+            List[Dict[str, EncodedInput]],
+        ],
+        max_length: Optional[int] = None,
+        return_tensors: Optional[Union[str, TensorType]] = None,
+        #ignored but kept here to avoid param errors
+        padding: Union[bool, str, PaddingStrategy] = True,
+        pad_to_multiple_of: Optional[int] = None,
+        return_attention_mask: Optional[bool] = None,
+        verbose: bool = True,
+    ) -> BatchEncoding:
+    """
+    This function is primarily used and implemented to support Huggingface DataCollators 
+    when specifying a custom collate_fn within the torch Dataloader. As such, large chunks of 
+    PreTrainedTokenizerBase's pad methods are copied.
+    For our use case, the inputs are padded to a maximum length (context length of the model). The maximum length is specified
+    by max_length.
+    The column name of the encoded inputs is set to "input_ids" and "labels" for now.
+    The following is an excerpt from huggingface's pad comment:
+    
+    Pad a single encoded input or a batch of encoded inputs up to predefined length.
+    
+    """
+    REQUIRED_INPUT = "input_ids" #name of column where tokens are saved
+    assert return_tensors == 'pt' #pytorch tensors
+    if isinstance(encoded_inputs, (list, tuple)) and isinstance(encoded_inputs[0], Mapping):
+        encoded_inputs = {key: [example[key] for example in encoded_inputs] for key in encoded_inputs[0].keys()}
+    required_input = encoded_inputs[REQUIRED_INPUT]
+    first_element = required_input[0]
+    if isinstance(first_element, (list, tuple)):
+        # first_element might be an empty list/tuple in some edge cases so we grab the first non empty element.
+        for item in required_input:
+            if len(item) != 0:
+                first_element = item[0]
+                break
+    #actually do padding, from _pad 
+    difference = max_length - len(required_input)
+    log.debug(f'DIFFERENCE: {difference}\nENCODED_INPUTS: {encoded_inputs}\nREQUIRED_INPUT: {required_input}')
+    encoded_inputs[REQUIRED_INPUT] = required_input + [self.PADDING_TOKEN] * difference
+    return BatchEncoding(encoded_inputs, tensor_type=return_tensors)

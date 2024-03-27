@@ -86,7 +86,8 @@ class TokenizedDatasetFactory():
         status_splits = tokenized_data_fetcher.check_tokenized()
         log.debug(f'status_splits: {PrettyPrinter(indent=1).pformat(status_splits)}')
         status_untokenized = [split for split, status in status_splits.items() if status["exists"] is False]
-        log.info(f'Splits "{[x.name for x in status_untokenized]}" do not exist. Tokenizing now.')
+        if len(status_untokenized) > 0:
+            log.info(f'Splits "{[x.name for x in status_untokenized]}" do not exist. Tokenizing now.')
         
         #tokenize datasets
         untokenized_splits = untokenized_data_fetcher.get_untokenized_data(splits=status_splits)
@@ -102,6 +103,7 @@ class TokenizedDatasetFactory():
 from abc import ABC, abstractmethod
 import os
 
+#TODO: no check if intermediate results of tokenization exist (tokenized but not grouped for huggingface)
 class TokenizedDatasetGenerator(ABC):
 
     #contains file extension and other distinguishing factors (e.g. block_size, tokenized or grouped..)
@@ -136,9 +138,7 @@ class TokenizedDatasetGenerator(ABC):
     def check_tokenized(self) -> Dict[DatasetSplitType,  Dict[str, Union[bool, str]]]:
         """
         Checks for tokenized files under the path composed in the hydra config.
-        cache_dir, <optional name_args depending on the datasetgenerator>, cache_file_prefix, split, dataset_suffix
-        the suffix is defined in each dataset generator.
-        os.path.join(self.DATASET_FILE_PATH, self.cache_file_prefix + "-" + split.name.lower() + "-" +self.DATASET_FILE_SUFFIX
+        The filepath is defined in the get_filepath_split function.
         {
             <DatasetSplitType.TRAIN: 0>: {
                 'exists': False or True,
@@ -155,7 +155,7 @@ class TokenizedDatasetGenerator(ABC):
         }
         """
         splits = [split for split in DatasetSplitType]
-        filepath_splits =  {split: os.path.join(self.DATASET_FILE_PATH, self.CACHE_FILENAME_PREFIXES[split] +self.DATASET_FILE_SUFFIX) 
+        filepath_splits =  {split: os.path.join(self.get_filepath_split(split)) 
             for split in splits}
         status_splits = {split:{"exists": os.path.exists(filepath_splits[split]), "filepath": filepath_splits[split]} for split in splits}
         return status_splits
@@ -174,27 +174,28 @@ class TokenizedDatasetGenerator(ABC):
     def get_collator(self) -> Callable:
         pass
 
-    def get_filepath_split(split: DatasetSplitType) -> str:
+    def get_filepath_split(self,split: DatasetSplitType) -> str:
         return self.DATASET_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + self.DATASET_FILE_SUFFIX
 
 #TODO: factories and singletons could work here
 class DataLoaderWrapper():
 
-    def __init__(self, cfg):
-        self.dataloader_cfg = cfg.dataloader
-        data_and_collator = TokenizedDatasetFactory.get_tokenized_data(cfg)
+    def __init__(self, dataset_cfg: DictConfig):
+        self.dataloader_cfg = dataset_cfg.dataloader
+        data_and_collator = TokenizedDatasetFactory.get_tokenized_data(dataset_cfg)
         self.tokenized_dataset_splits: DatasetSplits = data_and_collator[0]
+        log.debug(f'Dataset: {self.tokenized_dataset_splits}')
         self.collate_fn: Callable = data_and_collator[1]
         device = device_singleton.device
         if device.type == 'cuda':
             cuda_kwargs = {'pin_memory': True,}
             #struct flag of dictconf prevents additional keys to be added (https://omegaconf.readthedocs.io/en/latest/usage.html#struct-flag)
-            with open_dict(cfg.dataset.dataloader):
-                cfg.dataset.dataloader.update(cuda_kwargs)
+            with open_dict(self.dataloader_cfg):
+                self.dataloader_cfg.update(cuda_kwargs)
         log.info(f'Dataloader cfg: {self.dataloader_cfg}')
 
     def get_loader(self, split: DatasetSplitType) -> DataLoader:
-        loader = DataLoader(dataset=self.tokenized_datasets[split], **{"collate_fn": self.collate_fn, **self.dataloader_cfg})
+        loader = DataLoader(dataset=self.tokenized_dataset_splits[split], **{"collate_fn": self.collate_fn, **self.dataloader_cfg})
         log.debug(f'len of dataset loader: {len(loader)}')
         return loader
 

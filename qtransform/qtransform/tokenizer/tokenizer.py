@@ -89,6 +89,7 @@ class Tokenizer(ABC):
         #tokenization can use memmap directly or simply return a list of integers
         if memmap is not None:
             self.memmap = memmap
+
     #TODO: move this to memmap dataset
     @property
     def memmap(self):

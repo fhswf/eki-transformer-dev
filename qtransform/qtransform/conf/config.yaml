@@ -7,6 +7,8 @@ hydra:
   #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
   searchpath:
     - pkg://qtransform
+  
+#TODO: write last checkpoint/ onnx model name here
 defaults:
   - _self_
   - model: 
@@ -16,7 +18,7 @@ defaults:
   - dataset/dataloader: default
   #default config from the lines above are overwritten with specified config
   - dataset:
-  - tokenizer: 
+  - tokenizer: transformers
   - optim: default
   - optim/scheduler: default
   - run: ???

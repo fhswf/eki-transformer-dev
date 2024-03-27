@@ -223,7 +223,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
                 epoch=epoch, 
                 metrics=metrics, 
                 model_cfg=cfg.model, 
-                tokenizer_cfg=cfg.dataset.tokenizer,
+                tokenizer_cfg=cfg.tokenizer,
                 quant_cfg = cfg.get('quantization', None))
         # advance learning rate
         if scheduler is not None:
@@ -262,9 +262,11 @@ def train_one_epoch(cfg: DictConfig,
         max_len = len(train_data)
         run_len = len(train_data)
         log.info(f"train_data len is {max_len}, max_iters set to {None}. Running training for {run_len}")
-
+    from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
     #for i in range(1, cfg.run.max_iters+1):
     for i, data in enumerate(train_data):
+        #log.critical(tokenizer_singleton.tokenizer.decode(data[0].tolist()))
+        print(data)
         if i > run_len:
             break
         loss = None #remember last loss of mini-batch
