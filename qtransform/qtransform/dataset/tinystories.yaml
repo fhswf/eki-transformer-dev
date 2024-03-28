@@ -1,9 +1,11 @@
-name: wikitext
-name_args:
-  subset: wikitext-103-raw-v1
+name: roneneldan/TinyStories
 tokenized:
   type: huggingface #name of python module which implements a class of type TokenizedDatasetGenerator
 untokenized: 
   type: huggingface
-  #TODO: author
-#specify args for (un)tokenized from files with "default"
+  splits: 
+    bench:
+      split: bench
+      mapping: train
+      size: 0.05
+      exists: False

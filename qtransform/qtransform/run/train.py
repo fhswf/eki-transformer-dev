@@ -266,7 +266,7 @@ def train_one_epoch(cfg: DictConfig,
     #for i in range(1, cfg.run.max_iters+1):
     for i, data in enumerate(train_data):
         #log.critical(tokenizer_singleton.tokenizer.decode(data[0].tolist()))
-        print(data)
+        #print(data)
         if i > run_len:
             break
         loss = None #remember last loss of mini-batch

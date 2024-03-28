@@ -20,6 +20,8 @@ class TransformersMetadata(Metadata):
 
 log = logging.getLogger(__name__)
 
+#TODO: make use of AutoTokenizer
+
 class TransformersTokenizer(Tokenizer):
     """
         Uses transformers as the tokenizer of choice.

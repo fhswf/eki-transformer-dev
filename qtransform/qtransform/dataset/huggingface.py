@@ -13,8 +13,16 @@ from os import makedirs
 from itertools import chain
 from logging import getLogger
 import requests
+from dataclasses import dataclass
 
 log = getLogger(__name__)
+
+@dataclass
+class SplitConfig():
+    split: str
+    mapping: str
+    size: float
+    exists: bool
 
 class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
     """
@@ -109,45 +117,63 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         #log.debug(f'First sample: {len(lm_datasets[DatasetSplitType.EVAL.name]["input_ids"][0])}') #make sure it is the length of block_size
 
     
-    def get_split_mapping(self, split: DatasetSplitType) -> Tuple[str, float]:
+    def get_split_mapping(self, split: DatasetSplitType) -> SplitConfig:
         """
         Get the mapping of a split as specified in the untokenized dataset config.
         It includes the name of the original dataset split and the size if the split does not exist.
         """
-        splits = self.cfg.untokenized.splits
-        name = splits.names.get(split.name.lower())
-        size = splits.sizes.get(split.name.lower())
-        return (name, size)
+        if not isinstance(split, DatasetSplitType):
+            log.error(f'Invalid split: {split}')
+            raise TypeError()
+        return SplitConfig(**self.cfg.untokenized.splits.get(split.name.lower()))
     
-    def get_hf_splits() -> List[str]:
+    def get_hf_splits(self) -> Tuple[int, Union[List[str], None]]:
         """
         Get names of splits from dataset without loading them into memory. 
-        A hf API endpoint is used.
+        A hf API endpoint is used (https://huggingface.co/docs/datasets-server/splits).
+        
+        Arguments:
+            None 
+        
+        Returns:
+            A Tuple of:
+            - HTTPS status code of the request to huggingface API
+            - A list of split names if status code was 200, otherwise return None
         """
         headers = {}
         response = requests.get(self.API_URL, headers=headers)
         if response.status_code != 200:
-            log.error(f'Could not fetch splits from Huggingface API endpoint')
-            return None
-        data = response.json()
-        return [split["split"] for split in data["splits"]] 
+            splits = None
+        else:
+            data = response.json()
+            splits = [split["split"] for split in data["splits"]]
+        return (response.status_code, splits)
 
     def get_untokenized_data(self, splits: List[DatasetSplitType]) -> DatasetDict:
         dataset_splits = {}
-
+        log.debug(f'Getting dataset: {self.cfg.name} {self.subset if self.subset is not None else ""}')
+        status, fetched_splits = self.get_hf_splits()
+        #check if dataset, subset and splits exist at all
+        if fetched_splits is None:
+            log.error(f'Could not fetch splits from Huggingface API endpoint, either because the specified config has errors or because the repository is private.' \
+                f' (Status code: {status})')
+            raise RuntimeError()
         for split in splits:
-            split_name, split_size = self.get_split_mapping(split)
+            split_cfg: SplitConfig = self.get_split_mapping(split)
+            log.debug(f'Getting split: {split_cfg.mapping}')
             try:
-                dataset_split: Dataset = load_dataset(self.cfg.name, name=self.subset, split=split_name)
+                dataset_split = load_dataset(self.cfg.name, name=self.subset, split=split_cfg.mapping)
+                if not split_cfg.exists:
+                    #alternative: load_dataset("name[:10%]") gets first 10 percent of dataset. not random though
+                    log.info(f'Creating split: "{split_cfg.split}" from "{split_cfg.mapping}" with size: {split_cfg.size}.')
+                    #we only have the split name of the mapped split (e.g. train), meaning that we take that split and reduce its size
+                    dataset_split = dataset_split.train_test_split(1-split_cfg.size)[split_cfg.mapping]
             except ValueError as split_not_found_error:
-                log.warning(f'Subset "{self.subset}" for dataset "{self.cfg.name}" does not exist. Creating split from first split.')
-                #TODO: dataset is loaded multiple times if splits do not exist
-                dataset_split = load_dataset(self.cfg.name, name=self.subset)
-                dataset_split = dataset_split[list(dataset_split.keys())[0]]
-                dataset_split = dataset_split.train_test_split(split_size)[split_name]
+                log.error(f'Split "{split.split}" does not exist with "exists: {split_cfg.exists}", "mapping: {split_cfg.mapping}". Maybe check mapping?')
+                raise split_not_found_error
             except FileNotFoundError as dataset_not_found_error:
                 log.error(f'Dataset "{self.cfg.name}" with subset: "{self.subset}" does not exist.')
-                raise FileNotFoundError()
+                raise dataset_not_found_error
             #TODO: config flag column_name not used, is it necessary?
             text_column_name = "text" if "text" in dataset_split.column_names else dataset_split.column_names[0]
             dataset_split = dataset_split.select_columns(text_column_name)

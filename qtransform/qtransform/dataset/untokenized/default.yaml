@@ -1,13 +1,26 @@
 type: ${dataset.tokenized.type} #by default, file format remains the same  
+#splits is only necessary for huggingface datasets. TODO: move it to huggingface file
 splits: 
-  names: #mapping of our split names to huggingface split names
-    train: train
-    eval: validation
-    bench: test
-  sizes:
-    train: 0.9 
-    eval: 0.05
-    bench: 0.05
+  train: 
+    split: train
+    mapping: train #name of huggingface split
+    size: 1.0 #if split does not exist (exists: False), take the largest split and use "size" percent 
+    exists: True
+  eval:
+    split: eval
+    mapping: validation
+    size: 1.0
+    exists: True
+  bench:
+    split: bench
+    mapping: test
+    size: 1.0
+    exists: True
+  #example of a split that does not exist:
+  #bench:
+  #  mapping: train
+  #  size: 0.05
+  #  exists: False
 args:
   cache_dir: #directorry where cached datasets are stored. default: ~/.cache/huggingface
   data_column_name: text #name of the column that contains the training data. usually "text". NOT USED CURRENTLY
