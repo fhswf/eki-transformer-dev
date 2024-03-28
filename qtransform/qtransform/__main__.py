@@ -39,7 +39,6 @@ def main(cfg: DictConfig):
     if "command" not in cfg.run:
         log.error("No run command found in run config, run config was: " + str(cfg.run))
         raise KeyError
-    tokenizer_singleton.tokenizer = cfg.tokenizer
     match cfg.run.command:
         case "train":          
             from qtransform.run import train

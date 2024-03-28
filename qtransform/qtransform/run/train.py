@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import torch.nn.functional as F
 from qtransform.utils import load_checkpoint, save_checkpoint
+from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from pprint import PrettyPrinter
 from qtransform import device_singleton
 from qtransform.utils.helper import load_state_dict_proxy
@@ -66,6 +67,8 @@ def run(cfg: DictConfig):
     #    eval_dataloader = None
     #else:
     #    raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
+
+    tokenizer_singleton.tokenizer = cfg.tokenizer
     from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
     train_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
@@ -262,7 +265,6 @@ def train_one_epoch(cfg: DictConfig,
         max_len = len(train_data)
         run_len = len(train_data)
         log.info(f"train_data len is {max_len}, max_iters set to {None}. Running training for {run_len}")
-    from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
     #for i in range(1, cfg.run.max_iters+1):
     for i, data in enumerate(train_data):
         #log.critical(tokenizer_singleton.tokenizer.decode(data[0].tolist()))

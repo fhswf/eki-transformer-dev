@@ -160,6 +160,15 @@ class TokenizedDatasetGenerator(ABC):
         status_splits = {split:{"exists": os.path.exists(filepath_splits[split]), "filepath": filepath_splits[split]} for split in splits}
         return status_splits
 
+
+    @abstractmethod
+    def get_intermediate_tokenized_data(self) -> Dict[DatasetSplitType,  Dict[str, Union[bool, str]]]:
+        """
+        Checks if untokenized data has been processed in some way. If it does exist, that data should be tokenized.
+        If it does not exist, the raw data from get_untokenized_data is fetched and processed.
+        """
+        raise NotImplementedError
+
     @abstractmethod
     def tokenize_data(self, untokenized_data: DatasetDict) -> None:
         #slice spits: https://huggingface.co/docs/datasets/loading#slice-splits
@@ -172,12 +181,11 @@ class TokenizedDatasetGenerator(ABC):
 
     @abstractmethod
     def get_collator(self) -> Callable:
-        pass
+        raise NotImplementedError
 
     def get_filepath_split(self,split: DatasetSplitType) -> str:
         return self.DATASET_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + self.DATASET_FILE_SUFFIX
 
-#TODO: factories and singletons could work here
 class DataLoaderWrapper():
 
     def __init__(self, dataset_cfg: DictConfig):
@@ -213,36 +221,3 @@ def get_tokenized_dataset_generator(generator_module: str, dataset_cfg: DictConf
         log.error(f'Could not find TokenizedDatasetGenerator in module: {module_name} with specified type: {generator_module}')
         raise ValueError()
     return found_class[0](dataset_cfg)
-
-
-############################delete later
-
-class DatasetWrapper(ABC):
-    def __init__(self, cfg: DictConfig, *args, **kwargs) -> None:
-        super().__init__()
-        log.info(f"DatasetWrapper config:  {cfg}")
-        self.cfg = cfg
-        self.datasets: DatasetSplits = DatasetSplits()
-
-    @abstractmethod
-    def load_dataset(self, *args, **kwargs) -> Any:
-        raise NotImplementedError
-    
-    @abstractmethod
-    def get_loader(self, split: str) -> DataLoader:
-        raise NotImplementedError
-
-
-def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:
-    log.debug(f"get_loader config: {dataloader_cfg}")
-    # loader = DataLoader(data, generator=torch.Generator(device='cuda'), **dataloader_cfg) # does no work for dataloader forks
-    loader = DataLoader(data, **dataloader_cfg)
-    log.debug(f'len: {len(loader)}')
-    return loader
-
-
-
-from qtransform.utils.introspection import load_class
-def get_dataset_wrapper(dataset_cfg: DictConfig) -> DatasetWrapper:
-    log.info(f"loading dataset wrapper {dataset_cfg.get('wrapper')} with config: {dataset_cfg}")
-    return load_class(logger=log, module=qtransform.dataset, class_name=dataset_cfg.get("wrapper"), parent_class=DatasetWrapper, args={"cfg": dataset_cfg})

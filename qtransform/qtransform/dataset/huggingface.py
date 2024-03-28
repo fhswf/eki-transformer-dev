@@ -13,7 +13,7 @@ from os import makedirs
 from itertools import chain
 from logging import getLogger
 import requests
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, InitVar, Field
 
 log = getLogger(__name__)
 
@@ -23,6 +23,22 @@ class SplitConfig():
     mapping: str
     size: float
     exists: bool
+    fields: InitVar[Dict[str, Field]]
+
+    def __init__(self, split, mapping, size, exists):
+        self.fields = {x.name:x for x in fields(SplitConfig)}
+        self.split = split 
+        self.mapping = mapping
+        self.size = size
+        self.exists = exists
+
+    def __setattr__(self, name, value):
+        #type check
+        if name == "fields" and getattr(self, "fields", None) is not None:
+            return
+        if getattr(self, "fields", None) is not None and not isinstance(value, self.fields[name].type):
+            raise TypeError(f'Invalid type: {type(value)} for field: {name}')
+        self.__dict__[name] = value
 
 class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
     """
@@ -179,6 +195,9 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             dataset_split = dataset_split.select_columns(text_column_name)
             dataset_splits[split.name] = dataset_split #from eval to EVAL for easy enum support
         return DatasetDict(dataset_splits)
+
+    def get_intermediate_tokenized_data(self):
+        log.warning(f'TODO: IMPLEMENT THIS')
 
     def get_collator(self) -> Callable:
         tokenizer = tokenizer_singleton.tokenizer
