@@ -18,7 +18,7 @@ from dataclasses import dataclass, fields, InitVar, Field
 log = getLogger(__name__)
 
 @dataclass
-class SplitConfig():
+class HuggingfaceSplitConfig():
     split: str
     mapping: str
     size: float
@@ -26,7 +26,7 @@ class SplitConfig():
     fields: InitVar[Dict[str, Field]]
 
     def __init__(self, split, mapping, size, exists):
-        self.fields = {x.name:x for x in fields(SplitConfig)}
+        self.fields = {x.name:x for x in fields(HuggingfaceSplitConfig)}
         self.split = split 
         self.mapping = mapping
         self.size = size
@@ -133,7 +133,7 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         #log.debug(f'First sample: {len(lm_datasets[DatasetSplitType.EVAL.name]["input_ids"][0])}') #make sure it is the length of block_size
 
     
-    def get_split_mapping(self, split: DatasetSplitType) -> SplitConfig:
+    def get_split_mapping(self, split: DatasetSplitType) -> HuggingfaceSplitConfig:
         """
         Get the mapping of a split as specified in the untokenized dataset config.
         It includes the name of the original dataset split and the size if the split does not exist.
@@ -141,7 +141,7 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         if not isinstance(split, DatasetSplitType):
             log.error(f'Invalid split: {split}')
             raise TypeError()
-        return SplitConfig(**self.cfg.untokenized.splits.get(split.name.lower()))
+        return HuggingfaceSplitConfig(**self.cfg.untokenized.splits.get(split.name.lower()))
     
     def get_hf_splits(self) -> Tuple[int, Union[List[str], None]]:
         """
@@ -175,7 +175,7 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
                 f' (Status code: {status})')
             raise RuntimeError()
         for split in splits:
-            split_cfg: SplitConfig = self.get_split_mapping(split)
+            split_cfg: HuggingfaceSplitConfig = self.get_split_mapping(split)
             log.debug(f'Getting split: {split_cfg.mapping}')
             try:
                 dataset_split = load_dataset(self.cfg.name, name=self.subset, split=split_cfg.mapping)
@@ -201,17 +201,20 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
 
     def get_collator(self) -> Callable:
         tokenizer = tokenizer_singleton.tokenizer
-        #DataCollatorWithPadding pads with tokenizer's pad method which is primarily implemented by hf's tokenizers
+        #DataCollatorWithPadding is strictly implemented to be used with huggingface tokenizers
+        #therefore, adjust the pad method for our tokenizers
         if not isinstance(tokenizer, TransformersTokenizer):
             log.debug(f'Setting custom padding function')
-            #setattr(tokenizer, 'pad', pad)
+            #setattr usually for classes but we have an instance here, therefore __class__
+            setattr(tokenizer.__class__, 'pad', pad)
+            setattr(tokenizer.__class__, "deprecation_warnings", {"Asking-to-pad-a-fast-tokenizer": False})
         else:
-            #no need as transformers tokenizers have pad method
+            #no need for tokenizerwrapper as transformers tokenizers have pad method
             tokenizer = tokenizer_singleton.tokenizer.tokenizer
         #TODO: returns dict of structure: {input_ids: tokens, labels: tokens}
         return DataCollatorWithPadding(tokenizer=tokenizer, padding='max_length', max_length=self.cfg.tokenized.args.block_size)
         
-
+        
 
 
 def pad(self,
@@ -222,8 +225,8 @@ def pad(self,
             Dict[str, List[EncodedInput]],
             List[Dict[str, EncodedInput]],
         ],
-        max_length: Optional[int] = None,
-        return_tensors: Optional[Union[str, TensorType]] = None,
+        max_length: int,
+        return_tensors: Optional[Union[str, TensorType]] = "pt",
         #ignored but kept here to avoid param errors
         padding: Union[bool, str, PaddingStrategy] = True,
         pad_to_multiple_of: Optional[int] = None,
@@ -240,13 +243,24 @@ def pad(self,
     The following is an excerpt from huggingface's pad comment:
     
     Pad a single encoded input or a batch of encoded inputs up to predefined length.
+
+    Args:
+    encoded_inputs ([`BatchEncoding`], list of [`BatchEncoding`], `Dict[str, List[int]]`, `Dict[str, List[List[int]]` or `List[Dict[str, List[int]]]`):
+        Tokenized inputs. Can represent one input ([`BatchEncoding`] or `Dict[str, List[int]]`) or a batch of
+        tokenized inputs (list of [`BatchEncoding`], *Dict[str, List[List[int]]]* or *List[Dict[str,
+        List[int]]]*) so you can use this method during preprocessing as well as in a PyTorch Dataloader
+        collate function.
+
+        Instead of `List[int]` you can have tensors (numpy arrays, PyTorch tensors or TensorFlow tensors), see
+        the note above for the return type.
     
     """
-    REQUIRED_INPUT = "input_ids" #name of column where tokens are saved
-    assert return_tensors == 'pt' #pytorch tensors
+    model_input_name = "input_ids" #name of column where tokens are saved
+    assert return_tensors == 'pt', 'padding only supported for pytorch tensors, tensorflow not available in qtransform' #pytorch tensors
     if isinstance(encoded_inputs, (list, tuple)) and isinstance(encoded_inputs[0], Mapping):
         encoded_inputs = {key: [example[key] for example in encoded_inputs] for key in encoded_inputs[0].keys()}
-    required_input = encoded_inputs[REQUIRED_INPUT]
+    log.critical(encoded_inputs)
+    required_input = encoded_inputs[model_input_name]
     first_element = required_input[0]
     if isinstance(first_element, (list, tuple)):
         # first_element might be an empty list/tuple in some edge cases so we grab the first non empty element.
@@ -254,8 +268,10 @@ def pad(self,
             if len(item) != 0:
                 first_element = item[0]
                 break
+    log.critical(required_input)
     #actually do padding, from _pad 
+    #TODO: len(required_input) is the batch size, not the context length
     difference = max_length - len(required_input)
-    log.debug(f'DIFFERENCE: {difference}\nENCODED_INPUTS: {encoded_inputs}\nREQUIRED_INPUT: {required_input}')
-    encoded_inputs[REQUIRED_INPUT] = required_input + [self.PADDING_TOKEN] * difference
+    log.debug(f'DIFFERENCE: {difference}\nENCODED_INPUTS: {encoded_inputs}\nmodel_input_name: {required_input}')
+    encoded_inputs[model_input_name] = required_input + [self.PADDING_TOKEN] * difference
     return BatchEncoding(encoded_inputs, tensor_type=return_tensors)
