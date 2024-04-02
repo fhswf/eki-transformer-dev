@@ -85,6 +85,8 @@ class TokenizedDatasetFactory():
         #check if datasets exist
         status_splits = tokenized_data_fetcher.check_tokenized()
         log.debug(f'status_splits: {PrettyPrinter(indent=1).pformat(status_splits)}')
+        from sys import exit
+        exit(0)
         status_untokenized = [split for split, status in status_splits.items() if status["exists"] is False]
         if len(status_untokenized) > 0:
             log.info(f'Splits "{[x.name for x in status_untokenized]}" do not exist. Tokenizing now.')
@@ -155,8 +157,7 @@ class TokenizedDatasetGenerator(ABC):
         }
         """
         splits = [split for split in DatasetSplitType]
-        filepath_splits =  {split: os.path.join(self.get_filepath_split(split)) 
-            for split in splits}
+        filepath_splits =  {split: self.get_filepath_split(split) for split in splits}
         status_splits = {split:{"exists": os.path.exists(filepath_splits[split]), "filepath": filepath_splits[split]} for split in splits}
         return status_splits
 
@@ -184,7 +185,16 @@ class TokenizedDatasetGenerator(ABC):
         raise NotImplementedError
 
     def get_filepath_split(self,split: DatasetSplitType) -> str:
-        return self.DATASET_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + self.DATASET_FILE_SUFFIX
+        """
+        Gets the filepath of a split by joining the attributes
+        DATASET_FILE_PATH, CACHE_FILENAME_PREFIXES and DATASET_FILE_SUFFIX.
+        They should usually be set within the hydra config.
+
+        Arguments:
+        split: The split of type DatasetSplitType. The different splits are differentiated by the split name at the end of the filename prefix.
+
+        """
+        return os.path.join(self.DATASET_FILE_PATH, self.CACHE_FILENAME_PREFIXES[split] + self.DATASET_FILE_SUFFIX)
 
 class DataLoaderWrapper():
 
