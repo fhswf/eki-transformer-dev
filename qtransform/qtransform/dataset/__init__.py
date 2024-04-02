@@ -33,7 +33,7 @@ class DatasetSplitType(IntEnum):
     EVAL = 1
     BENCH = 2
 
-
+#TODO: type of each split is still not clearly defined. For huggingface, it is a huggingface dataset. For files, it is a torch Dataset.
 @dataclass
 class DatasetSplits:
     """
@@ -120,6 +120,7 @@ class TokenizedDatasetGenerator(ABC):
         if self.cfg.name_args is None:
             with open_dict(self.cfg):
                 self.cfg.name_args = {}
+        self.block_size = cfg.tokenized.args.block_size
         #field name_args by default not included
         self.DATASET_FILE_PATH = concat_paths(self.cfg.cache_dir)
         makedirs(self.DATASET_FILE_PATH, exist_ok=True)

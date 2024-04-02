@@ -13,6 +13,112 @@ from dataclasses import fields
 import datasets
 from datasets.dataset_dict import DatasetDict
 
+class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
+    """
+    TokenizedDatasetGenerator used to load huggingface datasets and tokenize datasets into arrow files.
+    """
+    #contains file extension and other distinguishing factors (e.g. block_size, tokenized or grouped..)
+    #split is prepended to suffix (cache_file_prefix, split, DATASET_FILE_SUFFIX)
+    DATASET_FILE_SUFFIX: str
+    DATASET_FILE_PATH: str #by default: cache_dir from config
+
+    def __init__(self, cfg: DictConfig):
+        super().__init__(cfg)
+        self.cfg = cfg
+        self.DATASET_FILE_SUFFIX = ".bin"
+        self.RAW_DATA_DIR = self.cfg.untokenized.data_dir
+        log.debug(f'{self.RAW_DATA_DIR}')
+        #make __post_init__?
+        makedirs(self.DATASET_FILE_PATH, exist_ok=True)
+        self.batch_size = self.cfg.untokenized.args.batches
+        if self.batch_size is None:
+            self.batch_size = 1000 #default for huggingface
+
+    def get_tokenized_dataset(self) -> DatasetSplits:
+        dataset_splits = DatasetSplits()
+        for split in DatasetSplitType:
+            try:
+                dataset_splits[split] = np.memmap(self.get_filepath_split(split), mode='r')
+            except FileNotFoundError as e:
+                log.error(f'Split {split.name} not found locally.')
+                raise e
+        return dataset_splits
+
+    def chunk_examples(self, examples):
+        """
+            Splits the text of each row into chunks of length chunk_length to make use of batches more effectively.
+            This makes tokenizing large files take less time as the entire content is not stored into one sample.
+            Parts of the code are inspired from: https://huggingface.co/docs/datasets/process#split-long-examples
+
+            Returns: {"chunks" : chunks} 
+            where chunks is a list of sentences split after chunk_length characters.
+        """
+        chunks = []
+        CHUNK_LENGTH = self.cfg.untokenized.chunk_size if self.cfg.untokenized.get("chunk_size") else 100
+        for sentence in examples[self.cfg.tokenization_args.data_column_name]:
+            chunks += [sentence[i:i + CHUNK_LENGTH] for i in range(0, len(sentence), CHUNK_LENGTH)]
+        return {"chunks": chunks}
+
+    def get_untokenized_files(self) -> List:
+        """
+            Returns all readable files from a given directory which are going to be used for tokenization. 
+            To do so, the field "dataset_dir" from the hydra config is evaluated. All files from the directory "untokenized"
+            within dataset_dir are returned. 
+            If the directory does not exist, it is created and an empty list is returned.
+        """
+        log.debug(f'Checking for files with name containing {self.cfg.name} under directory: {self.untokenized_dir}')
+        return [x for x in glob(self.RAW_DATA_DIR) if not os.path.isdir(x)]
+
+    def create_hf_dataset(self):
+        files = self.get_untokenized_files()
+        #https://huggingface.co/docs/datasets/create_dataset#from-local-files
+        def gen_samples():
+            for filename in files:
+                with open(filename, 'r') as file:
+                    yield {"text": file.read()}
+        all_files = datasets.Dataset.from_generator(gen_samples)
+        all_files = all_files.map(
+            self.chunk_examples, 
+            batched=True, 
+            batch_size = self.batch_size,
+            remove_columns=["text"])
+        all_files.rename_columns("chunks", "text") 
+        dataset_dict = {}
+        for split in DatasetSplitType:
+            dataset_dict
+        raise NotImplementedError()
+        #return DatasetDict({"train": })
+
+    def tokenize_data(self, untokenized_data: DatasetDict) -> None:
+        #slice spits: https://huggingface.co/docs/datasets/loading#slice-splits
+        #keys of DatasetDict are split types
+        log.debug(f'Tokenizing data: {untokenized_data}')
+        batch_size = self.cfg.untokenized.args.batches
+        if batch_size is None:
+            batch_size = 1000 #default for huggingface
+
+        def tokenizer_function(batch):
+            return {MODEL_INPUT_NAME: [tokenizer_singleton.tokenizer.encode(x) for x in batch[text_column_name]]}
+        dump_file_names = {split.name: self.DUMP_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + "tokenized.arrow" for split in DatasetSplitType}
+
+        #tokenize them
+        tokenized_datasets = untokenized_data.map(
+            tokenizer_function,
+            batched=True,
+            #batch_size = batch_size,
+            remove_columns=[text_column_name],
+            desc="Running tokenizer on dataset",
+            cache_file_names=dump_file_names
+        )
+
+    def get_untokenized_data(self, splits: List[DatasetSplitType]) -> DatasetDict:
+        raise NotImplementedError()
+
+    def get_collator(self) -> Callable:
+        return None #dataloader collate_fn by default None
+        
+
+
 class MemmapDataset(Dataset):
     
     def __init__(self, token_file: str, block_size: int, start: float=0.0, end: float = 1.0):
