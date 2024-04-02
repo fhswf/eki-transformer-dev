@@ -284,6 +284,7 @@ def train_one_epoch(cfg: DictConfig,
             # dataloader from hf with additional attention_mask for 
             if len(data) > 2:
                 inputs = data['input_ids']
+                #log.info(tokenizer_singleton.tokenizer.decode(inputs[0].tolist())) #debug to make sure inputs make sense
                 labels = data['labels']
                 attention_mask = data['attention_mask']
                 if not torch.all(attention_mask == 1):

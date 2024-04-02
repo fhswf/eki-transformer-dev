@@ -4,7 +4,7 @@ tokenized:
 untokenized: 
   type: huggingface
   splits: 
-    bench:
+    bench: #benchmarking split does not exist, therefore use a slice of train split
       split: bench
       mapping: train
       size: 0.05

@@ -85,8 +85,6 @@ class TokenizedDatasetFactory():
         #check if datasets exist
         status_splits = tokenized_data_fetcher.check_tokenized()
         log.debug(f'status_splits: {PrettyPrinter(indent=1).pformat(status_splits)}')
-        from sys import exit
-        exit(0)
         status_untokenized = [split for split, status in status_splits.items() if status["exists"] is False]
         if len(status_untokenized) > 0:
             log.info(f'Splits "{[x.name for x in status_untokenized]}" do not exist. Tokenizing now.')
@@ -216,6 +214,12 @@ class DataLoaderWrapper():
         loader = DataLoader(dataset=self.tokenized_dataset_splits[split], **{"collate_fn": self.collate_fn, **self.dataloader_cfg})
         log.debug(f'len of dataset loader: {len(loader)}')
         return loader
+    
+    def get_data_format(self):
+        """
+        Get information about how the input ids and labels are stored within each sample.
+        For example, huggingface uses a dictionary while files uses a tuple.
+        """
 
 
 def get_tokenized_dataset_generator(generator_module: str, dataset_cfg: DictConfig) -> TokenizedDatasetGenerator:

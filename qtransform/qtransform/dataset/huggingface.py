@@ -1,13 +1,13 @@
 from qtransform.dataset import TokenizedDatasetGenerator, DatasetSplits, DatasetSplitType
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform.tokenizer import TransformersTokenizer
-from typing import Union, Callable, Dict, List, Tuple, Optional, Mapping
+from typing import Union, Callable, Dict, List, Tuple, Optional, Mapping, Sized
 from omegaconf import DictConfig
 from datasets import DatasetDict, Dataset, load_dataset
 from datasets import config as hf_config
 from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
 from transformers.utils.generic import TensorType
-from transformers.tokenization_utils_base import EncodedInput, PaddingStrategy, BatchEncoding
+from transformers.tokenization_utils_base import EncodedInput, PaddingStrategy, BatchEncoding, to_py_obj
 from os.path import join
 from os import makedirs
 from itertools import chain
@@ -40,6 +40,9 @@ class HuggingfaceSplitConfig():
             raise TypeError(f'Invalid type: {type(value)} for field: {name}')
         self.__dict__[name] = value
 
+MODEL_INPUT_NAME = "input_ids"
+MODEL_LABEL_NAME = "labels"
+
 class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
     """
     TokenizedDatasetGenerator used to load huggingface datasets and tokenize datasets into arrow files.
@@ -71,9 +74,9 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
 
     def get_tokenized_dataset(self) -> DatasetSplits:
         dataset_splits = DatasetSplits()
-        for split, dataset_split_filename in self.CACHE_FILENAME_PREFIXES.items():
+        for split in DatasetSplitType:
             try:
-                dataset_splits[split] = Dataset.from_file(self.DATASET_FILE_PATH + dataset_split_filename + self.DATASET_FILE_SUFFIX)
+                dataset_splits[split] = Dataset.from_file(self.get_filepath_split(split))
             except FileNotFoundError as e:
                 log.error(f'Split {split.name} not found locally.')
                 raise e
@@ -89,7 +92,7 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         text_column_name = untokenized_data[list(untokenized_data.keys())[0]].column_names[0] #check in what column name the data is stored
 
         def tokenizer_function(batch):
-            return {"input_ids": [tokenizer_singleton.tokenizer.encode(x) for x in batch[text_column_name]]}
+            return {MODEL_INPUT_NAME: [tokenizer_singleton.tokenizer.encode(x) for x in batch[text_column_name]]}
         dump_file_names = {split.name: self.DUMP_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + "tokenized.arrow" for split in DatasetSplitType}
 
         #tokenize them
@@ -116,7 +119,7 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
                 k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
                 for k, t in concatenated_examples.items()
             }
-            result["labels"] = result["input_ids"].copy()
+            result[MODEL_LABEL_NAME] = result[MODEL_INPUT_NAME].copy()
             return result
 
         cache_file_names = {split.name: self.get_filepath_split(split) for split in DatasetSplitType}
@@ -211,11 +214,10 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         else:
             #no need for tokenizerwrapper as transformers tokenizers have pad method
             tokenizer = tokenizer_singleton.tokenizer.tokenizer
-        #TODO: returns dict of structure: {input_ids: tokens, labels: tokens}
         return DataCollatorWithPadding(tokenizer=tokenizer, padding='max_length', max_length=self.cfg.tokenized.args.block_size)
         
         
-
+from torch import ones
 
 def pad(self,
         encoded_inputs: Union[
@@ -238,8 +240,11 @@ def pad(self,
     when specifying a custom collate_fn within the torch Dataloader. As such, large chunks of 
     PreTrainedTokenizerBase's pad methods are copied.
     For our use case, the inputs are padded to a maximum length (context length of the model). The maximum length is specified
-    by max_length.
-    The column name of the encoded inputs is set to "input_ids" and "labels" for now.
+    by max_length. The padding token is defined by the tokenizer's PADDING_TOKEN attribute.
+    
+    The column name of the encoded inputs are set by the constants MODEL_INPUT_NAME and MODEL_LABEL_NAME.
+    Since the column names are preset by our dataset generator, a lot of typechecking from huggingface can be avoided.
+
     The following is an excerpt from huggingface's pad comment:
     
     Pad a single encoded input or a batch of encoded inputs up to predefined length.
@@ -255,23 +260,38 @@ def pad(self,
         the note above for the return type.
     
     """
-    model_input_name = "input_ids" #name of column where tokens are saved
     assert return_tensors == 'pt', 'padding only supported for pytorch tensors, tensorflow not available in qtransform' #pytorch tensors
+    # If we have a list of dicts, let's convert it in a dict of lists
+        # We do this to allow using this method as a collate_fn function in PyTorch Dataloader
     if isinstance(encoded_inputs, (list, tuple)) and isinstance(encoded_inputs[0], Mapping):
         encoded_inputs = {key: [example[key] for example in encoded_inputs] for key in encoded_inputs[0].keys()}
-    log.critical(encoded_inputs)
-    required_input = encoded_inputs[model_input_name]
-    first_element = required_input[0]
-    if isinstance(first_element, (list, tuple)):
-        # first_element might be an empty list/tuple in some edge cases so we grab the first non empty element.
-        for item in required_input:
-            if len(item) != 0:
-                first_element = item[0]
-                break
-    log.critical(required_input)
-    #actually do padding, from _pad 
-    #TODO: len(required_input) is the batch size, not the context length
-    difference = max_length - len(required_input)
-    log.debug(f'DIFFERENCE: {difference}\nENCODED_INPUTS: {encoded_inputs}\nmodel_input_name: {required_input}')
-    encoded_inputs[model_input_name] = required_input + [self.PADDING_TOKEN] * difference
-    return BatchEncoding(encoded_inputs, tensor_type=return_tensors)
+    if MODEL_INPUT_NAME not in encoded_inputs:
+        log.error(f'Key {MODEL_INPUT_NAME} not found in batch.')
+        raise KeyError()
+    elif MODEL_LABEL_NAME not in encoded_inputs:
+        log.error(f'Key {MODEL_LABEL_NAME} not found in batch.')
+        raise KeyError()
+    input_ids = encoded_inputs[MODEL_INPUT_NAME]
+    labels = encoded_inputs[MODEL_LABEL_NAME]
+
+    if input_ids is None or (isinstance(input_ids, Sized) and len(input_ids) == 0):
+        log.error(f'Empty input_ids')
+        raise ValueError()
+    elif labels is None or (isinstance(labels, Sized) and len(labels) == 0):
+        log.error(f'Empty labels')
+        raise ValueError()
+
+    batch_size = len(input_ids) #batch size for input_ids and labels are the same
+    assert len(labels) == batch_size, f'Batch size for input_ids ({batch_size}) and labels ({len(inpud_ids)}) are different'
+
+    
+    #actually pad each sample
+    #TODO: in what scenario do the labels need padding?
+    for sample_index in range(batch_size):
+        difference_ids = max_length - len(input_ids[sample_index])
+        difference_labels = max_length - len(labels[sample_index])
+        input_ids[sample_index] = input_ids[sample_index] + [self.PADDING_TOKEN] * difference_ids
+        labels[sample_index] = labels[sample_index] + [self.PADDING_TOKEN] * difference_labels
+    #mask currently all ones
+    #TODO: different mask for labels and input_ids
+    return BatchEncoding({"input_ids": input_ids, "labels": labels, "attention_mask" : ones(batch_size, max_length).tolist()}, tensor_type=return_tensors)
