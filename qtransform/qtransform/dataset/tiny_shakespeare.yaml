@@ -3,10 +3,9 @@
 name: rotten_tomatoes
 tokenized:
   type: files #name of python module which implements a class of type TokenizedDatasetGenerator
+
+defaults:
+  - untokenized/files
 untokenized: 
-  type: files
-  data_dir: ~/.qtransform/datasets/files/tiny_shakespeare/raw #absolute path to files. all files are tokenized within dir
-  splits: #only need size as no predefined splits exist
-    train: 0.9
-    eval: 0.05
-    bench: 0.05
+  args:
+    cache_dir: ~/.qtransform/datasets/files/tiny_shakespeare/raw #absolute path to files. all files are tokenized within dir

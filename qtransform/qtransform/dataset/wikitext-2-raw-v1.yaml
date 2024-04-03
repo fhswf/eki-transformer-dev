@@ -1,7 +1,8 @@
 name: wikitext
 name_args:
-  subset: wikitext-103-raw-v1
+  subset: wikitext-2-raw-v1
 tokenized:
   type: huggingface #name of python module which implements a class of type TokenizedDatasetGenerator
+
 defaults:
   - untokenized/huggingface

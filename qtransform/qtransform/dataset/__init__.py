@@ -114,6 +114,13 @@ class TokenizedDatasetGenerator(ABC):
     CACHE_FILENAME_PREFIXES: Dict[DatasetSplitType, str]
 
     def __init__(self, cfg: DictConfig):
+        """
+        Defines the approach to retrieve tokenized data and tokenize raw data. Each implementation of TokenizedDatasetGenerator
+        defines this for one specific type such as huggingface, raw files or other internet sources.
+
+        In order to unify the parameters and return types of the different approaches, huggingface's
+        DatasetDict is expected to be used in some way or another.
+        """ 
         super().__init__()
         log.info(f"TokenizedDatasetGenerator config:  {cfg}")
         self.cfg = cfg
@@ -121,7 +128,7 @@ class TokenizedDatasetGenerator(ABC):
             with open_dict(self.cfg):
                 self.cfg.name_args = {}
         self.block_size = cfg.tokenized.args.block_size
-        #field name_args by default not included
+        #field "name_args" from default config not included
         self.DATASET_FILE_PATH = concat_paths(self.cfg.tokenized.cache_dir)
         makedirs(self.DATASET_FILE_PATH, exist_ok=True)
         cache_filename_prefix = self.cfg.tokenized.cache_filename_prefix
@@ -133,6 +140,12 @@ class TokenizedDatasetGenerator(ABC):
 
     @abstractmethod
     def get_tokenized_dataset(self) -> DatasetSplits:
+        """
+        Return all tokenized datasets and wrap them inside of a DatasetSplits instance.
+        If splits are not found, an error is thrown instead of tokenizing immediately. 
+        Use the method tokenize_dataset() for that and check if tokenized datasets are found with 
+        the method check_tokenized().
+        """
         raise NotImplementedError
 
     #TODO: create filename from list, seperating each entrry with "-"
@@ -171,6 +184,10 @@ class TokenizedDatasetGenerator(ABC):
 
     @abstractmethod
     def tokenize_data(self, untokenized_data: DatasetDict) -> None:
+        """
+        Tokenizes raw data alongside the approach implemented within the specific TokenizedDatasetGenerator class.
+        It is expected that the split names of "untokenized_data" should have the names of DatasetSplitType (TRAIN, EVAL, BENCH).
+        """
         #slice spits: https://huggingface.co/docs/datasets/loading#slice-splits
         #keys of DatasetDict are split types
         raise NotImplementedError

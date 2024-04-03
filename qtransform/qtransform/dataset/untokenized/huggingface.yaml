@@ -1,6 +1,4 @@
-#config not used currently
 type: huggingface
-#cache_dir: ~/.cache/huggingface/datasets/
 splits: 
   train:
     mapping: train

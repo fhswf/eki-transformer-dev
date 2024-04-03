@@ -1,4 +1,4 @@
-type: ${dataset.tokenized.type} #by default, file format remains the same  
+type: ${dataset.tokenized.type} #by default, file format remains the same
 splits: 
   train: 
     split: train
@@ -12,7 +12,7 @@ splits:
     split: bench
     size: 1.0
     exists: True
-  #example of a split that does not exist:
+  ############ example of a split that does not exist ############
   #bench:
   #  mapping: train
   #  size: 0.05
