@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from qtransform.dataset.tokenizer import Tokenizer, Metadata
+from qtransform.tokenizer import Tokenizer, Metadata
 from numpy import memmap, array
 from omegaconf import DictConfig, open_dict
 import logging
@@ -19,6 +19,8 @@ class TransformersMetadata(Metadata):
     fast: bool = FAST
 
 log = logging.getLogger(__name__)
+
+#TODO: make use of AutoTokenizer
 
 class TransformersTokenizer(Tokenizer):
     """
@@ -54,6 +56,10 @@ class TransformersTokenizer(Tokenizer):
             log.error(f'No transformers tokenizer found for encoding: {self.meta.encoding} and fast={self.meta.fast}. Maybe manually set pretrained_tokenizer')
             raise KeyError()
         self.tokenizer.model_max_length = 1e30 #disable warning about max context
+        self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+        #https://github.com/huggingface/datasets/issues/3638
+        self.tokenizer("Call init Tokenier", "to enable cacheing bug", truncation=True)
         self.meta.max_token_value = self.tokenizer.vocab_size
 
     def encode(self, text, infer: bool = False) -> List[int]:

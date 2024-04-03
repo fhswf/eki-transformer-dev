@@ -1,0 +1,4 @@
+wrapper: TikTokenizer
+encoding: ???
+module: tiktoken
+name: ${encoding} #support for lazyhuggingface, TODO: remove it

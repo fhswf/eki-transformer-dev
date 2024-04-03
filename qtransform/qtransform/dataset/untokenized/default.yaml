@@ -1,0 +1,20 @@
+type: ${dataset.tokenized.type} #by default, file format remains the same
+splits: 
+  train: 
+    split: train
+    size: 1.0 #if split does not exist (exists: False), take the largest split and use "size" percent 
+    exists: True
+  eval:
+    split: eval
+    size: 1.0
+    exists: True
+  bench:
+    split: bench
+    size: 1.0
+    exists: True
+  ############ example of a split that does not exist ############
+  #bench:
+  #  mapping: train
+  #  size: 0.05
+  #  exists: False
+args:

@@ -7,7 +7,6 @@ from . import get_dataloader_and_tokenizer, generate
 #TODO: make ... import compatible
 from qtransform.model import get_model_wrapper, QTRModelWrapper
 from qtransform import device_singleton
-from qtransform.dataset import get_loader
 from typing import List, Union, Tuple
 from time import time
 from datetime import datetime
@@ -48,18 +47,16 @@ def run(cfg : DictConfig):
     from qtransform.model import QTRModelWrapper
     log.debug(f"Model config {cfg.model}")
     model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
+    model_wrapper.to(device = device)
 
-    data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model_wrapper.model_cfg.args.block_size)
-    if len(data_loader_tuples) == 3:
-        _, _, bench_dataloader  = data_loader_tuples
-    elif len(data_loader_tuples) == 2:
-        log.warning("using eval dataloader as benchmarking, as no bench_dataloader was provided")
-        _, bench_dataloader = data_loader_tuples
-    elif len(data_loader_tuples) == 1:
-        log.warning("get_dataloader_and_tokenizer did only return one dataloader, be careful this dataset split was not used for training ")
-        bench_dataloader = data_loader_tuples
-    else:
-        raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
+    #dataset
+    #TODO: tokenizer from model_cfg
+    from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
+    tokenizer_singleton.tokenizer = cfg.tokenizer
+    #tokenizer_singleton.tokenizer = cfg.tokenizer
+    from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
+    dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
+    bench_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.BENCH)
 
     if cfg.run.profile:
         #benchmark resource consumption (https://pytorch.org/tutorials/recipes/recipes/profiler_recipe.html)
@@ -111,16 +108,18 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)
 
-            cond_model_shifts_targets_internally = model_wrapper.model_cfg.args.get("shift_targets") and model_wrapper.model_cfg.get("calc_loss_in_model")
+            shift_targets = model_wrapper.model_cfg.args.shift_targets
+            calc_loss_in_model = model_wrapper.model_cfg.calc_loss_in_model
+            cond_model_shifts_targets_internally = model_wrapper.model_cfg.args.shift_targets and calc_loss_in_model
             cond_labels_eq_input = torch.all(inputs == labels).item()   # data loader supplies labels and inputs without shifted labels to the right => needs to be done by model
 
             # TODO maybe we can support this but then would would need 8 if else statements here
-            if not model_wrapper.model_cfg.args.get("shift_targets") and model_wrapper.model_cfg.get("calc_loss_in_model"):
-                log.error(f"unsupported combination of model args shift_targets {model_wrapper.model_cfg.args.get('shift_targets')} and calc_loss_in_model {model_wrapper.model_cfg.get('calc_loss_in_model')}")
-                raise ValueError(f"unsupported combination of model args shift_targets {model_wrapper.model_cfg.args.get('shift_targets')} and calc_loss_in_model {model_wrapper.model_cfg.get('calc_loss_in_model')}")
-            if model_wrapper.model_cfg.args.get("shift_targets") and not model_wrapper.model_cfg.get("calc_loss_in_model"):
-                log.error(f"unsupported combination of model args shift_targets {model_wrapper.model_cfg.args.get('shift_targets')} and calc_loss_in_model {model_wrapper.model_cfg.get('calc_loss_in_model')}")
-                raise ValueError(f"unsupported combination of model args shift_targets {model_wrapper.model_cfg.args.get('shift_targets')} and calc_loss_in_model {model_wrapper.model_cfg.get('calc_loss_in_model')}")
+            if not shift_targets and calc_loss_in_model:
+                log.error(f"unsupported combination of model args shift_targets {shift_targets} and calc_loss_in_model {calc_loss_in_model}")
+                raise ValueError(f"unsupported combination of model args shift_targets {shift_targets} and calc_loss_in_model {calc_loss_in_model}")
+            if shift_targets and not calc_loss_in_model:
+                log.error(f"unsupported combination of model args shift_targets {shift_targets} and calc_loss_in_model {calc_loss_in_model}")
+                raise ValueError(f"unsupported combination of model args shift_targets {shift_targets} and calc_loss_in_model {calc_loss_in_model}")
           
             logits = None
             loss = None
@@ -199,8 +198,7 @@ def measure_perplexity(logits: torch.Tensor, labels: torch.Tensor):
 
 def measure_accuracy(model_wrapper: QTRModelWrapper, labels: torch.Tensor, inputs: torch.Tensor = None) -> float:
     """
-    Measures how many token predictions of a logit and label are correct. It does so by either generating text based on the start of the label tensor and then
-    comparing the result with the actual values within labels or by directly comparing the results if inputs is specified.
+    Measures how many token predictions of a logit and label are correct.
     
     Arguments: inputs: softmaxed probability distribution of words 
                labels: actually occuring words
@@ -208,27 +206,6 @@ def measure_accuracy(model_wrapper: QTRModelWrapper, labels: torch.Tensor, input
     Inputs is either of shape: [N, C, V] or [C, V] with N: batches, C: context, V: vocab_size
     Labels is either of shape: [N, C] or [C] with N: batches, C: context
     """
-    #unsure if measuring accuracy without labels is needed
-    """if inputs is None:
-        log.warning(f'Not changed for QTRModelWrapper yet')
-        #input contains complete batches of samples from dataset, cut a small portion (at max half of tokens) and generate text
-        N, C = labels.size()
-        device = labels.device
-        prompt_length = torch.randint(low=1, high=C//2, size=(1,)).item()
-        log.debug(f'Begin measuring accuracy with prompt_length: {prompt_length}')
-        accuracy_batch = torch.zeros(N).to(device=device)
-        for i, batch in enumerate(labels):
-            #generate function expects a batch size of 1
-            #(model_type: InferType, block_size: int, model: Union[nn.Module, ModelWrapper], idx: torch.Tensor, max_new_tokens: int, temperature: float =1.0, top_k: int =None):
-            logits = generate(model_type, block_size = 256, model = model, idx = batch[:prompt_length].unsqueeze(dim=0), max_new_tokens = C - prompt_length)
-            #log.critical(f'{logits}, {labels[i].unsqueeze(dim=0)}')
-            #then, compare tokens with label
-            _, accuracy = labels[i].unsqueeze(dim=0).eq(logits).unique(return_counts=True)
-            log.debug(f'{accuracy}')
-            #input prompt is always going to be correct
-            accuracy = (accuracy[1] - prompt_length) / (C - prompt_length) * 100
-            accuracy_batch[i] = accuracy
-        return accuracy_batch.mean().item()"""
     #get the index of the highest predicted word and compare it to the actual tokens
     #entries ordered as: False, True
     _, accuracy =  inputs.max(dim=-1).indices.eq(labels).unique(return_counts=True)

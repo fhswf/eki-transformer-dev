@@ -1,6 +1,6 @@
 from typing import List, Dict
 from tiktoken import get_encoding, Encoding
-from qtransform.dataset.tokenizer import Tokenizer, Metadata
+from qtransform.tokenizer import Tokenizer, Metadata
 from omegaconf import DictConfig
 import logging
 from numpy import array, dtype
@@ -25,6 +25,7 @@ class TikTokenizer(Tokenizer):
             log.error(f'Could not load Tiktoken tokenizer with encoding: "{self.meta.encoding}".')
             raise ValueError()
         self.meta.max_token_value = self.encoder.max_token_value
+        self.PADDING_TOKEN = self.encoder.eot_token
 
     def encode(self, text, infer: bool = False) -> List[int]:
         tokens = self.encoder.encode_ordinary(text)

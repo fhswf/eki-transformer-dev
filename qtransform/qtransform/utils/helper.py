@@ -10,9 +10,31 @@ import torch
 import logging
 from torch import nn
 from stat import S_ISFIFO
+from yaml import dump, safe_load
+import onnx
+import onnxruntime as ort
+from qonnx.core.modelwrapper import ModelWrapper
+# maybe only do this when it is required, for this howiever is always the case
+from onnx.shape_inference import infer_shapes
+
 log = logging.getLogger(__name__)
 
+def from_meta(meta_file: str) -> DictConfig:
+    pass
 
+def generate_meta(cfg: DictConfig, model: Union[torch.nn.Module, ModelWrapper]) -> str:
+    """
+    Generates meta from hydra config to be used in future runs.
+    With a meta file, no further configs need to be specified in each run script.  
+
+    Args: cfg: The hydra config
+    Returns: The filepath to the meta file
+    """
+    #dataset
+    #tokenizer
+    #model
+    #quant_cfg
+    dump()
 
 def get_default_chkpt_folder() -> str:
     """
@@ -112,11 +134,6 @@ def save_checkpoint(cfg: DictConfig,
         log.info(f"Model checkpoint saved to {checkpoint_path}")
     return checkpoint_path
 
-import onnx
-import onnxruntime as ort
-from qonnx.core.modelwrapper import ModelWrapper
-# maybe only do this when it is required, for this howiever is always the case
-from onnx.shape_inference import infer_shapes
 
 def load_onnx_model(path: str) -> ModelWrapper:
     """

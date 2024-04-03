@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import torch.nn.functional as F
 from qtransform.utils import load_checkpoint, save_checkpoint
+from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from pprint import PrettyPrinter
 from qtransform import device_singleton
 from qtransform.utils.helper import load_state_dict_proxy
@@ -33,7 +34,6 @@ def run(cfg: DictConfig):
 
     if "dataloader" not in cfg.dataset:
         log.error(f"dataloder not specified for dataset: {cfg.dataset.name}. Use dataset=huggingface to get one automaticly.")
-
     device_singleton.device = cfg.device
     device = device_singleton.device
     if device.type == 'cuda':
@@ -57,16 +57,22 @@ def run(cfg: DictConfig):
     
     print(model)
 
-    data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model.config.block_size)
-    if len(data_loader_tuples) == 3:
-        train_dataloader, eval_dataloader, _  = data_loader_tuples
-    elif len(data_loader_tuples) == 2:
-        train_dataloader, eval_dataloader = data_loader_tuples
-    elif len(data_loader_tuples) == 1:
-        train_dataloader = data_loader_tuples
-        eval_dataloader = None
-    else:
-        raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
+    #data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model.config.block_size)
+    #if len(data_loader_tuples) == 3:
+    #    train_dataloader, eval_dataloader, _  = data_loader_tuples
+    #elif len(data_loader_tuples) == 2:
+    #    train_dataloader, eval_dataloader = data_loader_tuples
+    #elif len(data_loader_tuples) == 1:
+    #    train_dataloader = data_loader_tuples
+    #    eval_dataloader = None
+    #else:
+    #    raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
+
+    tokenizer_singleton.tokenizer = cfg.tokenizer
+    from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
+    dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
+    train_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
+    eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
 
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
@@ -220,7 +226,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
                 epoch=epoch, 
                 metrics=metrics, 
                 model_cfg=cfg.model, 
-                tokenizer_cfg=cfg.dataset.tokenizer,
+                tokenizer_cfg=cfg.tokenizer,
                 quant_cfg = cfg.get('quantization', None))
         # advance learning rate
         if scheduler is not None:
@@ -259,9 +265,10 @@ def train_one_epoch(cfg: DictConfig,
         max_len = len(train_data)
         run_len = len(train_data)
         log.info(f"train_data len is {max_len}, max_iters set to {None}. Running training for {run_len}")
-
     #for i in range(1, cfg.run.max_iters+1):
     for i, data in enumerate(train_data):
+        #log.critical(tokenizer_singleton.tokenizer.decode(data[0].tolist()))
+        #print(data)
         if i > run_len:
             break
         loss = None #remember last loss of mini-batch
@@ -277,6 +284,7 @@ def train_one_epoch(cfg: DictConfig,
             # dataloader from hf with additional attention_mask for 
             if len(data) > 2:
                 inputs = data['input_ids']
+                #log.info(tokenizer_singleton.tokenizer.decode(inputs[0].tolist())) #debug to make sure inputs make sense
                 labels = data['labels']
                 attention_mask = data['attention_mask']
                 if not torch.all(attention_mask == 1):
@@ -287,7 +295,6 @@ def train_one_epoch(cfg: DictConfig,
             else:
                 log.error(f"unsupported dataloader output. len was {len(data)}. ")
                 raise NotImplementedError
-
             inputs = inputs.to(device_singleton.device)
             labels = labels.to(device_singleton.device)            
             if cfg.model.calc_loss_in_model:

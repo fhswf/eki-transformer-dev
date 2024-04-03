@@ -2,8 +2,7 @@ from typing import Tuple, Union, List, Dict, Any
 from omegaconf import DictConfig, open_dict
 import os
 from dataclasses import dataclass
-from qtransform.dataset.tokenizer.tokenizer import Tokenizer
-from qtransform.dataset import tokenizer as tokenizer_module
+from qtransform.tokenizer.tokenizer import Tokenizer
 from qtransform.utils.helper import load_checkpoint, load_onnx_model
 from qtransform.utils.introspection import get_classes
 from qtransform.model import QTRModelWrapper, ModelType

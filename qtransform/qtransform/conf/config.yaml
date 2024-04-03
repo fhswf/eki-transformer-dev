@@ -7,14 +7,22 @@ hydra:
   #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
   searchpath:
     - pkg://qtransform
+  
+#TODO: write last checkpoint/ onnx model name here
 defaults:
   - _self_
   - model: 
-  - dataset: 
+  #use fields from "config.yaml" (defined below) and override them with default config from dataset
+  - dataset/tokenized: default 
+  - dataset/untokenized: default
+  - dataset/dataloader: default
+  #default config from the lines above are overwritten with specified config
+  - dataset:
+  - tokenizer: transformers
   - optim: default
   - optim/scheduler: default
   - run: ???
-  - quantization: None
+  - quantization: default
   - override hydra/job_logging: perlevel
   - override hydra/help: main
   #- override hydra/job_logging: colorlog
@@ -26,26 +34,24 @@ device : 'cuda'
 debug: False
 
 dataset:
-  wrapper: ??? #name of dataset wrapper to use which returns an instance of type Dataset
-  module: ??? #name of python file which declares wrapper class
   name: ???
-  root_path: ~/.qtransform/datasets
-  #points to the directory containing the dataset used for training/validation etc. 
-  #the list is composed of subentries under root_path (root_path included) in hierarchical order
-  #the filename of the dataset is not included as it could be split into multiple files (take MNIST for example)
-  dataset_dir: #structure something along the lines of: ~/.qtransform/datasets/huggingface/tiny_shakespeare
-    - ${dataset.root_path}
-    - ${dataset.module}
-    - ${dataset.name}
-  sizes:
-    train: 0.9 #leave 10% of dataset for eval and benchmarking 
-    eval: 0.05
-    bench: 0.05
+  name_args: #criteria to distinguish dataset (e.g. subset from huggingface dataset)
+  root_path: ~/.qtransform/datasets #~/.cache/huggingface/datasets/qtransform/
+  tokenized:
+    cache_dir: #directory where tokenized datasets are stored
+      - ${dataset.root_path}
+      - ${dataset.tokenized.type}
+      - ${dataset.name}
+    #filename of tokenized split: <cache_filename_prefix>-<split>-<dataset_suffix>. "dataset_suffix" is specified by the format of tokenized data
+    #the split is specified in between the prefix and the suffix
+    cache_filename_prefix: cache-${tokenizer.encoding}-${model.args.block_size}- #leads to: "cache-gpt2-128-". 
 
-  #TODO: uncouple dataset and tokenizer from eachother
-  tokenizer: 
-      dtype: ${data.dtype}
-      meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
+
+
+tokenizer: 
+  encoding: ???
+  dtype: ${data.dtype}
+  meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
 seed: 1234567890
 
 # DDP settings

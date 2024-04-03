@@ -1,0 +1,14 @@
+name: roneneldan/TinyStories
+tokenized:
+  type: huggingface #name of python module which implements a class of type TokenizedDatasetGenerator
+
+untokenized: 
+  splits: 
+    bench: #benchmarking split does not exist, therefore use a slice of train split
+      split: bench
+      mapping: train
+      size: 0.05
+      exists: False
+      
+defaults:
+  - untokenized/huggingface 

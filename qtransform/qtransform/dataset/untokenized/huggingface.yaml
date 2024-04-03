@@ -1,0 +1,13 @@
+type: huggingface
+splits: 
+  train:
+    mapping: train
+  eval:
+    mapping: validation
+  bench:
+    mapping: test
+args:
+  batches: 1000 #split dataset into shards to perform tokenization more efficiently
+  data_column_name: text #name of the column that contains the training data. usually "text". NOT USED CURRENTLY
+  chunking: True #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
+  chunk_size: 100 

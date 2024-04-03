@@ -15,7 +15,7 @@ from datetime import datetime
 from . import generate
 from qtransform.model import get_model_wrapper, QTRModelWrapper
 import numpy as np
-from qtransform.dataset.tokenizer.tokenizer import Tokenizer
+from qtransform.tokenizer.tokenizer import Tokenizer
 
 @dataclass
 class InferConfig():

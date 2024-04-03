@@ -1,0 +1,7 @@
+#a relatively small dataset for debugging
+name: rotten_tomatoes
+tokenized:
+  type: huggingface #name of python module which implements a class of type TokenizedDatasetGenerator
+
+defaults:
+  - untokenized/huggingface

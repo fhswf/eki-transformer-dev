@@ -159,8 +159,8 @@ class QTRModelWrapper(ABC):
         raise NotImplementedError
 
     #mainly to avoid conflicts with onnx models
-    def to(self, **kwargs):
-        self.model.to(**kwargs)
+    def to(self, *args, **kwargs):
+        self.model.to(*args, **kwargs)
 
 class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
 
@@ -188,7 +188,8 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             model_cfg["type"] = "CHECKPOINT"
         self.model = get_model(DictConfig(model_cfg))
         #quantize layers to load state dict
-        if checkpoint.get("quantize", False) or checkpoint.get("quant_cfg", False):
+        quant_cfg = checkpoint.get("quant_cfg", {"quantize": False})
+        if quant_cfg["quantize"]:
             #TODO: self.model is set to quantized model before state_dict is loaded
             self.quantize_model(checkpoint["quant_cfg"])
         self.model.load_state_dict(checkpoint["model_state_dict"])

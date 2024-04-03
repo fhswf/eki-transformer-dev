@@ -20,7 +20,7 @@ eval_iters: 200 #retrieve specified amount of batches for evaluation
 
 #TODO: profiling can display a lot of information at the cost of readability. toggling args could prevent it at the cost of
 #      omiting resource details
-profile: #display resource consumption for each epoch
+profile: #display resource consumption for each epoch if "active" is set to True
   active: False
   args:
     record_shapes: True
