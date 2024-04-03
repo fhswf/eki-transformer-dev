@@ -1,4 +1,4 @@
-from qtransform.dataset import TokenizedDatasetGenerator, DatasetSplits, DatasetSplitType
+from qtransform.dataset import TokenizedDatasetGenerator, DatasetSplits, DatasetSplitType, MODEL_INPUT_NAME, MODEL_LABEL_NAME, MODEL_MASK_NAME
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform.tokenizer import TransformersTokenizer
 from typing import Union, Callable, Dict, List, Tuple, Optional, Mapping, Sized
@@ -17,6 +17,7 @@ from dataclasses import dataclass, fields, InitVar, Field
 
 log = getLogger(__name__)
 
+#SplitConfig only used for mapping right now, could be used in other Generators
 @dataclass
 class HuggingfaceSplitConfig():
     split: str
@@ -40,8 +41,6 @@ class HuggingfaceSplitConfig():
             raise TypeError(f'Invalid type: {type(value)} for field: {name}')
         self.__dict__[name] = value
 
-MODEL_INPUT_NAME = "input_ids"
-MODEL_LABEL_NAME = "labels"
 
 class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
     """
@@ -294,4 +293,10 @@ def pad(self,
         labels[sample_index] = labels[sample_index] + [self.PADDING_TOKEN] * difference_labels
     #mask currently all ones
     #TODO: different mask for labels and input_ids
-    return BatchEncoding({"input_ids": input_ids, "labels": labels, "attention_mask" : ones(batch_size, max_length).tolist()}, tensor_type=return_tensors)
+    return BatchEncoding(
+        {
+            MODEL_INPUT_NAME: input_ids, 
+            MODEL_LABEL_NAME: labels, 
+            MODEL_MASK_NAME : ones(batch_size, max_length).tolist()
+        }, 
+        tensor_type=return_tensors)

@@ -10,7 +10,7 @@ splits:
     size: 0.05
     exists: False
 args:
-  cache_dir: ~/.cache/huggingface/datasets/
+  cache_dir: ??? #directory to retrieve text files for tokenization from
   batches: 1000 #split dataset into shards to perform tokenization more efficiently
   chunking: True #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
   chunk_size: 100 

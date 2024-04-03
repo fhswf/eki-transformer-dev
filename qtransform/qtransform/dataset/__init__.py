@@ -102,6 +102,10 @@ class TokenizedDatasetFactory():
 
 from abc import ABC, abstractmethod
 import os
+#splits should have these column names
+MODEL_INPUT_NAME = "input_ids"
+MODEL_LABEL_NAME = "labels"
+MODEL_MASK_NAME = "attention_mask"
 
 #TODO: no check if intermediate results of tokenization exist (tokenized but not grouped for huggingface)
 class TokenizedDatasetGenerator(ABC):
@@ -112,6 +116,7 @@ class TokenizedDatasetGenerator(ABC):
     DUMP_FILE_PATH: str #path for intermediate result of tokenization (e.g. tokenized but not grouped). not every generator needs to use this
     DATASET_FILE_PATH: str #by default: cache_dir from config
     CACHE_FILENAME_PREFIXES: Dict[DatasetSplitType, str]
+
 
     def __init__(self, cfg: DictConfig):
         """

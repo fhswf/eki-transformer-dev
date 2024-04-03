@@ -123,7 +123,7 @@ class MemmapTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         #each sample of split contains amount of tokens to derive size of memmap
         length_splits = {split:sum(dataset_splits[split]["length"]) for split in dataset_splits}
         tokenizer.meta.num_tokens = sum(length_splits.values())
-        
+
         #MEMMAP processing begins here
         for split, path in untokenized_splits.items():
             offset = 0

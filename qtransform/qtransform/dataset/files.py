@@ -1,57 +1,45 @@
-from typing import Any, Tuple, List
 import torch
 import numpy as np
 from torch.utils.data import Dataset
-from omegaconf import DictConfig, open_dict
 from qtransform.utils.introspection import get_classes, concat_paths, get_dtype
-from qtransform.dataset import DatasetSplits, TokenizedDatasetGenerator, DatasetSplitType
+from qtransform.dataset import DatasetSplits, TokenizedDatasetGenerator, DatasetSplitType, MODEL_INPUT_NAME, MODEL_LABEL_NAME, MODEL_MASK_NAME
 from qtransform.tokenizer import get_tokenizer, Tokenizer
 import os
-from glob import glob
-import logging
+from logging import getLogger
 from dataclasses import fields
-import datasets
-from datasets.dataset_dict import DatasetDict
 from typing import Any, Union, Dict, Callable, Tuple, List
 from omegaconf import DictConfig, open_dict
 import logging
 from torch.utils.data import Dataset, DataLoader
 from qtransform.utils.introspection import _get_module, get_classes, concat_paths, get_dtype
 import qtransform
-from qtransform import classloader
-from dataclasses import dataclass, fields, InitVar
-from enum import IntEnum
 from os import listdir, makedirs
 from os.path import join, exists
 from qtransform.tokenizer import Tokenizer, get_tokenizer
 import datasets
 from datasets.dataset_dict import DatasetDict
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
-import qtransform.dataset as package_self
-from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
 from qtransform import device_singleton
 #TokenizedDatasetWrapper
 import numpy as np
-from typing import Tuple
 import torch
 from pprint import PrettyPrinter
 
+log = getLogger(__name__)
 
+#TODO: it is possible to derive this class from HuggingfaceTokenizedDatasetGenerator
 class FilesTokenizedDatasetGenerator(TokenizedDatasetGenerator):
     """
-    TokenizedDatasetGenerator used to load huggingface datasets and tokenize datasets into arrow files.
+    TokenizedDatasetGenerator used to load files and tokenize them into numpy arrays.
     """
-    #contains file extension and other distinguishing factors (e.g. block_size, tokenized or grouped..)
-    #split is prepended to suffix (cache_file_prefix, split, DATASET_FILE_SUFFIX)
     DATASET_FILE_SUFFIX: str
     DATASET_FILE_PATH: str #by default: cache_dir from config
 
     def __init__(self, cfg: DictConfig):
         super().__init__(cfg)
         self.cfg = cfg
-        self.DATASET_FILE_SUFFIX = ".bin"
-        self.RAW_DATA_DIR = self.cfg.untokenized.data_dir
-        log.debug(f'{self.RAW_DATA_DIR}')
+        self.DATASET_FILE_SUFFIX = "tokenized.bin"
+        self.RAW_DATA_DIR = self.cfg.untokenized.args.cache_dir.replace('~', os.path.expanduser('~'))
         #make __post_init__?
         makedirs(self.DATASET_FILE_PATH, exist_ok=True)
         self.batch_size = self.cfg.untokenized.args.batches
@@ -62,7 +50,7 @@ class FilesTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         dataset_splits = DatasetSplits()
         for split in DatasetSplitType:
             try:
-                dataset_splits[split] = np.memmap(self.get_filepath_split(split), mode='r')
+                dataset_splits[split] = MemmapDataset(self.get_filepath_split(split), block_size=self.block_size)
             except FileNotFoundError as e:
                 log.error(f'Split {split.name} not found locally.')
                 raise e
@@ -79,7 +67,7 @@ class FilesTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         """
         chunks = []
         CHUNK_LENGTH = self.cfg.untokenized.chunk_size if self.cfg.untokenized.get("chunk_size") else 100
-        for sentence in examples[self.cfg.tokenization_args.data_column_name]:
+        for sentence in examples["text"]:
             chunks += [sentence[i:i + CHUNK_LENGTH] for i in range(0, len(sentence), CHUNK_LENGTH)]
         return {"chunks": chunks}
 
@@ -90,28 +78,37 @@ class FilesTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             within dataset_dir are returned. 
             If the directory does not exist, it is created and an empty list is returned.
         """
-        log.debug(f'Checking for files with name containing {self.cfg.name} under directory: {self.untokenized_dir}')
-        return [x for x in glob(self.RAW_DATA_DIR) if not os.path.isdir(x)]
+        log.debug(f'Retrieving files from: {self.RAW_DATA_DIR}')
+        paths = []
+        for x in os.listdir(self.RAW_DATA_DIR):
+            path = os.path.join(self.RAW_DATA_DIR, x)
+            if not os.path.isdir(path):
+                paths.append(path)
+        return paths
 
-    def create_hf_dataset(self):
+    def get_untokenized_data(self, splits: List[DatasetSplitType]) -> DatasetDict:
         files = self.get_untokenized_files()
+        log.debug(f'{files}')
         #https://huggingface.co/docs/datasets/create_dataset#from-local-files
         def gen_samples():
             for filename in files:
                 with open(filename, 'r') as file:
                     yield {"text": file.read()}
-        all_files = datasets.Dataset.from_generator(gen_samples)
+        all_files: datasets.Dataset = datasets.Dataset.from_generator(gen_samples)
         all_files = all_files.map(
             self.chunk_examples, 
             batched=True, 
             batch_size = self.batch_size,
             remove_columns=["text"])
-        all_files.rename_columns("chunks", "text") 
+        all_files = all_files.rename_columns({"chunks": "text"})
         dataset_dict = {}
-        for split in DatasetSplitType:
-            dataset_dict
-        raise NotImplementedError()
-        #return DatasetDict({"train": })
+        for split in splits:
+            mapping = split.name if split.name == "train" else "test"
+            size = self.cfg.untokenized.splits[split.name.lower()]["size"]
+            assert isinstance(size, float), f'Size for split {split.name} invalid ({size})'
+            dataset_dict[split.name] = all_files.train_test_split(size)[mapping]
+        log.debug(f'dataset_dict: {dataset_dict}')
+        return DatasetDict(dataset_dict)
 
     def tokenize_data(self, untokenized_data: DatasetDict) -> None:
         #slice spits: https://huggingface.co/docs/datasets/loading#slice-splits
@@ -120,10 +117,12 @@ class FilesTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         batch_size = self.cfg.untokenized.args.batches
         if batch_size is None:
             batch_size = 1000 #default for huggingface
+        text_column_name = untokenized_data.column_names[list(untokenized_data.keys())[0]][0]
+        log.debug(f'Using column name: {text_column_name}')
 
         def tokenizer_function(batch):
-            return {MODEL_INPUT_NAME: [tokenizer_singleton.tokenizer.encode(x) for x in batch[text_column_name]]}
-        dump_file_names = {split.name: self.DUMP_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + "tokenized.arrow" for split in DatasetSplitType}
+            batch_ids = [tokenizer_singleton.tokenizer.encode(x) for x in batch[text_column_name]]
+            return {"input_ids": batch_ids, "length": [len(x) for x in batch_ids]}
 
         #tokenize them
         tokenized_datasets = untokenized_data.map(
@@ -131,12 +130,41 @@ class FilesTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             batched=True,
             #batch_size = batch_size,
             remove_columns=[text_column_name],
-            desc="Running tokenizer on dataset",
-            cache_file_names=dump_file_names
+            desc="Running tokenizer on dataset"
         )
+        #each sample of split contains amount of tokens to derive size of memmap
+        length_splits = {split:sum(tokenized_datasets[split]["length"]) for split in tokenized_datasets}
+        cache_file_names = {split.name: self.get_filepath_split(split) for split in DatasetSplitType}
 
-    def get_untokenized_data(self, splits: List[DatasetSplitType]) -> DatasetDict:
-        raise NotImplementedError()
+        #MEMMAP processing begins here
+        for split, data in tokenized_datasets.items():
+            offset = 0
+            try:
+                log.debug(f'Split "{split}" has {length_splits[split]} tokens.')
+                log.debug(f'Begin writing into memmap')
+                path = cache_file_names[split]
+                memmap = np.memmap(path, mode='w+', dtype=np.int64, shape=(length_splits[split], ))
+                for batch_id in range(batch_size):
+                    batch = tokenized_datasets[split].shard(num_shards=batch_size, index=batch_id)
+                    if batch_id % 100 == 0:
+                        log.debug(f'Batch: {batch_id}/{batch_size}. Length of batch: {len(batch)}')
+                    if len(batch) == 0:
+                        break
+                    tokens = np.concatenate(batch["input_ids"], dtype=np.int64)
+                    if hasattr(log, "trace"): log.trace(f'Writing into memmap from {offset}:{offset+len(tokens)}. Length of tokens: {len(tokens)}')
+                    memmap[offset:offset+len(tokens)] = tokens
+                    offset += len(tokens)
+                memmap.flush()
+            except Exception as e:
+                #remove broken memmap file
+                log.error(f'Stopped tokenization of split {split}.\nRemoving the broken memmap file under {path}', exc_info=True)
+                os.remove(path)
+                raise FileNotFoundError() #cannot continue running script as tokenized file has been removed
+            log.debug(f'Tokenization done.')
+
+    def get_intermediate_tokenized_data(self) -> Dict[DatasetSplitType,  Dict[str, Union[bool, str]]]:
+        log.warning(f'Not implemented yet')
+        raise None
 
     def get_collator(self) -> Callable:
         return None #dataloader collate_fn by default None
@@ -152,8 +180,6 @@ class MemmapDataset(Dataset):
             Slices of the dataset can be retrieved with the start and end parameters. 
             They specify the starting and ending range of the dataset in percent.
             However, since each split is stored as one file, these two parameters have become obsolete.
-        
-
         """
         super().__init__()
         if not isinstance(start, float) or start < 0.0 or start >= 1.0:
@@ -162,6 +188,7 @@ class MemmapDataset(Dataset):
         if not isinstance(end, float) or end <= 0.0 or end > 1.0:
             log.error(f'Invalid ending range for dataset ({end})')
             raise KeyError()
+        dtype = np.int64 #more than enough tokens (2^64 -1)
         if not isinstance(dtype, np.dtype): #np.dtype("dtype") or np.<dtype> e.g.: np.dtype("float32") or np.float32
             try:
                 dtype = np.dtype(dtype) #not an instance (np.float32)
@@ -172,7 +199,6 @@ class MemmapDataset(Dataset):
         if self.block_size <= 0:
             log.error(f'Block size of 0 is invalid.')
             raise ValueError()
-        log.info(f"Attempting to retrieve tokenized dataset under \"{token_file}\"")
         self.token_file = token_file
         self.dtype = dtype
         #the method of retrieving the byte size is somewhat inspired from the stackoverflow article
@@ -216,4 +242,5 @@ class MemmapDataset(Dataset):
         #labels are always the following word for each word within the context
         #labels : torch.Tensor = torch.from_numpy(self.data[index +1:offset+1].astype(np.int64))
         labels : torch.Tensor = torch.as_tensor(self.data[index +1:offset+1].astype(np.int64))
-        return inputs, labels
+
+        return DatasetDict({MODEL_INPUT_NAME: inputs, MODEL_LABEL_NAME: labels, MODEL_MASK_NAME: torch.ones(self.block_size)})
