@@ -1,19 +1,15 @@
 type: ${dataset.tokenized.type} #by default, file format remains the same  
-#splits is only necessary for huggingface datasets. TODO: move it to huggingface file
 splits: 
   train: 
     split: train
-    mapping: train #name of huggingface split
     size: 1.0 #if split does not exist (exists: False), take the largest split and use "size" percent 
     exists: True
   eval:
     split: eval
-    mapping: validation
     size: 1.0
     exists: True
   bench:
     split: bench
-    mapping: test
     size: 1.0
     exists: True
   #example of a split that does not exist:
@@ -22,8 +18,3 @@ splits:
   #  size: 0.05
   #  exists: False
 args:
-  cache_dir: #directorry where cached datasets are stored. default: ~/.cache/huggingface
-  data_column_name: text #name of the column that contains the training data. usually "text". NOT USED CURRENTLY
-  batches: 1000 #split dataset into shards to perform tokenization more efficiently
-  chunking: True #if True, split long sentences after chunk_size characters for faster tokenization. Default: False
-  chunk_size: 100 

@@ -2,9 +2,6 @@
 name: rotten_tomatoes
 tokenized:
   type: huggingface #name of python module which implements a class of type TokenizedDatasetGenerator
-  generator: HuggingfaceTokenizedDatasetGenerator #actual class name of type TokenizedDatasetGenerator
-untokenized: 
-  type: huggingface
-  generator: HuggingfaceTokenizedDatasetGenerator
-  #TODO: author
-#specify args for (un)tokenized from files with "default"
+
+defaults:
+  - untokenized/huggingface

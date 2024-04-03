@@ -12,7 +12,7 @@ hydra:
 defaults:
   - _self_
   - model: 
-  #use fields from this config, override them with default config from dataset
+  #use fields from "config.yaml" (defined below) and override them with default config from dataset
   - dataset/tokenized: default 
   - dataset/untokenized: default
   - dataset/dataloader: default
@@ -37,12 +37,14 @@ dataset:
   name: ???
   name_args: #criteria to distinguish dataset (e.g. subset from huggingface dataset)
   root_path: ~/.qtransform/datasets #~/.cache/huggingface/datasets/qtransform/
-  cache_dir: #directory where tokenized datasets are stored
-    - ${dataset.root_path}
-    - ${dataset.tokenized.type}
-    - ${dataset.name}
-  #filename of tokenized split: <cache_filename_prefix>-<split>-<dataset_suffix>. "dataset_suffix" is specified by the format of tokenized data
-  cache_filename_prefix: cache-${tokenizer.encoding}-${model.args.block_size}- #leads to: "cache-gpt2-128-". 
+  tokenized:
+    cache_dir: #directory where tokenized datasets are stored
+      - ${dataset.root_path}
+      - ${dataset.tokenized.type}
+      - ${dataset.name}
+    #filename of tokenized split: <cache_filename_prefix>-<split>-<dataset_suffix>. "dataset_suffix" is specified by the format of tokenized data
+    #the split is specified in between the prefix and the suffix
+    cache_filename_prefix: cache-${tokenizer.encoding}-${model.args.block_size}- #leads to: "cache-gpt2-128-". 
 
 
 

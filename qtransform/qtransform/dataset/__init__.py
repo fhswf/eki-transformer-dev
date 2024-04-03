@@ -122,11 +122,11 @@ class TokenizedDatasetGenerator(ABC):
                 self.cfg.name_args = {}
         self.block_size = cfg.tokenized.args.block_size
         #field name_args by default not included
-        self.DATASET_FILE_PATH = concat_paths(self.cfg.cache_dir)
+        self.DATASET_FILE_PATH = concat_paths(self.cfg.tokenized.cache_dir)
         makedirs(self.DATASET_FILE_PATH, exist_ok=True)
-        cache_filename_prefix = self.cfg.cache_filename_prefix
+        cache_filename_prefix = self.cfg.tokenized.cache_filename_prefix
         #TODO: create function which composes filename from list and adds a seperator (-) to avoid if else statements
-        if self.cfg.cache_filename_prefix[-1] != "-":
+        if self.cfg.tokenized.cache_filename_prefix[-1] != "-":
             cache_filename_prefix += "-"
         self.CACHE_FILENAME_PREFIXES = {split: cache_filename_prefix + split.name + "-" for split in DatasetSplitType}
         log.debug(f'CACHE_FILENAME_PREFIXES: {self.CACHE_FILENAME_PREFIXES}')
@@ -229,6 +229,8 @@ def get_tokenized_dataset_generator(generator_module: str, dataset_cfg: DictConf
     """
     log.info(f'loading tokenized dataset generator from module "{generator_module}"')
     module_name = package_self.__package__ + "." + generator_module
+    #bug with get_classes that retrieves the last TokenizedDatasetGenerator class with the same name
+    #some kind of check that names are unique could be useful
     classes =  get_classes(package_self, parent_class=TokenizedDatasetGenerator).values()
     log.debug(f'Found classes: {classes}')
     found_class = list(filter(lambda x: x.__module__ == module_name , classes))
