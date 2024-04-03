@@ -78,20 +78,18 @@ class TokenizedDatasetFactory():
         dataset_splits = DatasetSplits()
         #generators
         tokenized_data_fetcher: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.tokenized.type, cfg)
-        log.debug(f'Tokenized data fetcher: ${tokenized_data_fetcher.__class__.__name__}')
+        log.debug(f'Tokenized data fetcher: {tokenized_data_fetcher.__class__.__name__}')
         untokenized_data_fetcher: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.untokenized.type, cfg)
-        log.debug(f'Untokenized data fetcher: ${untokenized_data_fetcher.__class__.__name__}')
+        log.debug(f'Untokenized data fetcher: {untokenized_data_fetcher.__class__.__name__}')
 
         #check if datasets exist
         status_splits = tokenized_data_fetcher.check_tokenized()
         log.debug(f'status_splits: {PrettyPrinter(indent=1).pformat(status_splits)}')
-        status_untokenized = [split for split, status in status_splits.items() if status["exists"] is False]
-        if len(status_untokenized) > 0:
-            log.info(f'Splits "{[x.name for x in status_untokenized]}" do not exist. Tokenizing now.')
-        
-        #tokenize datasets
-        untokenized_splits = untokenized_data_fetcher.get_untokenized_data(splits=status_splits)
-        if len(untokenized_splits) > 0:
+        untokenized_split_names = [split for split, status in status_splits.items() if status["exists"] is False]
+        if len(untokenized_split_names) > 0:
+            log.info(f'Splits "{[x.name for x in untokenized_split_names]}" do not exist. Tokenizing now.')
+            #tokenize datasets
+            untokenized_splits = untokenized_data_fetcher.get_untokenized_data(splits=untokenized_split_names)
             tokenized_data_fetcher.tokenize_data(untokenized_splits)
         tokenized_splits = tokenized_data_fetcher.get_tokenized_dataset()
         collator_fn = tokenized_data_fetcher.get_collator()

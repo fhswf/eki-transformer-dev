@@ -10,6 +10,7 @@ from omegaconf import DictConfig
 import logging
 log = logging.getLogger(__name__)
 
+@DeprecationWarning
 class TorchvisionDatasetWrapper():
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)

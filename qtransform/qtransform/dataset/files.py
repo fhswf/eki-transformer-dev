@@ -87,6 +87,8 @@ class FilesTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         return paths
 
     def get_untokenized_data(self, splits: List[DatasetSplitType]) -> DatasetDict:
+        assert isinstance(splits, list), f'splits {splits} is not a list'
+        #assert list(filter(lambda x: isinstance(x, DatasetSplitType), splits))
         files = self.get_untokenized_files()
         log.debug(f'{files}')
         #https://huggingface.co/docs/datasets/create_dataset#from-local-files
