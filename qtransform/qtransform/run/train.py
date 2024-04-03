@@ -308,7 +308,7 @@ def train_one_epoch(cfg: DictConfig,
                     labels = labels[..., 1:].contiguous()
                 log.warning(f'Loss function outside of model (e.g. for pretrained models) is not fixed yet')
                 outputs, _ = model(inputs)
-                log.critical(outputs)
+                #log.critical(outputs)
                 outputs = F.log_softmax(outputs, dim=2)
                 loss = F.nll_loss(outputs.view(-1, outputs.size(-1)),labels.view(-1), ignore_index=-1)
             loss /= gradient_accumulation_steps #make all mini-batches account as one large batch

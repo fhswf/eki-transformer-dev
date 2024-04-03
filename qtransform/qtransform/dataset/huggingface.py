@@ -180,12 +180,22 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             split_cfg: HuggingfaceSplitConfig = self.get_split_mapping(split)
             log.debug(f'Getting split: {split_cfg.mapping}')
             try:
+                #TODO: dataset_split not used sometimes 
                 dataset_split = load_dataset(self.cfg.name, name=self.subset, split=split_cfg.mapping)
+                #take chunk of pre-existing split
                 if not split_cfg.exists:
-                    #alternative: load_dataset("name[:10%]") gets first 10 percent of dataset. not random though
                     log.info(f'Creating split: "{split_cfg.split}" from "{split_cfg.mapping}" with size: {split_cfg.size}.')
-                    #we only have the split name of the mapped split (e.g. train), meaning that we take that split and reduce its size
-                    dataset_split = dataset_split.train_test_split(1-split_cfg.size)[split_cfg.mapping]
+                    #if split is already loaded, use that and reduce its size.
+                    check_split_loaded = getattr(DatasetSplitType, split_cfg.mapping.upper(), None) 
+                    if check_split_loaded is not None and dataset_splits.get(check_split_loaded.name, None) is not None:
+                        log.debug(f'Split already loaded. Reducing its size by {split_cfg.size}')
+                        reduced_dataset = dataset_splits.get(check_split_loaded.name, None).train_test_split(split_cfg.size)
+                        dataset_split = reduced_dataset["test"]
+                        dataset_splits[check_split_loaded.name] = reduced_dataset["train"]
+                    else:
+                        #alternative: load_dataset("name[:10%]") gets first 10 percent of dataset. not random though
+                        #splits train and test always present after train_test_split
+                        dataset_split = dataset_split.train_test_split(split_cfg.size)["test"]
             except ValueError as split_not_found_error:
                 log.error(f'Split "{split.split}" does not exist with "exists: {split_cfg.exists}", "mapping: {split_cfg.mapping}". Maybe check mapping?')
                 raise split_not_found_error
