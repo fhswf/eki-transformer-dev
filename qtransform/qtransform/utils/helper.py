@@ -2,7 +2,6 @@ import datetime
 import os
 from typing import Any, Dict, Tuple, Union
 import hydra
-import hydra
 from pprint import pprint
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import OmegaConf, DictConfig
@@ -16,8 +15,17 @@ import onnxruntime as ort
 from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
+from dataclasses import dataclass
 
 log = logging.getLogger(__name__)
+
+@dataclass
+class FromFile():
+    """
+    
+    """
+    model_dir: str
+    filepath: str
 
 def from_meta(meta_file: str) -> DictConfig:
     pass
@@ -43,9 +51,38 @@ def get_default_chkpt_folder() -> str:
     """
     return os.path.join(os.getenv("HOME"), *__package__.split("."), "checkpoint_dir")
 
+def compose_model_path(filepath, model_dir = None) -> str:
+    chkpt_folder = get_default_chkpt_folder()
+    if "from_checkpoint" not in cfg.run:
+        log.error(f'Key "from_checkpoint" not specified in run config, e.g. run.from_checkpoint="<path>"')
+        raise KeyError()
+    #from_checkpoint is the absolute path to a file, ignore checkpoint_dir 
+    if os.path.isabs(filepath):
+        chkpt_folder, from_checkpoint = os.path.split(filepatht)
+    elif "checkpoint_dir" in cfg.run:
+        if os.path.isabs(cfg.run.checkpoint_dir):
+            chkpt_folder = cfg.run.checkpoint_dir
+            from_checkpoint = cfg.run.from_checkpoint
+        else:
+            #outputs are stored in <current directory>/outputs/<checkpoint_dir>
+            try:
+                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.checkpoint_dir)
+            except:
+                log.debug(f'Could not get cwd from hydra. Reason: ', exc_info=True)
+                log.debug(f'Using os.getcwd')
+                chkpt_folder = os.getcwd()
+            from_checkpoint = cfg.run.from_checkpoint
+    else:
+        log.error(f'Neither absolute path to checkpoint nor "run.checkpoint_dir" was specified')
+        raise RuntimeError()
+    checkpoint_path = os.path.join(chkpt_folder, from_checkpoint)
+    if not os.path.isfile(checkpoint_path):
+            log.error(f"Checkpoint {checkpoint_path} is not a file")
+            raise FileNotFoundError
+
+#we only need directory and filepath
 def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
     """ load torch model checkpoint"""
-    #checkpoint_dir: specify custom path for checkpoints, otherwise use directory checkpoint_dir in qtransform/utils/checkpoint_dir
     chkpt_folder = get_default_chkpt_folder()
     if "from_checkpoint" not in cfg.run:
         log.error(f'Key "from_checkpoint" not specified in run config, e.g. run.from_checkpoint="<path>"')
@@ -98,7 +135,7 @@ def load_state_dict_proxy(model, checkpoint, **kwargs):
 
 def save_checkpoint(cfg: DictConfig, 
     model: nn.Module, 
-    dataset: str, 
+    dataset_name: str, 
     optimizer, 
     timestamp:datetime, 
     metrics:Dict, 
@@ -118,20 +155,19 @@ def save_checkpoint(cfg: DictConfig,
             except:
                 chkpt_folder = os.getcwd()
     os.makedirs(chkpt_folder, exist_ok=True)
-    if epoch % cfg.run.save_epoch_interval == 0:
-        checkpoint_path = os.path.join(chkpt_folder,f"{OmegaConf.to_container(HydraConfig.get().runtime.choices)['model']}_{dataset.replace('/', '__')}_{timestamp}__epoch:{epoch}")
-        log.info(f"Model checkpoint saving to {checkpoint_path}")
-        torch.save(obj={
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "epoch": epoch,
-                "model_cfg": model_cfg,
-                "tokenizer_cfg": tokenizer_cfg, 
-                "metrics": metrics,
-                "quant_cfg": quant_cfg, 
-                "quantized": True if cfg.get('quantization', {"quantize": False})["quantize"] is True else False
-                }, f=checkpoint_path)
-        log.info(f"Model checkpoint saved to {checkpoint_path}")
+    checkpoint_path = os.path.join(chkpt_folder,f"{OmegaConf.to_container(HydraConfig.get().runtime.choices)['model']}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}")
+    log.info(f"Model checkpoint saving to {checkpoint_path}")
+    torch.save(obj={
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "epoch": epoch,
+            "model_cfg": model_cfg,
+            "tokenizer_cfg": tokenizer_cfg, 
+            "metrics": metrics,
+            "quant_cfg": quant_cfg, 
+            "quantized": True if quant_cfg.get("quantize", False) is True else False
+            }, f=checkpoint_path)
+    log.info(f"Model checkpoint saved to {checkpoint_path}")
     return checkpoint_path
 
 

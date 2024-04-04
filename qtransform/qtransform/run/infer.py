@@ -1,21 +1,22 @@
 import logging
 from typing import Any, Dict, Union, List
 from dataclasses import dataclass
-from qtransform import device_singleton
-log = logging.getLogger(__name__)
 from omegaconf import DictConfig, open_dict
 import hydra
 from torch import nn
 import torch
 import tiktoken
 from qtransform import device_singleton
+from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
+from qtransform.tokenizer.tokenizer import Tokenizer
+from qtransform.model import get_model_wrapper, QTRModelWrapper
 from os.path import isdir, exists, join, expanduser, isabs
 from os import makedirs, getcwd, makedirs
 from datetime import datetime
 from . import generate
-from qtransform.model import get_model_wrapper, QTRModelWrapper
 import numpy as np
-from qtransform.tokenizer.tokenizer import Tokenizer
+
+log = logging.getLogger(__name__)
 
 @dataclass
 class InferConfig():
@@ -82,7 +83,7 @@ def infer(cfg: DictConfig, device: Any):
         the start prompt has to be tokenized and passed differently. However, some params such as the number of tokens, temperature
         etc. are not passed as args.
         """
-        tokenizer = tiktoken.get_encoding("gpt2") #TODO get tokenizer
+        tokenizer = tokenizer_singleton.tokenizer
         log.warning(f'Dataset and tokenizer usage is still a WIP, for now gpt2 tiktokenizer is used for inference')
         start_ids = tokenizer.encode(start)
         x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])

@@ -169,7 +169,7 @@ class FilesTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         raise None
 
     def get_collator(self) -> Callable:
-        return None #dataloader collate_fn by default None
+        return None #dataloader collate_fn by default None, padding not necessary
         
 
 

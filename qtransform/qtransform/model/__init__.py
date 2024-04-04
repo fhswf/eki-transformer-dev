@@ -1,14 +1,16 @@
 from omegaconf import DictConfig, open_dict
 from qtransform.classloader import get_data
 from torch import nn, Tensor, from_numpy
+from torch import compile as torch_compile
+from torch import __version__ as torch_version
 import logging
 from dataclasses import dataclass
 from qonnx.core.onnx_exec import execute_onnx
 from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
-from enum import Enum
-from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model
+from enum import IntEnum
+from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy
 from typing import Union, Tuple
 from abc import ABC, abstractmethod
 import transformers
@@ -28,7 +30,7 @@ log = logging.getLogger(__name__)
 #TODO 2: QRTModelWrapper for huggingface models
 
 
-class ModelType(Enum):
+class ModelType(IntEnum):
     ONNX = 0
     CHECKPOINT = 1
     PRETRAINED = 2
@@ -112,7 +114,7 @@ class ModelConfig():
     cls: str
     calc_loss_in_model: bool
     args: ModelArgs
-    from_file: str = None #torch checkpoint or ONNX model path
+    from_file: {"model_dir": str, "filepath": str} = None #torch checkpoint or ONNX model path
 
     def __setattr__(self, name, value):
         if name == "args" and not isinstance(value, ModelArgs):
@@ -159,21 +161,30 @@ class QTRModelWrapper(ABC):
         raise NotImplementedError
 
     #mainly to avoid conflicts with onnx models
-    def to(self, *args, **kwargs):
+    #no need to return model as wrapper is used
+    def to(self, *args, **kwargs) -> None:
         self.model.to(*args, **kwargs)
 
 class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
 
     #only if ptq/ qat is performed
     replace_layers_later: ModelQuantConfig
+    quantized: bool
     quant_cfg: ModelQuantConfig
     quantizer: Quantizer
+    optimizer_state_dict: DictConfig #when loading checkpoints, get optimizer state
+    epochs: int #if loading checkpoint, remember how many epochs have elapsed
+    metrics: dict
 
     def __init__(self, model_cfg):
         super().__init__(model_cfg=model_cfg)
         self.model_type = ModelType.CHECKPOINT
+        self.quantized = False
         self.replace_layers_later = None
         self.quant_cfg = None
+        self.optimizer_state_dict = None
+        self.epochs = 0
+        self.metrics = {}
     
     def from_file(self, path):
         cfg = DictConfig({
@@ -181,7 +192,14 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
                 "from_checkpoint": path
             }
         })
-        from_epoch, checkpoint = load_checkpoint(cfg)
+        self.epochs, checkpoint = load_checkpoint(cfg)
+        if 'model_state_dict' not in checkpoint:
+            log.error("Can not load checkpoint with no model_state_dict")
+            raise KeyError
+        if 'optimizer_state_dict' not in checkpoint:
+            log.error("Can not load checkpoint with no optimizer_state_dict")
+            raise KeyError
+
         model_cfg = checkpoint["model_cfg"]
         #support for older checkpoints
         with open_dict(model_cfg):
@@ -192,8 +210,14 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         if quant_cfg["quantize"]:
             #TODO: self.model is set to quantized model before state_dict is loaded
             self.quantize_model(checkpoint["quant_cfg"])
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+            #skip qparams from checkpoint
+            #for some reason, mlp qparams are saved within checkpoint but not the ones from mha
+            from brevitas import config
+            config.IGNORE_MISSING_KEYS = True
+        load_state_dict_proxy(self.model, checkpoint["model_state_dict"])
         self.model_cfg = model_cfg
+        self.optimizer_state_dict = checkpoint["optimizer_state_dict"]
+        self.metrics = checkpoint['metrics']
 
 
     def save_model(self, cfg: DictConfig):
@@ -219,8 +243,10 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
             self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.replace_layers_later)
             self.quant_cfg.model = self.model"""
+        log.warning(f'replace_layers_later not supported yet for qat')
         self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
         self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.quant_cfg)
+        self.quantized = True
 
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         if labels is not None:
@@ -228,7 +254,13 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         else:
             logits, loss = self.model(idx_cond)
         return logits, loss
-    
+
+    def compile(self):
+        if torch_version >= (2,0):
+            self.model = torch_compile(self.model)
+        else:
+            log.error(f'Cannot compile with torch version: {torch_version} (needs to be >= 2.0)')
+            
 class PretrainedHuggingfaceQRTModelWrapper(QTRModelWrapper):
 
     def __init__(self, model_cfg):
@@ -305,7 +337,7 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
         device = idx_cond.device
         if labels is not None:
             idict = {"input": idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
-            warn_once(log, "labels are givin to external forwards pass wrapper but they are ignored inside onns models atm")
+            warn_once(log, "labels are given to external forwards pass wrapper but they are ignored inside onnx models atm")
         else:
             idict = {"input": idx_cond.cpu().numpy()}
         # use infer_shapes()
@@ -324,8 +356,8 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
         pass
 
 #either get type from model_cfg or use ModelType Enum as param
-#TODO 2: redundancies in model and run fields (from_file, checkpoint_dir)
 def get_model_wrapper(model_cfg: DictConfig) -> QTRModelWrapper:
+    assert isinstance(model_cfg.get('type'), str), f'Field "type" within model_cfg not specified'
     model_type = model_cfg.get('type').upper()
     match model_type:
         case "ONNX":

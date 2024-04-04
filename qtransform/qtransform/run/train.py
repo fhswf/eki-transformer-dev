@@ -2,7 +2,6 @@ import logging
 from typing import Any, Tuple, Union
 from omegaconf import DictConfig, OmegaConf, open_dict
 import os
-from qtransform.run import get_dataloader_and_tokenizer
 import torch
 from torch import nn
 from torch import optim
@@ -11,12 +10,16 @@ from torch.utils import data as torch_data #prevent naming conflict with data fr
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import torch.nn.functional as F
-from qtransform.utils import load_checkpoint, save_checkpoint
-from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from pprint import PrettyPrinter
+from time import time
+
+from qtransform.utils import save_checkpoint
+from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
 from qtransform.utils.helper import load_state_dict_proxy
-from time import time
+from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpointQTRModelWrapper
+
+
 log = logging.getLogger(__name__)
 from torch.profiler import profile, record_function, ProfilerActivity
 
@@ -44,29 +47,29 @@ def run(cfg: DictConfig):
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
 
-
-    from qtransform.model import get_model
-    model = get_model(cfg.model)
-    model.train()
+    model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
+    assert isinstance(model_wrapper, DynamicCheckpointQTRModelWrapper), f'Model should be torch module, not {type(model_wrapper)}'
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
-    model.to(device=device)
-    # compiling fails export due to https://github.com/pytorch/pytorch/issues/111319
-    #if torch.__version__ >= (2,0) and cfg.run.compile:
-    #    model = torch.compile(model) # requires PyTorch 2.0 (optional)
-    
-    print(model)
+    model_wrapper.to(device=device)
+    print(model_wrapper)
 
-    #data_loader_tuples  = get_dataloader_and_tokenizer(cfg, model.config.block_size)
-    #if len(data_loader_tuples) == 3:
-    #    train_dataloader, eval_dataloader, _  = data_loader_tuples
-    #elif len(data_loader_tuples) == 2:
-    #    train_dataloader, eval_dataloader = data_loader_tuples
-    #elif len(data_loader_tuples) == 1:
-    #    train_dataloader = data_loader_tuples
-    #    eval_dataloader = None
-    #else:
-    #    raise ValueError(f"To many dataloader where returned from 'get_dataloader_and_tokenizer'. Maybe redo this mapping?")
+    if model_wrapper.epochs >= 1:
+        cfg.run.epochs = model_wrapper.epochs + cfg.run.epochs
+        #TODO: construct absolute filepath for checkpoint
+        log.info(f"Resuming training from: {cfg.model.from_file}")
+        log.info(f"Epoch is {model_wrapper.epochs}, running for {cfg.run.epochs}")
+    else:
+        log.info(f"Starting new training")
+
+    #elif "from_pretrained" in cfg.run and isinstance(cfg.run.from_pretrained, str):
+    #    log.info(f"Loading model state dict from {cfg.run.from_pretrained}")
+    #    from qtransform.model.gpt import GPT
+    #    if not isinstance(model, GPT):
+    #        log.error("from from_pretrained only works for GPT style model for now")
+    #        raise Exception
+    #    model = GPT.from_pretrained(model=model, model_type=cfg.run.from_pretrained)
+    #    epochs_to_run = range(1, cfg.run.epochs + 1)
 
     tokenizer_singleton.tokenizer = cfg.tokenizer
     from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
@@ -77,30 +80,43 @@ def run(cfg: DictConfig):
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
     #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
-    optimizer = get_optim(model=model, optim_cfg=cfg.optim)
+    optimizer = get_optim(model=model_wrapper.model, optim_cfg=cfg.optim)
     log.debug(f'Configured optimizer ({type(optimizer)}): {optimizer}')
     scheduler = get_scheduler(optimizer=optimizer, scheduler_cfg = cfg.optim.scheduler)
     log.debug(f'Scheduler: {scheduler}')
     last_checkpoint = None
     # lets go
-    quant_cfg = cfg.get('quantization')
-    if quant_cfg and quant_cfg.quantize:    
-        log.debug(f'Running quantized model')
-        from qtransform.quantization import get_quantizer
-        quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
-        model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
-        model.to(device=device)
-        # TODO make this a decorator so it can return stuff
-        last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
-        #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 
-        if replace_layers_later is not None:
-            model, _ = quantizer.get_quantized_model(replace_layers_later)
-    else:
-        #if hasattr(log,"trace"): log.trace(model)
-        last_checkpoint = train(cfg=cfg, device=device, model=model, train_data_loader=train_dataloader, eval_data_loader=eval_dataloader, optimizer=optimizer, scheduler=scheduler, timestamp=timestamp)
+    
+    ######## replace_layers_later not implemented for modelwrapper yet
+    #quant_cfg = cfg.get('quantization')
+    #if quant_cfg and quant_cfg.quantize:    
+    #    log.debug(f'Running quantized model')
+    #    from qtransform.quantization import get_quantizer
+    #    quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
+    #    model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+    #    model.to(device=device)
+    #    # TODO make this a decorator so it can return stuff
+    #    last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
+    #    #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 
+    #    if replace_layers_later is not None:
+    #        model, _ = quantizer.get_quantized_model(replace_layers_later)
+    last_checkpoint = train(
+        cfg=cfg, 
+        device=device, 
+        model_wrapper=model_wrapper,
+        train_data_loader=train_dataloader, 
+        eval_data_loader=eval_dataloader,
+        optimizer=optimizer, 
+        scheduler=scheduler, 
+        timestamp=timestamp
+    )
     # maybe subsequent jobs can be managed by hydra in the future?
     # when this paradigm comes up more frequently we have to make this a thing ....
     log.debug("Finished training model")
+
+
+
+
     #write checkpoint into fifo if model is not exported, otherwise write path to onnx model into fifo
     from qtransform.utils.helper import write_to_pipe
     if cfg.run.get("export") and last_checkpoint:
@@ -114,7 +130,7 @@ def run(cfg: DictConfig):
             cfg.run = export_cfg.run
         OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
         OmegaConf.update(cfg, "run.running_model", True, force_add=True)
-        if quant_cfg and quant_cfg.quantize:
+        if model_wrapper.quantized:
             OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
         else:
             OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
@@ -126,7 +142,7 @@ def run(cfg: DictConfig):
         
 
 
-def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
+def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
     """ training over epochs with periodic logging and saving"""
     #print(model)
@@ -137,52 +153,9 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
         cfg.run["epochs"] = 1
         log.warn("cfg.run.epochs is 0, performing mini training dry run")
         mini_run = True
-
-    if "from_checkpoint" in cfg.run and isinstance(cfg.run.from_checkpoint, str):
-        log.info(f"Resuming training from {cfg.run.from_checkpoint}")
-        from_epoch, checkpoint = load_checkpoint(cfg)
-        log.info(f"Epoch is {from_epoch}, running for {cfg.run.epochs}")
-        cfg.run.epochs = from_epoch + cfg.run.epochs
-  
-        if 'model_state_dict' not in checkpoint:
-            log.error("Can not load checkpoint with no model_state_dict")
-            raise KeyError
-        if 'optimizer_state_dict' not in checkpoint:
-            log.error("Can not load checkpoint with no optimizer_state_dict")
-            raise KeyError
-        if 'quantized' not in checkpoint:
-            log.warning(f'No info specified if checkpoint is quantized. Assuming false.')
-        elif checkpoint["quantized"]:
-            #skip qparams from checkpoint
-            #for some reason, mlp qparams are saved within checkpoint but not the ones from mha
-            #TODO: investigate
-            from brevitas import config
-            config.IGNORE_MISSING_KEYS = True
-        load_state_dict_proxy(model, checkpoint['model_state_dict'])
-        #model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        metrics = {}
-        
-        if 'metrics' not in checkpoint:
-            log.warn("no metrics found in checkpoint")
-        else:
-            metrics = checkpoint['metrics']
-
-        epochs_to_run = range(from_epoch + 1, cfg.run.epochs + 1)
-    elif "from_pretrained" in cfg.run and isinstance(cfg.run.from_pretrained, str):
-        log.info(f"Loading model state dict from {cfg.run.from_pretrained}")
-        from qtransform.model.gpt import GPT
-        if not isinstance(model, GPT):
-            log.error("from from_pretrained only works for GPT style model for now")
-            raise Exception
-        model = GPT.from_pretrained(model=model, model_type=cfg.run.from_pretrained)
-        epochs_to_run = range(1, cfg.run.epochs + 1)
-    else:
-        log.info(f"Starting new training")
-        epochs_to_run = range(1, cfg.run.epochs + 1)
     
-    #make sure we are on the target device
-    model = model.to(device_singleton.device)
+    epochs_to_run = range(model_wrapper.epochs + 1, cfg.run.epochs + 1)
+    model = model_wrapper.model
 
     if eval_data_loader is None:
         log.warning(f"Not running eval. Eval Dataloader is None")
@@ -221,7 +194,7 @@ def train(model: nn.Module, cfg: DictConfig, device, train_data_loader: torch_da
             last_checkpoint: str = save_checkpoint(cfg=cfg, 
                 model=model, 
                 optimizer=optimizer, 
-                dataset=cfg.dataset.name,
+                dataset_name=cfg.dataset.name,
                 timestamp=timestamp, 
                 epoch=epoch, 
                 metrics=metrics, 

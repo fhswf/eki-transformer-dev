@@ -53,6 +53,7 @@ def run(cfg: DictConfig, **kwargs):
     if  _run:
         model = kwargs["model"]
     else:
+        #TODO: load model
         quant_cfg = cfg.get('quantization')
         replace_layers_later = None
         if quant_cfg and quant_cfg.quantize:    

@@ -1,7 +1,5 @@
 command: infer
 
-checkpoint_dir: models #either absolute path to the directory containing checkpoints or relative path under qtransform/output
-
 num_samples: 10 #generate num_samples 
 max_new_tokens: 500
 temperature: 0.8
