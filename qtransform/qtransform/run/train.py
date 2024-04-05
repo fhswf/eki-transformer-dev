@@ -46,13 +46,22 @@ def run(cfg: DictConfig):
             cfg.dataset.dataloader.update(cuda_kwargs)
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
-
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
+    quant_cfg = cfg.get('quantization')
+    if quant_cfg and quant_cfg.quantize and not model_wrapper.quantized:    
+        log.info(f'Quantizing model')
+        model_wrapper.quantize_model(quant_cfg)
+        #from qtransform.quantization import get_quantizer
+        #quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
+        #model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+        #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 
+        #if replace_layers_later is not None:
+        #    model, _ = quantizer.get_quantized_model(replace_layers_later)
     assert isinstance(model_wrapper, DynamicCheckpointQTRModelWrapper), f'Model should be torch module, not {type(model_wrapper)}'
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model_wrapper.to(device=device)
-    print(model_wrapper)
+    print(model_wrapper.model)
 
     if model_wrapper.epochs >= 1:
         cfg.run.epochs = model_wrapper.epochs + cfg.run.epochs
@@ -86,20 +95,6 @@ def run(cfg: DictConfig):
     log.debug(f'Scheduler: {scheduler}')
     last_checkpoint = None
     # lets go
-    
-    ######## replace_layers_later not implemented for modelwrapper yet
-    #quant_cfg = cfg.get('quantization')
-    #if quant_cfg and quant_cfg.quantize:    
-    #    log.debug(f'Running quantized model')
-    #    from qtransform.quantization import get_quantizer
-    #    quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
-    #    model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
-    #    model.to(device=device)
-    #    # TODO make this a decorator so it can return stuff
-    #    last_checkpoint = quantizer.train_qat(model, train, [cfg, device, train_dataloader, eval_dataloader, optimizer,scheduler, timestamp])
-    #    #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 
-    #    if replace_layers_later is not None:
-    #        model, _ = quantizer.get_quantized_model(replace_layers_later)
     last_checkpoint = train(
         cfg=cfg, 
         device=device, 

@@ -29,7 +29,7 @@ def run(cfg: DictConfig, **kwargs):
     device_singleton.device = cfg.device
     device = device_singleton.device
     # load model checkpoint
-    _, checkpoint = load_checkpoint(cfg=cfg)
+    _, checkpoint = load_checkpoint(from_file=cfg.model.from_file)
     from qtransform.model import get_model
     model = None
     #either load model from checkpoint metadata or from hydra config

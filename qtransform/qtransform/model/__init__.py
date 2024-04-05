@@ -187,6 +187,10 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         self.metrics = {}
     
     def from_file(self, from_file: FromFile):
+        """
+        Instantiates a torch module, initializes its state dict from a checkpoint and performs quantization
+        if the checkpoint was quantized.
+        """
         self.epochs, checkpoint = load_checkpoint(from_file)
         if 'model_state_dict' not in checkpoint:
             log.error("Can not load checkpoint with no model_state_dict")
