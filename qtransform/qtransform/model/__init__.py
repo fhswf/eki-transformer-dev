@@ -10,7 +10,7 @@ from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
 from enum import IntEnum
-from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy
+from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy, FromFile
 from typing import Union, Tuple
 from abc import ABC, abstractmethod
 import transformers
@@ -114,7 +114,7 @@ class ModelConfig():
     cls: str
     calc_loss_in_model: bool
     args: ModelArgs
-    from_file: {"model_dir": str, "filepath": str} = None #torch checkpoint or ONNX model path
+    from_file: FromFile = None #torch checkpoint or ONNX model path
 
     def __setattr__(self, name, value):
         if name == "args" and not isinstance(value, ModelArgs):
@@ -186,13 +186,8 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         self.epochs = 0
         self.metrics = {}
     
-    def from_file(self, path):
-        cfg = DictConfig({
-            "run": {
-                "from_checkpoint": path
-            }
-        })
-        self.epochs, checkpoint = load_checkpoint(cfg)
+    def from_file(self, from_file: FromFile):
+        self.epochs, checkpoint = load_checkpoint(from_file)
         if 'model_state_dict' not in checkpoint:
             log.error("Can not load checkpoint with no model_state_dict")
             raise KeyError
@@ -370,7 +365,7 @@ def get_model_wrapper(model_cfg: DictConfig) -> QTRModelWrapper:
             log.error(f'Field "type" of model_cfg did not match either ONNX, CHECKPOINT or PRETRAINED.')
             raise KeyError()
     from_file = model_cfg.get('from_file')
-    if isinstance(from_file, str) and len(from_file.replace("'", "")) > 0:
+    if isinstance(from_file.filename, str) and len(from_file.filename.replace("'", "")) > 0:
         model.from_file(from_file)
     return model
 

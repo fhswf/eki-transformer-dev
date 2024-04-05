@@ -134,7 +134,7 @@ def run(cfg: DictConfig):
             OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
         else:
             OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
-        kwargs = {"model": model}
+        kwargs = {"model": model_wrapper.model}
         export.run(cfg, **kwargs)
     else:
         #write checkpoint into fifo
@@ -191,7 +191,8 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
             # last_checkpoint is the absolute filepath of the saved checkpoint
-            last_checkpoint: str = save_checkpoint(cfg=cfg, 
+            last_checkpoint: str = save_checkpoint(
+                from_file=cfg.model.from_file,
                 model=model, 
                 optimizer=optimizer, 
                 dataset_name=cfg.dataset.name,

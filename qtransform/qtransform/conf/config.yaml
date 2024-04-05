@@ -59,10 +59,10 @@ seed: 1234567890
 
 model: 
   type: ??? #checkpoint, onnx model, pretrained huggingface model ...
-  #is model_dir/ checkpoint_dir necessary?
+  #TODO: seperation of path with model_dir and filename is kind of redundant
   from_file:
-    model_dir: models #if absolute: append model_dir to filepath. otherwise, use working directory
-    filepath: #can be absolute or relative to model_dir
+    model_dir: #models #if absolute: append model_dir to filepath. if relative: use dir "outputs" of working directory
+    filename: #filename of onnx model/ checkpoint. if absolute: ignore model_dir. otherwise, prepend model_dir to filename 
 
   calc_loss_in_model: False
 
