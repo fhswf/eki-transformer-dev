@@ -8,7 +8,7 @@ import torch
 import tiktoken
 from qtransform import device_singleton
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
-from qtransform.tokenizer.tokenizer import Tokenizer
+from qtransform.tokenizer.tokenizer import TokenizerSingleton
 from qtransform.model import get_model_wrapper, QTRModelWrapper
 from os.path import isdir, exists, join, expanduser, isabs
 from os import makedirs, getcwd, makedirs

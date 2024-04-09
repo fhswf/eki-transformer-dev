@@ -4,7 +4,6 @@ from omegaconf import DictConfig, OmegaConf
 import logging
 import qtransform
 from qtransform.utils import addLoggingLevel
-from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 
 import brevitas

@@ -123,13 +123,14 @@ def run(cfg: DictConfig):
         export_cfg = compose(config_name="config", overrides=["run=export"])
         with open_dict(cfg):
             cfg.run = export_cfg.run
-        OmegaConf.update(cfg, "run.from_checkpoint", last_checkpoint, force_add=True)
+        OmegaConf.update(cfg, "model.from_file.filename", last_checkpoint, force_add=True)
+        OmegaConf.update(cfg, "model.from_file.model_dir", None, force_add=True)
         OmegaConf.update(cfg, "run.running_model", True, force_add=True)
         if model_wrapper.quantized:
             OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
         else:
             OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
-        kwargs = {"model": model_wrapper.model}
+        kwargs = {"model_wrapper": model_wrapper}
         export.run(cfg, **kwargs)
     else:
         #write checkpoint into fifo
@@ -272,7 +273,8 @@ def train_one_epoch(cfg: DictConfig,
                 outputs, loss = model(inputs, labels)
             else:
                 # model does not shift targets => do it our self if dataset also does not do this 
-                if "shift_targets" in model.config.keys() and not model.config.shift_targets:
+                #if "shift_targets" in model.config.keys() and not model.config.shift_targets:
+                if not model.config.shift_targets:
                     outputs = outputs[..., :-1, :].contiguous()
                     labels = labels[..., 1:].contiguous()
                 log.warning(f'Loss function outside of model (e.g. for pretrained models) is not fixed yet')

@@ -1,16 +1,16 @@
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig, open_dict, OmegaConf
 from qtransform.classloader import get_data
 from torch import nn, Tensor, from_numpy
 from torch import compile as torch_compile
 from torch import __version__ as torch_version
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from qonnx.core.onnx_exec import execute_onnx
 from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
 from enum import IntEnum
-from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy, FromFile
+from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy, FromFile, compose_model_path
 from typing import Union, Tuple
 from abc import ABC, abstractmethod
 import transformers
@@ -25,10 +25,6 @@ def warn_once(logger: logging.Logger, msg: str):
     logger.warning(msg)
 
 log = logging.getLogger(__name__)
-
-#TODO: dataclass for model args (block_size, embd_dim, vocab_size ...)
-#TODO 2: QRTModelWrapper for huggingface models
-
 
 class ModelType(IntEnum):
     ONNX = 0
@@ -49,23 +45,6 @@ class ModelInfoMixin():
     def supports(cls) -> ModelSupport():
         return cls.support
 
-def get_model(model_cfg: DictConfig) -> nn.Module:
-    """ get model info and return a configured torch nn.Module instance """
-    log.debug(f"get_model config: {model_cfg}")
-    if model_cfg.get('cls') is None:
-        log.error(f'No model class specified')
-        raise KeyError()
-    from qtransform import model as _model
-    args = model_cfg.get("args")
-
-    #models need to specify their hyperparameters in init parameter named "config"
-    model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module)
-    #construct model if no args have been given
-    if args:
-        model = model(config = args)
-    else:
-        model = model()
-    return model
 
 def get_hf_pretrained(model_cfg: DictConfig) -> nn.Module:
     """
@@ -83,13 +62,6 @@ def get_hf_pretrained(model_cfg: DictConfig) -> nn.Module:
     model = model_cls.from_pretrained(model_id)
     return model
 
-def get_onnx(path: str) -> ModelWrapper:
-    """
-    Alias for load_onnx_model from qtransform.utils.helper.
-    """
-    return load_onnx_model(path)
-
-#basically the same as GPTConfig, TODO: use GPTConfig structure for other models
 @dataclass
 class ModelArgs():
     block_size: int = 1024
@@ -121,10 +93,31 @@ class ModelConfig():
             value = ModelArgs(**value)
         self.__dict__[name] = value
 
+class GenericModel(nn.Module, ABC):
+    """
+    Generic model class to be used for transformer implementations during runs.
+    It is expected that model architecture (mainly context length and embedding dimension) must be passed 
+    during construction.
+    """
+    def __init__(self, config: ModelArgs):
+        super(GenericModel, self).__init__()
+        try:
+            self.config = config = config if isinstance(config, ModelArgs) else ModelArgs(**config)
+            log.debug(f'Applied config: \n{self.config}')
+        except:   
+            log.error(f'Model config \n{config}\n could not be applied. Config can only have options: {[x.name for x in fields(ModelArgs)]}')
+        assert config.vocab_size is not None
+        assert config.block_size is not None
+        log.info(f"Model config: {self.config}")
+    
+    @abstractmethod
+    def forward(self, idx: Tensor, targets: Tensor = None):
+        raise NotImplementedError()
+
 class QTRModelWrapper(ABC):
     """QTRModelWrapper instead of ModelWrapper to avoid naming conflicts with ONNX models"""
     #TODO: properties
-    model: Union[ModelWrapper, nn.Module] 
+    model: Union[ModelWrapper, GenericModel] 
     model_type: ModelType
     _model_cfg: ModelConfig #missing args from config are replaced with default values of dataclass
 
@@ -146,7 +139,7 @@ class QTRModelWrapper(ABC):
     @abstractmethod
     #TODO: inference needs model cfg even though it only needs pathname to model
     #      ONNX models need model property to get config though
-    def from_file(self, path: str):
+    def from_file(self, from_file: FromFile):
         raise NotImplementedError
 
     def __call__(self, idx_cond: Tensor, labels = None):
@@ -165,8 +158,10 @@ class QTRModelWrapper(ABC):
     def to(self, *args, **kwargs) -> None:
         self.model.to(*args, **kwargs)
 
+
 class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
 
+    model: GenericModel
     #only if ptq/ qat is performed
     replace_layers_later: ModelQuantConfig
     quantized: bool
@@ -177,7 +172,6 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
     metrics: dict
 
     def __init__(self, model_cfg):
-        super().__init__(model_cfg=model_cfg)
         self.model_type = ModelType.CHECKPOINT
         self.quantized = False
         self.replace_layers_later = None
@@ -185,7 +179,19 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         self.optimizer_state_dict = None
         self.epochs = 0
         self.metrics = {}
-    
+
+        from_file: FromFile = model_cfg.get("from_file", None)
+        if from_file.filename is not None:
+            self.from_file(from_file)
+            #block size might not be specified, necessary for dataset retrieval
+            #TODO: put this in run __init__
+            for field in fields(self.model_cfg.args):
+                OmegaConf.update(model_cfg, "args" + field.name, getattr(self.model_cfg.args, field.name), force_add=True)
+                log.info(f'Updated model config with checkpoint parameters')
+        else:
+            #not that clean, problem is that checkpoint needs to be loaded in order to have model_cfg
+            super().__init__(model_cfg=model_cfg)
+
     def from_file(self, from_file: FromFile):
         """
         Instantiates a torch module, initializes its state dict from a checkpoint and performs quantization
@@ -203,7 +209,10 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         #support for older checkpoints
         with open_dict(model_cfg):
             model_cfg["type"] = "CHECKPOINT"
-        self.model = get_model(DictConfig(model_cfg))
+        
+        #load model
+        self.load_model(DictConfig(model_cfg))
+        
         #quantize layers to load state dict
         quant_cfg = checkpoint.get("quant_cfg", {"quantize": False})
         if quant_cfg["quantize"]:
@@ -213,14 +222,16 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             #for some reason, mlp qparams are saved within checkpoint but not the ones from mha
             from brevitas import config
             config.IGNORE_MISSING_KEYS = True
+        
+        #load state from checkpoint
         load_state_dict_proxy(self.model, checkpoint["model_state_dict"])
-        self.model_cfg = model_cfg
         self.optimizer_state_dict = checkpoint["optimizer_state_dict"]
         self.metrics = checkpoint['metrics']
 
 
     def save_model(self, cfg: DictConfig):
         #save_checkpoint(cfg, model = cfg.model, dataset = cfg.dataset, optimizer = cfg.optimizer, timestamp, metrics, epoch, model_cfg, tokenizer_cfg)
+        #basically the same as save_checkpoint from helpers
         raise NotImplementedError()
 
     def load_model(self, model_cfg: DictConfig):
@@ -260,6 +271,24 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         else:
             log.error(f'Cannot compile with torch version: {torch_version} (needs to be >= 2.0)')
             
+def get_model(model_cfg: DictConfig) -> nn.Module:
+    """ get model info and return a configured torch nn.Module instance """
+    log.debug(f"get_model config: {model_cfg}")
+    if model_cfg.get('cls') is None:
+        log.error(f'No model class specified')
+        raise KeyError()
+    from qtransform import model as _model
+    args = model_cfg.get("args")
+
+    #models need to specify their hyperparameters in init parameter named "config"
+    model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module)
+    #construct model if no args have been given
+    if args:
+        model = model(config = args)
+    else:
+        model = model()
+    return model
+
 class PretrainedHuggingfaceQRTModelWrapper(QTRModelWrapper):
 
     def __init__(self, model_cfg):
@@ -303,34 +332,34 @@ class PretrainedHuggingfaceQRTModelWrapper(QTRModelWrapper):
         #loss can be None if no labels are supplied
         return (out.logits, out.loss if out.loss is not None else None)
 
-    """
-    TODO: 
-        using onnxruntime-gpu yields CUDA usage of: 
-            Self CPU time total: 2.055s
-            Self CUDA time total: 7.967ms
-        without CUDA usage:
-            Self CPU time total: 1.993s
-            Self CUDA time total: 8.410ms
+"""
+TODO: 
+    using onnxruntime-gpu yields CUDA usage of: 
+        Self CPU time total: 2.055s
+        Self CUDA time total: 7.967ms
+    without CUDA usage:
+        Self CPU time total: 1.993s
+        Self CUDA time total: 8.410ms
 
-        maybe due to: https://onnxruntime.ai/docs/performance/tune-performance/troubleshooting.html#why-is-my-model-running-slower-on-gpu-than-on-cpu
-    """
+    maybe due to: https://onnxruntime.ai/docs/performance/tune-performance/troubleshooting.html#why-is-my-model-running-slower-on-gpu-than-on-cpu
+"""
 class ONNXQTRModelWrapper(QTRModelWrapper):
 
     def __init__(self, model_cfg: DictConfig):
         super().__init__(model_cfg=model_cfg)
         self.model_type = ModelType.ONNX
-        self.ONNX_LABELS_WARNING = True
         log.info(f'ONNX model is on: {onnxruntime.get_device()}')
 
     def load_model(self, model_cfg: DictConfig):
+        assert model_cfg.from_file 
         self.from_file(model_cfg.from_file)
         #TODO: context length could be infered from:
         #model.graph.input[0].type.tensor_type.shape.dim[-1]
         self.model_cfg = model_cfg
 
-    #TODO: model_cfg points to different model still, from_file does not need model_cfg though
-    def from_file(self, path: str): 
-        self.model = get_onnx(path)
+    def from_file(self, from_file: FromFile):
+        path = compose_model_path(from_file)
+        self.model = load_onnx_model(path)
 
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         device = idx_cond.device
@@ -341,9 +370,6 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
             idict = {"input": idx_cond.cpu().numpy()}
         # use infer_shapes()
         #forward pass of gpt model returns the non-softmaxed token predictions
-        if labels is not None and self.ONNX_LABELS_WARNING:
-            log.warning("labels are given to external forwards pass wrapper but they are ignored atm for onnx runs. Suppressing this warning")
-            self.ONNX_LABELS_WARNING = False
         odict = execute_onnx(self.model, idict)
         logits = from_numpy(odict["output"]).to(device=device)
         return logits 
@@ -354,10 +380,19 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
     def to(self, **kwargs):
         pass
 
+
+
+"""
+    1. new run: specify model config
+    2. from checkpoint: model config in checkpoint -> check if hydra model config is specified
+    3. from onnx: model config not necessary
+    -> cases determined by model.from_file
+"""
 #either get type from model_cfg or use ModelType Enum as param
 def get_model_wrapper(model_cfg: DictConfig) -> QTRModelWrapper:
     assert isinstance(model_cfg.get('type'), str), f'Field "type" within model_cfg not specified'
     model_type = model_cfg.get('type').upper()
+    #TODO: when specifying checkpoint, model config not really necessary
     match model_type:
         case "ONNX":
             model = ONNXQTRModelWrapper(model_cfg)
@@ -368,8 +403,9 @@ def get_model_wrapper(model_cfg: DictConfig) -> QTRModelWrapper:
         case _:
             log.error(f'Field "type" of model_cfg did not match either ONNX, CHECKPOINT or PRETRAINED.')
             raise KeyError()
-    from_file = model_cfg.get('from_file')
-    if isinstance(from_file.filename, str) and len(from_file.filename.replace("'", "")) > 0:
-        model.from_file(from_file)
+    #from_file is loaded within workflow of QRTModelWrapper, no need to explicitly call it here
+    #from_file: FromFile = model_cfg.get('from_file')
+    #if isinstance(from_file.filename, str) and len(from_file.filename.replace("'", "")) > 0:
+    #    model.from_file(from_file)
     return model
 

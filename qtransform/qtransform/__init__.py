@@ -3,7 +3,31 @@ import os
 from contextlib import contextmanager
 from torch import device, cuda, backends
 import torch
+from abc import ABC
 log = logging.getLogger(__name__)
+
+
+#idea stolen from:
+#https://stackoverflow.com/questions/100003/what-are-metaclasses-in-python and https://refactoring.guru/design-patterns/singleton/python/example
+class SingletonMeta(type, ABC):
+    """
+    Uses metaclasses in order to implement a singleton like structure.
+    It keeps track of objects of a certain class and adds them to _instances
+    if a class using SingletonMeta is instantiated.
+    Each object of a class is instantiated only once.
+    """
+
+    _instances = {}
+
+    def __call__(cls, *args, **kwargs):
+        """
+        Possible changes to the value of the `__init__` argument do not affect
+        the returned instance.
+        """
+        if cls not in cls._instances:
+            instance = super().__call__(*args, **kwargs)
+            cls._instances[cls] = instance
+        return cls._instances[cls]
 
 def get_module_config_path():
     return os.path.join('/'.join(__file__.split('/')[:-2]), 'qtransform' , 'conf')

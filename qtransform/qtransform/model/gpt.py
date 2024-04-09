@@ -8,7 +8,7 @@ from torch import nn as nn
 from torch.nn import functional as F
 from qtransform.model.modules import LayerNorm, TransformerBlock
 from qtransform.model import modules as custom_nn
-from qtransform.model import ModelArgs
+from qtransform.model import ModelArgs, GenericModel
 from brevitas import nn as qnn
 import logging
 log = logging.getLogger(__name__)
@@ -32,18 +32,11 @@ class Model(ABC):
         """
         raise NotImplementedError
 from dataclasses import fields
-class GPT(nn.Module):
+
+class GPT(GenericModel):
     def __init__(self, config: ModelArgs):
-        super().__init__()
-        try:
-            self.config = config = config if isinstance(config, ModelArgs) else ModelArgs(**config)
-            log.debug(f'Applied config: \n{self.config}')
-        except:   
-            log.error(f'Model config \n{config}\n could not be applied. Config can only have options: {[x.name for x in fields(ModelArgs)]}')
-        assert config.vocab_size is not None
-        assert config.block_size is not None
-        log.info(f"Model config: {self.config}")
-        
+        super().__init__(config)
+        #TODO: attribute initialization from config could go to GenericModel
         self.single_output = config.single_output
         self.use_weight_tying = config.single_output
         self.norm_size = None

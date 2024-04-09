@@ -57,6 +57,7 @@ def compose_model_path(from_file: FromFile, not_exist_error = True) -> str:
     Composes an absolute filepath from a filename and a directory path. 
     The filename can be absolute, ignoring model_dir. Otherwise, model_dir is prepended to filename.
     """
+    log.warning(from_file)
     if not isinstance(from_file, FromFile):
         if isinstance(from_file, Union[Dict, DictConfig]):
             from_file = FromFile(**from_file)
@@ -66,6 +67,7 @@ def compose_model_path(from_file: FromFile, not_exist_error = True) -> str:
     filename = from_file.filename
     model_dir = from_file.model_dir
     chkpt_folder = get_default_chkpt_folder()
+    assert isinstance(filename, str), f'Could not load checkpoint/model with filename: "{filename}"'
     #from_checkpoint is the absolute path to a file, ignore checkpoint_dir 
     if os.path.isabs(filename):
         chkpt_folder, from_checkpoint = os.path.split(filename)

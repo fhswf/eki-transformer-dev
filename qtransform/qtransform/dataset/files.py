@@ -15,7 +15,6 @@ from qtransform.utils.introspection import _get_module, get_classes, concat_path
 import qtransform
 from os import listdir, makedirs
 from os.path import join, exists
-from qtransform.tokenizer import Tokenizer, get_tokenizer
 import datasets
 from datasets.dataset_dict import DatasetDict
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
