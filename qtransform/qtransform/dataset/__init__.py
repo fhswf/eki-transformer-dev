@@ -39,7 +39,7 @@ class DatasetSplits:
     """
         Dataclass containing the datasets for training, eval, testing, benchmark along with the name of the dataset.
     """
-    splits: InitVar[Dict[DatasetSplitType, Dataset]] = None
+    splits: InitVar[Dict[DatasetSplitType, Any]] = None
     
     def __init__(self):
         #access splits with Enum values
@@ -50,12 +50,17 @@ class DatasetSplits:
             DatasetSplitType.BENCH: None
         }
     
-    # make class subscritable aka: self['train'] works
+    # make class subscritable aka: self[DatasetSplitType.TRAIN] or self["TRAIN"] works
     def __getitem__(self, item):
+        if isinstance(item, str):
+            item = getattr(DatasetSplitType, item.upper())
         return self.splits[item]
+
 
     #TODO: setting split to any value theoretically possible
     def __setitem__(self, index, item):
+        if not hasattr(item, '__getitem__'):
+            log.error(f'No iteration with torch dataloader possible if {item.__class__.__name__} does not implement __getitem__')
         self.splits[index] = item
 
 

@@ -8,7 +8,7 @@ import torch
 import tiktoken
 from qtransform import device_singleton
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
-from qtransform.tokenizer.tokenizer import TokenizerSingleton
+from qtransform.tokenizer.tokenizer import Tokenizer
 from qtransform.model import get_model_wrapper, QTRModelWrapper
 from os.path import isdir, exists, join, expanduser, isabs
 from os import makedirs, getcwd, makedirs
@@ -83,11 +83,12 @@ def infer(cfg: DictConfig, device: Any):
         the start prompt has to be tokenized and passed differently. However, some params such as the number of tokens, temperature
         etc. are not passed as args.
         """
+        tokenizer_singleton.tokenizer = cfg.tokenizer
         tokenizer = tokenizer_singleton.tokenizer
         log.warning(f'Dataset and tokenizer usage is still a WIP, for now gpt2 tiktokenizer is used for inference')
         start_ids = tokenizer.encode(start)
         x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])
-        log.info(f'Running inference from {model_wrapper.model_type}.')
+        log.info(f'Running inference from {model_wrapper.model_type.name}.')
         for k in range(num_samples):
             #TODO: block_size for onnx models
             y: torch.Tensor = generate(model_wrapper = model_wrapper, idx = x, max_new_tokens=max_new_tokens, temperature=temperature, top_k=top_k)

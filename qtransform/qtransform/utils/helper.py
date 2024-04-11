@@ -16,6 +16,10 @@ from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
 from dataclasses import dataclass
+from hydra.core.utils import JobReturn, JobStatus
+from hydra.experimental.callback import Callback
+from pathlib import Path
+import pickle
 
 log = logging.getLogger(__name__)
 
@@ -57,7 +61,6 @@ def compose_model_path(from_file: FromFile, not_exist_error = True) -> str:
     Composes an absolute filepath from a filename and a directory path. 
     The filename can be absolute, ignoring model_dir. Otherwise, model_dir is prepended to filename.
     """
-    log.warning(from_file)
     if not isinstance(from_file, FromFile):
         if isinstance(from_file, Union[Dict, DictConfig]):
             from_file = FromFile(**from_file)
@@ -207,3 +210,39 @@ def write_to_pipe(cfg: DictConfig, content: str) -> None:
         #problematic if something should be done after writing into the pipe
         with open(pipe_name, 'w') as pipe:
             pipe.write(content)
+
+
+#from: hydra.experimental.callbacks
+class PickleJobInfoCallback(Callback):
+    """Pickle the job config/return-value in ${output_dir}/{config,job_return}.pickle"""
+
+    output_dir: Path
+
+    def __init__(self) -> None:
+        self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+    def on_job_start(self, config: DictConfig, **kwargs: Any) -> None:
+        log.info(f'Saving hydra config at the end of run script')
+
+    def on_job_end(self, config: DictConfig, **kwargs: Any) -> None:
+        """
+        Pickle the job's config in ${output_dir}/config.pickle.
+        It is saved at the end in order to reflect dynamic changes in the config
+        """
+        self.output_dir = Path(config.hydra.runtime.output_dir) / Path(
+            config.hydra.output_subdir
+        )
+        filename = "config.pickle"
+        self._save_pickle(obj=config, filename=filename, output_dir=self.output_dir)
+        self.log.info(f"Saving job configs in {self.output_dir / filename}")
+
+        #Pickle the job's return value in ${output_dir}/job_return.pickle.
+        filename = "job_return.pickle"
+        self._save_pickle(obj=job_return, filename=filename, output_dir=self.output_dir)
+        self.log.info(f"Saving job_return in {self.output_dir / filename}")
+
+    def _save_pickle(self, obj: Any, filename: str, output_dir: Path) -> None:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        assert output_dir is not None
+        with open(str(output_dir / filename), "wb") as file:
+            pickle.dump(obj, file, protocol=4)

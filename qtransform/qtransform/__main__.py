@@ -1,13 +1,18 @@
 import os
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig, OmegaConf, open_dict
+from pickle import load
 import logging
 import qtransform
 from qtransform.utils import addLoggingLevel
+from pprint import PrettyPrinter
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 
 import brevitas
 #brevitas.config.IGNORE_MISSING_KEYS = True
+
+log = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path=qtransform.get_module_config_path(), config_name="config.yaml")
 def cli_wrapper(cfg: DictConfig):
@@ -15,17 +20,49 @@ def cli_wrapper(cfg: DictConfig):
     this function exsists so that one can call qtransform from cli with prepending "python -m ".
     not that additional configs can be loaded via --config-dir https://github.com/facebookresearch/hydra/issues/874
     """
+    check_previous_run(cfg)
     main(cfg)
 
 @hydra.main(version_base=None, config_path="conf", config_name="config.yaml")
 def module_wrapper(cfg: DictConfig):
+    cfg = check_previous_run(cfg)
     main(cfg)
 
-def main(cfg: DictConfig):
+def check_previous_run(cfg: DictConfig):
+    #override currently specified args with previous run config
+    from_previous_run = cfg.from_previous_run
+    if from_previous_run is not None:
+        if os.path.isfile(from_previous_run):
+            log.warn(f'from_previous_run expects directory path, not filepath. Removing filename')
+            output_dir, _ = os.path.split(from_previous_run)
+        elif os.path.isabs(from_previous_run):
+            output_dir = from_previous_run
+        else:
+            #remove current timestamp
+            output_dir, _ = os.path.split(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
+            output_dir = os.path.join(output_dir, from_previous_run, '.hydra')
+        config_path = os.path.join(output_dir, 'config.pickle')
+        with open(config_path, 'rb') as input:
+            config = load(input)
+        assert isinstance(config, DictConfig), f'Pickle file from {from_previous_run} is not a DictConfig file'
+        with open_dict(config):
+            del config["hydra"]
+            #del config["run"]
+        log.debug(f'Loaded config from previous run: {PrettyPrinter(indent=1).pformat(config)}')
+        #keep run config, override everything else
+        config.run = cfg.run
+        return config
+        #TODO: decide which fields get overwritten
+        #no idea if HydraConfig.instance() is important
+        #log.critical(HydraConfig.instance().cfg)
+        #HydraConfig.instance().set_config(config)
+        #HydraConfig.instance()
 
+def main(cfg: DictConfig):
     logging.captureWarnings(True)
     root_log = logging.getLogger("root")
     log = logging.getLogger(f"{__package__}.{__name__}")   
+    log.critical(cfg)
     if "trace" in cfg and cfg.trace:
         root_log.setLevel(logging.TRACE)
         log.warning("TRACE ENABLED")

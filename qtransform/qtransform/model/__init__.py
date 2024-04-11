@@ -122,7 +122,7 @@ class QTRModelWrapper(ABC):
     _model_cfg: ModelConfig #missing args from config are replaced with default values of dataclass
 
     def __init__(self, model_cfg: Union[ModelConfig, DictConfig]):
-        self.load_model(model_cfg)
+        pass
 
     @property
     def model_cfg(self):
@@ -187,10 +187,10 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             #TODO: put this in run __init__
             for field in fields(self.model_cfg.args):
                 OmegaConf.update(model_cfg, "args" + field.name, getattr(self.model_cfg.args, field.name), force_add=True)
-                log.info(f'Updated model config with checkpoint parameters')
+            log.info(f'Updated model config with checkpoint parameters')
         else:
             #not that clean, problem is that checkpoint needs to be loaded in order to have model_cfg
-            super().__init__(model_cfg=model_cfg)
+            self.load_model(model_cfg)
 
     def from_file(self, from_file: FromFile):
         """
@@ -292,7 +292,7 @@ def get_model(model_cfg: DictConfig) -> nn.Module:
 class PretrainedHuggingfaceQRTModelWrapper(QTRModelWrapper):
 
     def __init__(self, model_cfg):
-        super().__init__(model_cfg=model_cfg)
+        self.load_model(model_cfg)
         self.model_type = ModelType.PRETRAINED
 
     def from_file(self, path):
@@ -346,7 +346,7 @@ TODO:
 class ONNXQTRModelWrapper(QTRModelWrapper):
 
     def __init__(self, model_cfg: DictConfig):
-        super().__init__(model_cfg=model_cfg)
+        self.load_model(model_cfg)
         self.model_type = ModelType.ONNX
         log.info(f'ONNX model is on: {onnxruntime.get_device()}')
 
@@ -392,6 +392,7 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
 def get_model_wrapper(model_cfg: DictConfig) -> QTRModelWrapper:
     assert isinstance(model_cfg.get('type'), str), f'Field "type" within model_cfg not specified'
     model_type = model_cfg.get('type').upper()
+    assert hasattr(ModelType, model_type), f'Field "type" ({model_type} not supported)'
     #TODO: when specifying checkpoint, model config not really necessary
     match model_type:
         case "ONNX":

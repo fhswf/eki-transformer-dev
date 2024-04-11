@@ -23,6 +23,13 @@ from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpoi
 log = logging.getLogger(__name__)
 from torch.profiler import profile, record_function, ProfilerActivity
 
+from functools import lru_cache
+
+# Keep track of 10 different messages and then warn again
+@lru_cache(1)
+def warn_once(logger: logging.Logger, msg: str):
+    logger.warning(msg)
+
 def run(cfg: DictConfig):
     """ launches training with provided config"""
     log.info("================")
@@ -48,9 +55,12 @@ def run(cfg: DictConfig):
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     quant_cfg = cfg.get('quantization')
-    if quant_cfg and quant_cfg.quantize and not model_wrapper.quantized:    
-        log.info(f'Quantizing model')
-        model_wrapper.quantize_model(quant_cfg)
+    if quant_cfg and quant_cfg.quantize:
+        if not model_wrapper.quantized:    
+            log.info(f'Quantizing model')
+            model_wrapper.quantize_model(quant_cfg)
+        else:
+            warn_once(log, f'Model was already quantized, ignoring quant_cfg from hydra')
         #from qtransform.quantization import get_quantizer
         #quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         #model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
@@ -147,17 +157,17 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
     last_checkpoint = None
     if cfg.run.epochs == 0:
         cfg.run["epochs"] = 1
-        log.warn("cfg.run.epochs is 0, performing mini training dry run")
+        warn_once(log, f"cfg.run.epochs is 0, performing mini training dry run")
         mini_run = True
     
     epochs_to_run = range(model_wrapper.epochs + 1, cfg.run.epochs + 1)
     model = model_wrapper.model
 
     if eval_data_loader is None:
-        log.warning(f"Not running eval. Eval Dataloader is None")
+        warn_once(log, f"Not running eval. Eval Dataloader is None")
 
     if cfg.optim.scheduler.warmup_epochs > epochs_to_run.stop -1:
-        log.warning(f'Warmup epochs are larger than epochs to run, causing scheduler to never adjust learning rate.')
+        warn_once(log, f'Warmup epochs are larger than epochs to run, causing scheduler to never adjust learning rate.')
     # training loop
     for epoch in epochs_to_run:
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
@@ -269,7 +279,7 @@ def train_one_epoch(cfg: DictConfig,
             labels = labels.to(device_singleton.device)            
             if cfg.model.calc_loss_in_model:
                 if "shift_targets" in model.config.__dict__.keys() and not model.config.shift_targets:
-                    log.warning(f"model does not shift_targets accoring to config but calculates loss inside model, this might not work")
+                    warn_once(log, f"model does not shift_targets accoring to config but calculates loss inside model, this might not work")
                 outputs, loss = model(inputs, labels)
             else:
                 # model does not shift targets => do it our self if dataset also does not do this 
@@ -277,7 +287,7 @@ def train_one_epoch(cfg: DictConfig,
                 if not model.config.shift_targets:
                     outputs = outputs[..., :-1, :].contiguous()
                     labels = labels[..., 1:].contiguous()
-                log.warning(f'Loss function outside of model (e.g. for pretrained models) is not fixed yet')
+                warn_once(log, f'Loss function outside of model (e.g. for pretrained models) is not fixed yet')
                 outputs, _ = model(inputs)
                 #log.critical(outputs)
                 outputs = F.log_softmax(outputs, dim=2)

@@ -1,6 +1,5 @@
 
 type: ??? #name of python file which implements a class of type TokenizedDatasetGenerator
-generator: ???
 args:
     #for tokenized dataset
   block_size: ${model.args.block_size}

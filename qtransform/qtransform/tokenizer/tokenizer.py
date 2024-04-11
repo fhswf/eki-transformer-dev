@@ -26,40 +26,6 @@ class Metadata():
     num_tokens: int = 0
     module: str = ""
 
-class Tokenizer2(ABC):
-
-    def encode(self, text: Union[str, List[str]]) -> Union[List[int],List[List[int]]]:
-        ret = None
-        if isinstance(text, List):
-            ret = []
-            for l in text:
-                ret.append(self._encode(l))
-        elif isinstance(text, str):
-            ret = self._encode(text)
-        else:
-            raise ValueError("input: text must be of type str or List[str]")
-        return ret  # token_ids[] or token_ids[][] as nested list of lists
-
-    def decode(self, idx: List[int]) -> str:
-        ret = None
-        if any(isinstance(i, list) for i in idx):
-            ret = []
-            for l in idx:
-                ret.append(self._decode(l))
-        elif all(isinstance(i, int) for i in idx):
-            ret = self._encode(idx)
-        else:
-            raise ValueError("input: idx must be of type or List[int] or or List[List[int]]")
-        return ret  # str or str[] as list of text
-    @abstractmethod
-    def _encode(self, text) -> List[int]:
-        raise NotImplementedError
-    @abstractmethod
-    def _decode(self, idx: List[int]) -> str:
-        raise NotImplementedError
-    
-    pass
-
 class Tokenizer(ABC):
     """
         Generic wrapper around different tokenizer implementations to unify their interfaces within the project. 
