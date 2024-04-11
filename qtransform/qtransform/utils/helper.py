@@ -212,6 +212,23 @@ def write_to_pipe(cfg: DictConfig, content: str) -> None:
             pipe.write(content)
 
 
+class FromFileInfoCallback(Callback):
+    "Updates the model.from_file field to suit the newly generated checkpoint/ onnx model"
+
+    def __init__(self) -> None:
+        self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+    def on_job_start(self, config: DictConfig, **kwargs: Any) -> None:
+        log.info(f'Updating from_file at end of script')
+
+    def on_job_end(self, config: DictConfig, **kwargs: Any) -> None:
+        """
+        Pickle the job's config in ${output_dir}/config.pickle.
+        It is saved at the end in order to reflect dynamic changes in the config
+        """
+        log.critical("TODO: IMPLEMENT FROM_FILE CHANGING")
+        #cfg.model.from_file = "TEST"
+
 #from: hydra.experimental.callbacks
 class PickleJobInfoCallback(Callback):
     """Pickle the job config/return-value in ${output_dir}/{config,job_return}.pickle"""
