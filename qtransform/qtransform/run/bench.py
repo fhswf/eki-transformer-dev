@@ -3,7 +3,7 @@ log = logging. getLogger(__name__)
 import torch
 import torch.nn.functional as F
 from omegaconf import DictConfig, open_dict
-from . import get_dataloader_and_tokenizer, generate
+from . import generate
 #TODO: make ... import compatible
 from qtransform.model import get_model_wrapper, QTRModelWrapper
 from qtransform import device_singleton
@@ -71,11 +71,7 @@ def run(cfg : DictConfig):
 
 def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[str, None]:
     print(model_wrapper.model)
-    if "num_samples" not in cfg.run:
-        lens = min(len(bench_dataloader), cfg.run.max_iters)
-    else:
-        lens = min(len(bench_dataloader), cfg.run.num_samples)
-
+    lens = min(len(bench_dataloader), cfg.run.max_iters)
     log.info(f"Datalaoder has {len(bench_dataloader)} number of samples ")
     log.info(f"Running Benchmark for {lens} samples")
     log.warning(f"Datalaoder length might not be correct")
@@ -182,7 +178,7 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
         torch.cuda.empty_cache()
     #table printing from: https://learnpython.com/blog/print-table-in-python/
     #Benchmarking columns are derived from the attention is all you need paper (https://arxiv.org/pdf/1706.03762.pdf, page 9)
-    return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_wrapper.model_type, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid')
+    return tabulate([['path', 'avg_ppl', 'acc_in_%'],[model_wrapper.model_type.name, perplexity.mean(), accuracy.mean()]],headers='firstrow', tablefmt='simple_grid')
 
 """
 calculating the perplexity usually occurs with an input of smaller size than the model's max context length

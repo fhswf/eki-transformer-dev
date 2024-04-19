@@ -12,6 +12,8 @@ hydra:
   callbacks: 
     save_job_info:
       _target_: qtransform.utils.helper.PickleJobInfoCallback
+    update_from_file:
+      _target_: qtransform.utils.helper.FromFileInfoCallback
     #TODO: update from_file with generated model here if run=train or run=export
   
 #TODO: write last checkpoint/ onnx model name here

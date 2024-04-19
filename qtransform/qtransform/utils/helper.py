@@ -4,7 +4,7 @@ from typing import Any, Dict, Tuple, Union
 import hydra
 from pprint import pprint
 from hydra.core.hydra_config import HydraConfig
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import OmegaConf, DictConfig, open_dict
 import torch
 import logging
 from torch import nn
@@ -20,6 +20,7 @@ from hydra.core.utils import JobReturn, JobStatus
 from hydra.experimental.callback import Callback
 from pathlib import Path
 import pickle
+from pprint import PrettyPrinter
 
 log = logging.getLogger(__name__)
 
@@ -212,6 +213,62 @@ def write_to_pipe(cfg: DictConfig, content: str) -> None:
             pipe.write(content)
 
 
+#overall, callbacks arent that useful for manipulating the state of the application, but they could be useful for type checking
+#the problem is that callbacks are called with the config at the start of the run script and do not reflect changes made to it
+#it is possible to define our own callback interface and use them within the main script
+#it does the same thing but it retrieves config via HydraConfig inbetween each event, thereby allowing changes
+#it is not as configurable though
+class FromFileInfoCallback(Callback):
+    "Updates the model.from_file field to suit the newly generated checkpoint/ onnx model"
+
+    def __init__(self) -> None:
+        self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+    def on_job_start(self, config: DictConfig, **kwargs: Any) -> None:
+        #######################
+        from_previous_run = config.from_previous_run
+        if from_previous_run is None:
+            return
+        log.info(f'Updating config with from_previous_run={from_previous_run}')
+        if os.path.isfile(from_previous_run):
+            log.warn(f'from_previous_run expects directory path, not filepath. Removing filename')
+            output_dir, _ = os.path.split(from_previous_run)
+        elif os.path.isabs(from_previous_run):
+            output_dir = from_previous_run
+        else:
+            #remove current timestamp
+            output_dir, _ = os.path.split(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
+            output_dir = os.path.join(output_dir, from_previous_run, '.hydra')
+        config_path = os.path.join(output_dir, 'config.pickle')
+        with open(config_path, 'rb') as input:
+            new_config = pickle.load(input)
+        assert isinstance(config, DictConfig), f'Pickle file from {from_previous_run} is not a DictConfig file'
+            #del config["run"]
+        log.debug(f'Loaded config from previous run: {PrettyPrinter(indent=1).pformat(config)}')
+        #update global hydra config to access new keys in callbacks
+        #hydra.runtime.choices: chosen yaml cfg files
+        #hydra.overrides.task: fields overwritten in cmd line
+        current_cfg = HydraConfig.instance().get()
+        """
+        with open_dict(new_config):
+            #for now, ignore overrides from cli except for "run" and start with previous cfg
+            new_overrides = set(new_config.hydra.overrides.task) - set(current_cfg.overrides.task)
+            log.warning(f'Overrides for {new_overrides} except for "run" are ignored')
+            #which yaml files for each config group were chosen
+            new_config.hydra.runtime.choices = current_cfg.runtime.choices
+            new_config.hydra.runtime.cwd = current_cfg.runtime.cwd
+            new_config.hydra.runtime.output_dir = current_cfg.runtime.output_dir
+            new_config.hydra.job.override_dirname = current_cfg.job.override_dirname
+        """
+        #problem: jobs are supplied with the same config within function run_job
+        #https://github.com/facebookresearch/hydra/blob/main/hydra/core/utils.py
+        #we could fork hydra and do something about it but that wouldnt be a good idea
+        HydraConfig.instance().set(new_config)
+
+    def on_job_end(self, config: DictConfig, **kwargs: Any) -> None:
+        #cfg.model.from_file = "TEST"
+        pass
+
 #from: hydra.experimental.callbacks
 class PickleJobInfoCallback(Callback):
     """Pickle the job config/return-value in ${output_dir}/{config,job_return}.pickle"""
@@ -229,10 +286,12 @@ class PickleJobInfoCallback(Callback):
         Pickle the job's config in ${output_dir}/config.pickle.
         It is saved at the end in order to reflect dynamic changes in the config
         """
+        #problem: if from_previous_run is supplied, config fields are not updated when pickling them
         self.output_dir = Path(config.hydra.runtime.output_dir) / Path(
             config.hydra.output_subdir
         )
         filename = "config.pickle"
+        #TODO: update model.from_file in HydraConf.instance()
         self._save_pickle(obj=config, filename=filename, output_dir=self.output_dir)
         self.log.info(f"Saving job configs in {self.output_dir / filename}")
 
