@@ -1,6 +1,6 @@
 command: "bench"
 el: 2
-num_samples: ??? #amount of samples to retrieve when benchmarking. the length of one sample is equal to the model's block size
+max_iters: ??? #amount of samples to retrieve when benchmarking. the length of one sample is equal to the model's block size
 out_dir: ''
 profile: True
 log_steps_interval: 10

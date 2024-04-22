@@ -5,6 +5,7 @@ from torch import device, cuda, backends
 import torch
 from abc import ABC
 log = logging.getLogger(__name__)
+from omegaconf import DictConfig
 
 
 #idea stolen from:
@@ -29,6 +30,29 @@ class SingletonMeta(type, ABC):
             cls._instances[cls] = instance
         return cls._instances[cls]
 
+class ConfigSingleton(metaclass=SingletonMeta):
+    """
+    Config singleton in order to manipulate the config from different places without passing them as a reference each time.
+    """
+    _config: DictConfig
+
+    def __init__(self):
+        #no arguments to avoid having to call constructor with args each time config needs to be accessed
+        #instead of: ConfigSingleton(config).config, we can use ConfigSingleton().config
+        pass
+
+    @property
+    def config(self):
+        return self._config
+    
+    @config.setter
+    def config(self, value: DictConfig):
+        if not isinstance(value, DictConfig):
+            try:
+                value = DictConfig(value)
+            except:
+                log.error(f'Config value invalid: "{value}"', exc_info=True)
+        self._config = value
 def get_module_config_path():
     return os.path.join('/'.join(__file__.split('/')[:-2]), 'qtransform' , 'conf')
 

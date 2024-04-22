@@ -18,7 +18,7 @@ from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
 from qtransform.utils.helper import load_state_dict_proxy
 from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpointQTRModelWrapper
-
+from qtransform import ConfigSingleton
 
 log = logging.getLogger(__name__)
 from torch.profiler import profile, record_function, ProfilerActivity
@@ -71,7 +71,7 @@ def run(cfg: DictConfig):
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model_wrapper.to(device=device)
-    print(model_wrapper.model)
+    log.debug(model_wrapper.model)
 
     if model_wrapper.epochs >= 1:
         cfg.run.epochs = model_wrapper.epochs + cfg.run.epochs
@@ -118,8 +118,11 @@ def run(cfg: DictConfig):
     # maybe subsequent jobs can be managed by hydra in the future?
     # when this paradigm comes up more frequently we have to make this a thing ....
     log.debug("Finished training model")
-
-
+    #update from_file for next run
+    with open_dict(cfg):
+        log.info(f'Updating from_file for rerun')
+        cfg.model.from_file.filename = last_checkpoint
+        cfg.model.from_file.model_dir = None
 
 
     #write checkpoint into fifo if model is not exported, otherwise write path to onnx model into fifo

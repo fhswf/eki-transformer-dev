@@ -4,7 +4,7 @@ from typing import Any, Dict, Tuple, Union
 import hydra
 from pprint import pprint
 from hydra.core.hydra_config import HydraConfig
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import OmegaConf, DictConfig, open_dict
 import torch
 import logging
 from torch import nn
@@ -20,6 +20,7 @@ from hydra.core.utils import JobReturn, JobStatus
 from hydra.experimental.callback import Callback
 from pathlib import Path
 import pickle
+from pprint import PrettyPrinter
 
 log = logging.getLogger(__name__)
 
@@ -211,55 +212,3 @@ def write_to_pipe(cfg: DictConfig, content: str) -> None:
         with open(pipe_name, 'w') as pipe:
             pipe.write(content)
 
-
-class FromFileInfoCallback(Callback):
-    "Updates the model.from_file field to suit the newly generated checkpoint/ onnx model"
-
-    def __init__(self) -> None:
-        self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-
-    def on_job_start(self, config: DictConfig, **kwargs: Any) -> None:
-        log.info(f'Updating from_file at end of script')
-
-    def on_job_end(self, config: DictConfig, **kwargs: Any) -> None:
-        """
-        Pickle the job's config in ${output_dir}/config.pickle.
-        It is saved at the end in order to reflect dynamic changes in the config
-        """
-        log.critical("TODO: IMPLEMENT FROM_FILE CHANGING")
-        #cfg.model.from_file = "TEST"
-
-#from: hydra.experimental.callbacks
-class PickleJobInfoCallback(Callback):
-    """Pickle the job config/return-value in ${output_dir}/{config,job_return}.pickle"""
-
-    output_dir: Path
-
-    def __init__(self) -> None:
-        self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-
-    def on_job_start(self, config: DictConfig, **kwargs: Any) -> None:
-        log.info(f'Saving hydra config at the end of run script')
-
-    def on_job_end(self, config: DictConfig, **kwargs: Any) -> None:
-        """
-        Pickle the job's config in ${output_dir}/config.pickle.
-        It is saved at the end in order to reflect dynamic changes in the config
-        """
-        self.output_dir = Path(config.hydra.runtime.output_dir) / Path(
-            config.hydra.output_subdir
-        )
-        filename = "config.pickle"
-        self._save_pickle(obj=config, filename=filename, output_dir=self.output_dir)
-        self.log.info(f"Saving job configs in {self.output_dir / filename}")
-
-        #Pickle the job's return value in ${output_dir}/job_return.pickle.
-        filename = "job_return.pickle"
-        self._save_pickle(obj=job_return, filename=filename, output_dir=self.output_dir)
-        self.log.info(f"Saving job_return in {self.output_dir / filename}")
-
-    def _save_pickle(self, obj: Any, filename: str, output_dir: Path) -> None:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        assert output_dir is not None
-        with open(str(output_dir / filename), "wb") as file:
-            pickle.dump(obj, file, protocol=4)
