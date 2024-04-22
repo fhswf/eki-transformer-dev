@@ -7,15 +7,7 @@ hydra:
   #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
   searchpath:
     - pkg://qtransform
-  #save config and overrides in pickle file to load in next run script
-  #pickle files are located in the same directory as output hydra files
-  callbacks: 
-    save_job_info:
-      _target_: qtransform.utils.helper.PickleJobInfoCallback
-    update_from_file:
-      _target_: qtransform.utils.helper.FromFileInfoCallback
-    #TODO: update from_file with generated model here if run=train or run=export
-  
+
 #TODO: write last checkpoint/ onnx model name here
 defaults:
   - _self_
@@ -86,3 +78,7 @@ from_previous_run:
 #filepath of named pipe. currently, the path of saved checkpoints and (q)onnx models are written into it
 #by default, write into /dev/null
 pipe: /dev/null
+
+callbacks:
+  update_from_file: qtransform.utils.callbacks.FromFileInfoCallback
+  pickle_config: qtransform.utils.callbacks.PickleJobInfoCallback

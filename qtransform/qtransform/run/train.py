@@ -18,7 +18,7 @@ from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
 from qtransform.utils.helper import load_state_dict_proxy
 from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpointQTRModelWrapper
-
+from qtransform import ConfigSingleton
 
 log = logging.getLogger(__name__)
 from torch.profiler import profile, record_function, ProfilerActivity
