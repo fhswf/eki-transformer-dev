@@ -13,15 +13,22 @@ echo "params = \"$output\""
 # running loss during training 
 output=$(grep  -E -i -w  'qtransform.run.train\]\[INFO\] -   batch'  $FILE | awk '{print $7}' | sed 's/.$//' |  awk '{printf(" %f ,",$1 )}')
 echo "train_loss = [ $output ]"
-# number of entries per epoch, can be used to split the above
-output=$(sed -n '0,/eval_data/p' $FILE  | sed  -n '/train_data/,/eval/p' | wc -l | xargs bash -c 'echo $(($0 - 2))')
-echo "eval_iter = $output"
+
 # eval loss after epochs
 output=$(grep  -E -i -w  'AVERAGE EVAL LOSS FOR EPOCH'  $FILE | awk '{print $10}' | awk '{printf("%f ,",$1 )}')
+echo "eval_loss_epoch = [ $output ]"
+
+# eval for batches
+output=$(grep  -E -i -w  'AVERAGE EVAL LOSS FOR BATCHES'  $FILE | awk '{print $10}' | awk '{printf("%f ,",$1 )}')
 echo "eval_loss = [ $output ]"
+
+# number of entries per eval iters, can be used to split the above
+# output=$(sed -n '0,/eval_data/p' $FILE  | sed  -n '/train_data/,/eval/p' | wc -l | xargs bash -c 'echo $(($0 - 3))')
+echo "eval_iter = 50"
+
 # last loss before eval (loss after evry epoch)
-output=$(grep  -E -i -w  'last train loss was'  $FILE | awk '{print $8}' |  awk '{printf(" %f ,",$1 )}')
-echo "eval_loss_last_train = [ $output ]"
+#output=$(grep  -E -i -w  'last train loss was'  $FILE | awk '{print $8}' |  awk '{printf(" %f ,",$1 )}')
+#echo "eval_loss_last_train = [ $output ]"
 # checkpoints paths
 output=$(grep  -E -i -w  'Model checkpoint saved'  $FILE | awk '{print "\042"$8"\042" ", "}')
 echo "checkpoints = [ $output ]"

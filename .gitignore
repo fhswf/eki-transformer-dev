@@ -21,3 +21,5 @@ dist/
 qtransform/eki
 #comments, todos, current project status etc.
 todos.md
+#logs
+**/*logs*.toml
