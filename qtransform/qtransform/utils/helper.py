@@ -15,40 +15,15 @@ import onnxruntime as ort
 from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hydra.core.utils import JobReturn, JobStatus
 from hydra.experimental.callback import Callback
 from pathlib import Path
 import pickle
 from pprint import PrettyPrinter
+from qtransform import ConfigSingleton
 
 log = logging.getLogger(__name__)
-
-@dataclass
-class FromFile():
-    """
-    Keep args for composing checkpoint/ onnx model path inside of dataclass to avoid dict checks in multiple
-    places.
-    """
-    filename: str
-    model_dir: str = None
-
-def from_meta(meta_file: str) -> DictConfig:
-    pass
-
-def generate_meta(cfg: DictConfig, model: Union[torch.nn.Module, ModelWrapper]) -> str:
-    """
-    Generates meta from hydra config to be used in future runs.
-    With a meta file, no further configs need to be specified in each run script.  
-
-    Args: cfg: The hydra config
-    Returns: The filepath to the meta file
-    """
-    #dataset
-    #tokenizer
-    #model
-    #quant_cfg
-    dump()
 
 def get_default_chkpt_folder() -> str:
     """
@@ -57,53 +32,67 @@ def get_default_chkpt_folder() -> str:
     """
     return os.path.join(os.getenv("HOME"), *__package__.split("."), "checkpoint_dir")
 
-def compose_model_path(from_file: FromFile, not_exist_error = True) -> str:
+#idea: generic fromfile for dataset and models
+@dataclass
+class FromFile():
     """
-    Composes an absolute filepath from a filename and a directory path. 
-    The filename can be absolute, ignoring model_dir. Otherwise, model_dir is prepended to filename.
+    Keep args for composing checkpoint/ onnx model path inside of dataclass to avoid dict checks in multiple
+    places.
     """
-    if not isinstance(from_file, FromFile):
-        if isinstance(from_file, Union[Dict, DictConfig]):
-            from_file = FromFile(**from_file)
-        else:
-            log.error(f'Cannot compose model_path with from_file: {from_file}')
-            raise TypeError()
-    filename = from_file.filename
-    model_dir = from_file.model_dir
-    chkpt_folder = get_default_chkpt_folder()
-    assert isinstance(filename, str), f'Could not load checkpoint/model with filename: "{filename}"'
-    #from_checkpoint is the absolute path to a file, ignore checkpoint_dir 
-    if os.path.isabs(filename):
-        chkpt_folder, from_checkpoint = os.path.split(filename)
-    elif isinstance(model_dir, str):
-        if os.path.isabs(model_dir):
-            chkpt_folder = model_dir
-            from_checkpoint = filename
-        else:
+    filename: str
+    model_dir: str
+    _filename: str = field(init=False, repr = False)
+    _model_dir: str = field(init=False, repr = False, default=get_default_chkpt_folder())
+
+    def __init__(self, filename: str, model_dir: str):
+        self.model_dir = model_dir
+        self.filename = filename
+    
+    @property
+    def filename(self):
+        return self._filename
+    
+    @filename.setter
+    def filename(self, filename: str):
+        assert isinstance(filename, str), f'{filename} (type: {type(filename)}) is  not a valid filename string.'
+        #make sure that model_dir is never none and filename always is a filename, not an absolute path
+        model_dir, filename = os.path.split(filename)
+        if len(model_dir) > 0:
+            if isinstance(self.model_dir, str) and len(self.model_dir) > 0:
+                log.warning(f'Overwriting model_dir with path from filename')
+            self.model_dir = model_dir
+        self._filename = filename
+
+    @property
+    def model_dir(self):
+        return self._model_dir
+
+    @model_dir.setter
+    def model_dir(self, model_dir: str):
+        if not isinstance(model_dir, str):
+            model_dir = get_default_chkpt_folder()
+            log.warning(f'invalid type for model_dir, assuming default checkpoint {self.model_dir}')
+        elif not os.path.isabs(model_dir):
             #outputs are stored in <current directory>/outputs/<checkpoint_dir>
             try:
-                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", model_dir)
+                model_dir =  os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", model_dir) #os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", model_dir)
             except:
                 log.debug(f'Could not get cwd from hydra. Reason: ', exc_info=True)
                 log.debug(f'Using os.getcwd')
-                chkpt_folder = os.getcwd()
-            from_checkpoint = filename
-    else:
-        log.warning(f'Directory to model "{filename}" omited. Assuming default "{chkpt_folder}"')
-        from_checkpoint = filename
-        #log.error(f'Path to model could not be resolved with filename: "{filename}", model_dir: "{model_dir}" '\
-        #    f'Probably because the filename was not an absolute path and model_dir was not specified.')
-        #raise RuntimeError()
-    checkpoint_path = os.path.join(chkpt_folder, from_checkpoint)
-    #if filename should exist (not_exist_error == True), throw error
-    if not os.path.isfile(checkpoint_path) and not_exist_error:
-            log.error(f"Checkpoint {checkpoint_path} is not a file")
-            raise FileNotFoundError
-    return checkpoint_path
+                model_dir = os.getcwd()
+        self._model_dir = model_dir
+
+    def get_filepath(self) -> str:
+        return os.path.join(self.model_dir, self.filename)
 
 def load_checkpoint(from_file: Union[Dict, DictConfig, FromFile]) -> Tuple[int, Union[Any, Dict]]:
     """ load torch model checkpoint and return the epoch count"""
-    checkpoint_path = compose_model_path(from_file)
+    if not isinstance(from_file, FromFile):
+        from_file = FromFile(**from_file)
+    checkpoint_path = from_file.get_filepath()
+    if not os.path.exists(checkpoint_path):
+        log.error(f'Checkpoint {checkpoint_path} does not exist')
+        raise FileNotFoundError()
     log.info(f"Loading checkpoint from {checkpoint_path}")
     from_epoch = 0    
     from qtransform import device_singleton
@@ -127,26 +116,30 @@ def load_state_dict_proxy(model, checkpoint, **kwargs):
         kwargs.update({"strict": strict})
     return model.load_state_dict(checkpoint, **kwargs)
 
-def save_checkpoint(from_file: Union[Dict, DictConfig, FromFile],
-    model: nn.Module, 
-    dataset_name: str, 
-    optimizer, 
+def save_checkpoint(model: nn.Module, 
+    optimizer,
     timestamp:datetime, 
     metrics:Dict, 
-    epoch:int, 
-    model_cfg: Any,
-    tokenizer_cfg: Any,
-    quant_cfg: Union[DictConfig, None] = None) -> str:
+    epoch:int, ) -> str:
     """save torch model checkpoint from training, returns path to saved file."""
     
-
+    cfg = ConfigSingleton().config
+    dataset_name = cfg.dataset.name
+    from_file = cfg.model.from_file
+    model_cfg=cfg.model
+    log.debug(f'model_cfg when saving checkpoint: {PrettyPrinter(indent=1).pformat(model_cfg)}')
+    tokenizer_cfg=cfg.tokenizer
+    quant_cfg = cfg.get('quantization', None)
+    #TODO: infer filename (choice) of model config
+    filename = f"{OmegaConf.to_container(ConfigSingleton().config.model)}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
     if not isinstance(from_file, FromFile) and isinstance(from_file, Union[Dict, DictConfig]):
+        from_file["filename"] = filename
         from_file = FromFile(**from_file)
     else:
         log.error(f'Cannot compose model_path with from_file: {from_file}')
         raise TypeError()
-    from_file.filename = f"{OmegaConf.to_container(HydraConfig.get().runtime.choices)['model']}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
-    checkpoint_path = compose_model_path(from_file, not_exist_error=False)
+    from_file.filename = filename
+    checkpoint_path = from_file.get_filepath()
     chkpt_folder, _ = os.path.split(checkpoint_path)
     os.makedirs(chkpt_folder, exist_ok=True)
     log.info(f"Model checkpoint saving to {checkpoint_path}")

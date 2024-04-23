@@ -54,6 +54,7 @@ def run(cfg: DictConfig):
     torch.manual_seed(cfg.seed)    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
+    #TODO: move quant_config as subconfig into model_cfg to perform quantization within modelwrapper
     quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:
         if not model_wrapper.quantized:    
@@ -165,7 +166,6 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
     
     epochs_to_run = range(model_wrapper.epochs + 1, cfg.run.epochs + 1)
     model = model_wrapper.model
-
     if eval_data_loader is None:
         warn_once(log, f"Not running eval. Eval Dataloader is None")
 
@@ -201,16 +201,11 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
             ## interval or end of training, epochs is also 1 for mini_run
             # last_checkpoint is the absolute filepath of the saved checkpoint
             last_checkpoint: str = save_checkpoint(
-                from_file=cfg.model.from_file,
                 model=model, 
                 optimizer=optimizer, 
-                dataset_name=cfg.dataset.name,
                 timestamp=timestamp, 
                 epoch=epoch, 
-                metrics=metrics, 
-                model_cfg=cfg.model, 
-                tokenizer_cfg=cfg.tokenizer,
-                quant_cfg = cfg.get('quantization', None))
+                metrics=metrics)
         # advance learning rate
         if scheduler is not None:
             scheduler.step()
@@ -237,17 +232,16 @@ def train_one_epoch(cfg: DictConfig,
     if not isinstance(gradient_accumulation_steps, int):
         gradient_accumulation_steps = 1
     train_batch_time = time()
-    #avoid printing out loss of zero 
+    #if max_iters is not specified, iterate through entire dataset
     if "max_iters" in  cfg.run and cfg.run.max_iters is not None and cfg.run.max_iters > 0:
         if cfg.run.max_iters < cfg.run.log_steps_interval:
             cfg.run.log_steps_interval = cfg.run.max_iters
         max_len = len(train_data)
         run_len = min(max_len, cfg.run.max_iters)
-        log.info(f"train_data len is {max_len}, max_iters set to {cfg.run.max_iters}. Running training for {run_len}")
     else:
         max_len = len(train_data)
         run_len = len(train_data)
-        log.info(f"train_data len is {max_len}, max_iters set to {None}. Running training for {run_len}")
+    log.info(f"train_data len is {max_len}, max_iters set to {cfg.run.get('max_iters', None)}. Running training for {run_len}")
     #for i in range(1, cfg.run.max_iters+1):
     for i, data in enumerate(train_data):
         #log.critical(tokenizer_singleton.tokenizer.decode(data[0].tolist()))

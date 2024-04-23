@@ -6,7 +6,7 @@ gradient_accumulation_steps : 1 # used to simulate larger batch sizes, leave emp
 flash: False
 export: True ## perform an export after #epochs are done
 compile: True
-max_iters :  # number of training iterations for one epoch. total number of iterations: max_iters * epochs
+max_iters : # number of training iterations for one epoch. total number of iterations: max_iters * epochs
 save_epoch_interval: 1
 log_steps_interval : 10
 grad_clip : 0.7 # clip gradients at this value, or disable if :: 0.0

@@ -51,10 +51,6 @@ def run(cfg: DictConfig, **kwargs):
     max_token_id = model.config.vocab_size
     #max_token_id = checkpoint['model_cfg']['args']['vocab_size']
     sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
-    #TODO: information about from_file in modelwrapper
-    filename = cfg.run.from_checkpoint.split("/")[-1] + ".onnx"
-    if cfg.run.get("output"):
-        filename = cfg.run.get("output")
 
     """
     export function maps to torch onnx export:
@@ -89,7 +85,9 @@ def run(cfg: DictConfig, **kwargs):
     #elif not os.path.isdir(root_path):
     #    log.error(f'root_path {root_path} is not a directory.')
     #    raise ValueError()
-
+    filename = cfg.model.from_file.filename
+    if os.path.isabs(filename):
+        _, filename = os.path.split(filename)
     model_name = f"{str(cfg.run.export_fn)}_{'_'.join(map(str,input_dim))}_" + filename
     from qtransform.utils.introspection import concat_paths
     model_path = concat_paths([root_path, model_name])

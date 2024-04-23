@@ -27,35 +27,8 @@ def cli_wrapper(cfg: DictConfig):
 
 @hydra.main(version_base=None, config_path="conf", config_name="config.yaml")
 def module_wrapper(cfg: DictConfig):
-    #cfg = check_previous_run(cfg)
     ConfigSingleton().config = cfg
     main()
-
-def check_previous_run(config: DictConfig) -> DictConfig:
-    from_previous_run = config.from_previous_run
-    if from_previous_run is None:
-        return config
-    log.info(f'Updating config with from_previous_run={from_previous_run}')
-    if os.path.isfile(from_previous_run):
-        log.warn(f'from_previous_run expects directory path, not filepath. Removing filename')
-        output_dir, _ = os.path.split(from_previous_run)
-    elif os.path.isabs(from_previous_run):
-        output_dir = from_previous_run
-    else:
-        #remove current timestamp
-        output_dir, _ = os.path.split(hydra.core.hydra_config.HydraConfig.get().runtime.output_dir)
-        output_dir = os.path.join(output_dir, from_previous_run, '.hydra')
-    config_path = os.path.join(output_dir, 'config.pickle')
-    with open(config_path, 'rb') as input:
-        new_config = load(input)
-    assert isinstance(config, DictConfig), f'Pickle file from {from_previous_run} is not a DictConfig file'
-    with open_dict(new_config):
-        del new_config["hydra"]
-        #del config["run"]
-    log.debug(f'Loaded config from previous run: {PrettyPrinter(indent=1).pformat(config)}')
-    #keep run config, override everything else
-    config.run = new_config.run
-    return config
 
 def get_callbacks(callback_cfg: DictConfig) -> Dict[str, Callback]:
     #hydra allows for a much more versatile callback configuration (via config.yaml), 
@@ -98,28 +71,30 @@ def main():
     call_on_run_start(callbacks)
     #config could have been changed by callbacks at this point
     cfg = ConfigSingleton().config
-    match cfg.run.command:
-        case "train":          
-            from qtransform.run import train
-            train.run(cfg)
-        case "bench":
-            from qtransform.run import bench
-            return  bench.run(cfg)
-        case "infer":
-            from qtransform.run import infer
-            return  infer.run(cfg)
-        case "inferonnx":
-            from qtransform.run import inferonnx
-            return  inferonnx.run(cfg)
-        case "export":
-            from qtransform.run import export
-            return  export.run(cfg)
-        case "test":
-            from qtransform.run import test
-            return test.run(cfg)
-        case _:
-            log.error(f'Command "{cfg.run.command}" not recognized')
+    #make sure that callbacks are still called after exceptions
+    #this is an issue with our implementation of callbacks currently
+    try:
+        match cfg.run.command:
+            case "train":          
+                from qtransform.run import train
+                train.run(cfg)
+            case "bench":
+                from qtransform.run import bench
+                return  bench.run(cfg)
+            case "infer":
+                from qtransform.run import infer
+                return  infer.run(cfg)
+            case "export":
+                from qtransform.run import export
+                return  export.run(cfg)
+            case "test":
+                from qtransform.run import test
+                return test.run(cfg)
+            case _:
+                log.error(f'Command "{cfg.run.command}" not recognized')
+    except:
+        log.critical("Script execution failed. Reason: ", exc_info=True)
     call_on_run_end(callbacks)
-    
+
 if __name__ == "__main__":
     module_wrapper()

@@ -10,12 +10,13 @@ from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
 from enum import IntEnum
-from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy, FromFile, compose_model_path
+from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy, FromFile
 from typing import Union, Tuple
 from abc import ABC, abstractmethod
 import transformers
 import onnxruntime
 from qtransform.quantization import get_quantizer, ModelQuantConfig, Quantizer
+from qtransform import ConfigSingleton
 
 from functools import lru_cache
 
@@ -159,6 +160,9 @@ class QTRModelWrapper(ABC):
         self.model.to(*args, **kwargs)
 
 
+#TODO: should the modelwrappers be stored in a singleton?
+#      since one wrapper contains possibly a large model, it would not make sense to train multiple models
+#      in one run
 class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
 
     model: GenericModel
@@ -185,8 +189,9 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             self.from_file(from_file)
             #block size might not be specified, necessary for dataset retrieval
             #TODO: put this in run __init__
+            OmegaConf.update(model_cfg, 'cls', self.model_cfg.cls, force_add=True)
             for field in fields(self.model_cfg.args):
-                OmegaConf.update(model_cfg, "args" + field.name, getattr(self.model_cfg.args, field.name), force_add=True)
+                OmegaConf.update(model_cfg.args,field.name, getattr(self.model_cfg.args, field.name), force_add=True)
             log.info(f'Updated model config with checkpoint parameters')
         else:
             #not that clean, problem is that checkpoint needs to be loaded in order to have model_cfg
@@ -218,7 +223,7 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         if quant_cfg["quantize"]:
             #TODO: self.model is set to quantized model before state_dict is loaded
             self.quantize_model(checkpoint["quant_cfg"])
-            #skip qparams from checkpoint
+            #skip missing params from checkpoint
             #for some reason, mlp qparams are saved within checkpoint but not the ones from mha
             from brevitas import config
             config.IGNORE_MISSING_KEYS = True
@@ -282,10 +287,10 @@ def get_model(model_cfg: DictConfig) -> nn.Module:
 
     #models need to specify their hyperparameters in init parameter named "config"
     model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module)
-    #construct model if no args have been given
     if args:
         model = model(config = args)
     else:
+        #use default args of model
         model = model()
     return model
 
@@ -358,7 +363,7 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
         self.model_cfg = model_cfg
 
     def from_file(self, from_file: FromFile):
-        path = compose_model_path(from_file)
+        path = from_file.get_filepath()
         self.model = load_onnx_model(path)
 
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
