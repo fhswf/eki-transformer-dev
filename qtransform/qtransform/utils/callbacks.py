@@ -105,6 +105,9 @@ class PickleJobInfoCallback(Callback):
         """
         self.output_dir = Path(HydraConfig.get().runtime.output_dir)
         filename = "config.pickle"
+        #save runtime choices (run=train, dataset=something etc...)
+        with open_dict(config):
+            config["runtime"]["choices"] = HydraConfig().get().runtime.choices
         self._save_pickle(obj=config, filename=filename, output_dir=self.output_dir)
         self.log.info(f"Saving job configs in {self.output_dir / filename}")
 

@@ -53,7 +53,8 @@ def run(cfg : DictConfig):
     log.info(f"using device: {str(device)}")
     infer(cfg, device)
 
-
+#TODO: huggingface makes use of pipelines for inference
+#(https://huggingface.co/docs/transformers/main_classes/pipelines)
 def infer(cfg: DictConfig, device: Any):
     """
     Sample from a trained model. It prints the predicted words onto stdout

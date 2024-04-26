@@ -51,6 +51,10 @@ def get_callbacks(callback_cfg: DictConfig) -> Dict[str, Callback]:
 
 def main():
     cfg = ConfigSingleton().config
+    #remember which yaml files for each config group were chosen
+    #useful to distinguish model outputs
+    OmegaConf.update(cfg, "runtime.choices", HydraConfig().instance().get().runtime.choices, force_add=True)
+    
     logging.captureWarnings(True)
     root_log = logging.getLogger("root")
     log = logging.getLogger(f"{__package__}.{__name__}")   
@@ -80,16 +84,16 @@ def main():
                 train.run(cfg)
             case "bench":
                 from qtransform.run import bench
-                return  bench.run(cfg)
+                bench.run(cfg)
             case "infer":
                 from qtransform.run import infer
-                return  infer.run(cfg)
+                infer.run(cfg)
             case "export":
                 from qtransform.run import export
-                return  export.run(cfg)
+                export.run(cfg)
             case "test":
                 from qtransform.run import test
-                return test.run(cfg)
+                test.run(cfg)
             case _:
                 log.error(f'Command "{cfg.run.command}" not recognized')
     except:

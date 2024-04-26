@@ -1,10 +1,9 @@
-wrapper: huggingfaceTokenizer
+wrapper: TransformersTokenizer
 pretrained_tokenizer: AutoTokenizer
-module: huggingface
+module: transformers
 #(https://huggingface.co/docs/transformers/main_classes/tokenizer)
 fast: True 
-encoding: TEMP
-name: EleutherAI/gpt-neo-125M
+encoding: EleutherAI/gpt-neo-125M
 
 
 #available encoders: 

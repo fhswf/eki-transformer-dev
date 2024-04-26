@@ -149,8 +149,6 @@ def run(cfg: DictConfig):
     else:
         #write checkpoint into fifo
         write_to_pipe(cfg, last_checkpoint)
-        
-
 
 def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:

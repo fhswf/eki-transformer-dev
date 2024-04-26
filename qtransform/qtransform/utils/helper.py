@@ -131,7 +131,7 @@ def save_checkpoint(model: nn.Module,
     tokenizer_cfg=cfg.tokenizer
     quant_cfg = cfg.get('quantization', None)
     #TODO: infer filename (choice) of model config
-    filename = f"{OmegaConf.to_container(ConfigSingleton().config.model)}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
+    filename = f"{ConfigSingleton().config.runtime.choices.model}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
     if not isinstance(from_file, FromFile) and isinstance(from_file, Union[Dict, DictConfig]):
         from_file["filename"] = filename
         from_file = FromFile(**from_file)
