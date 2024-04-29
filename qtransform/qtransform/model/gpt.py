@@ -8,6 +8,7 @@ from torch import nn as nn
 from torch.nn import functional as F
 from qtransform.model.modules import LayerNorm, TransformerBlock
 from qtransform.model import modules as custom_nn
+from qtransform.model import ModelArgs, GenericModel
 from brevitas import nn as qnn
 import logging
 log = logging.getLogger(__name__)
@@ -30,38 +31,12 @@ class Model(ABC):
         This does not refelct the required size during training and might also not be accurate in your hardware.
         """
         raise NotImplementedError
-    
-@dataclass
-class GPTConfig:
-    block_size: int = 1024
-    vocab_size: int = 50304 # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
-    n_layer: int = 12
-    n_head: int = 12
-    n_embd: int = 768
-    dropout: float = 0.0
-    bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-    flash: bool = False # cuda flas hattention
-    transformer_active_func: str = 'ReLU' #specify which activation function to use in MLP (feed forwad neural network)
-    norm_layer: str = 'BatchNorm' # note that this is a name for a adapter module in this repository und model.modules
-    single_output: bool = False # use mini runtime optimization to only predict last token, saven on some runtime but poentially currupts onnx export
-    use_weight_tying: bool = True # same weights for input emb and outputi proj https://paperswithcode.com/method/weight-tying
-    custom_ln: bool = False #use CustomBatchNorm1d before BatchNorm
-    use_causal: bool = False
-    shift_targets: bool = False # True: labels are shifted by one to the right inside the model, False: shifting is done by dataloader
-
 from dataclasses import fields
-class GPT(nn.Module):
-    def __init__(self, config: GPTConfig):
-        super().__init__()
-        try:
-            self.config = config = config if isinstance(config, GPTConfig) else GPTConfig(**config)
-            log.debug(f'Applied config: \n{self.config}')
-        except:   
-            log.error(f'Model config \n{config}\n could not be applied. Config can only have options: {[x.name for x in fields(GPTConfig)]}')
-        assert config.vocab_size is not None
-        assert config.block_size is not None
-        log.info(f"Model config: {self.config}")
-        
+
+class GPT(GenericModel):
+    def __init__(self, config: ModelArgs):
+        super().__init__(config)
+        #TODO: attribute initialization from config could go to GenericModel
         self.single_output = config.single_output
         self.use_weight_tying = config.single_output
         self.norm_size = None

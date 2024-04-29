@@ -1,16 +1,7 @@
 command: "bench"
 el: 2
-num_samples: ??? #amount of samples to retrieve when benchmarking. the length of one sample is equal to the model's block size
+max_iters: ??? #amount of samples to retrieve when benchmarking. the length of one sample is equal to the model's block size
 out_dir: ''
 profile: True
 log_steps_interval: 10
-checkpoint_dir: models
-from_checkpoint: 
-pretrained_model:
 row_limit: 10 #amount of rows (torch operations) to display on resource profiler
-onnx_model: #absolute path of onnx model to run inference on. either use onnx_model or from_checkpoint
-  path: 
-  tokenizer: #specify tokenizer config manually as it cannot be saved in onnx model
-    module: tiktoken
-    encoding: gpt2
-    meta_path: #usually only necessary for character tokenization

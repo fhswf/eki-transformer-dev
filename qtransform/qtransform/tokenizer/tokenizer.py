@@ -26,40 +26,6 @@ class Metadata():
     num_tokens: int = 0
     module: str = ""
 
-class Tokenizer2(ABC):
-
-    def encode(self, text: Union[str, List[str]]) -> Union[List[int],List[List[int]]]:
-        ret = None
-        if isinstance(text, List):
-            ret = []
-            for l in text:
-                ret.append(self._encode(l))
-        elif isinstance(text, str):
-            ret = self._encode(text)
-        else:
-            raise ValueError("input: text must be of type str or List[str]")
-        return ret  # token_ids[] or token_ids[][] as nested list of lists
-
-    def decode(self, idx: List[int]) -> str:
-        ret = None
-        if any(isinstance(i, list) for i in idx):
-            ret = []
-            for l in idx:
-                ret.append(self._decode(l))
-        elif all(isinstance(i, int) for i in idx):
-            ret = self._encode(idx)
-        else:
-            raise ValueError("input: idx must be of type or List[int] or or List[List[int]]")
-        return ret  # str or str[] as list of text
-    @abstractmethod
-    def _encode(self, text) -> List[int]:
-        raise NotImplementedError
-    @abstractmethod
-    def _decode(self, idx: List[int]) -> str:
-        raise NotImplementedError
-    
-    pass
-
 class Tokenizer(ABC):
     """
         Generic wrapper around different tokenizer implementations to unify their interfaces within the project. 
@@ -67,11 +33,10 @@ class Tokenizer(ABC):
         object to be used to write the tokens onto the harddrive. Alternatively, one could use the tokenize()
         method to retrieve a list of tokens from a text.
     """
-    _memmap: np.memmap
     _meta: Metadata
     PADDING_TOKEN: str
 
-    def __init__(self, tokenizer_cfg: DictConfig, memmap: np.memmap = None):
+    def __init__(self, tokenizer_cfg: DictConfig):
         if isinstance(tokenizer_cfg, Dict):
             log.debug(f'Tokenizer config is of type dict. Creating DictConfig object.')
             tokenizer_cfg = OmegaConf.create(tokenizer_cfg)
@@ -85,26 +50,6 @@ class Tokenizer(ABC):
             with open_dict(self.tokenizer_cfg):
                 log.warning(f'Property meta_file omited in config. Assuming default: "meta.pkl"')
                 self.tokenizer_cfg["meta_file"] = "meta.pkl"
-        #tokenization can use memmap directly or simply return a list of integers
-        if memmap is not None:
-            self.memmap = memmap
-
-    @property
-    def memmap(self):
-        return self._memmap
-
-    @memmap.setter
-    def memmap(self, value: np.memmap):
-        if not isinstance(value, np.memmap):
-            log.error(f'Wrong type for memmap during tokenization ({value}, {type(value)})')
-            raise TypeError()
-        if len(value.shape) > 1 and value.shape[0] != 1:
-            log.error(f'The memmap needs to be one dimensional for tokenization')
-            raise ValueError()
-        if value.mode != 'w+':
-            log.error(f'Mode of memmap needs to be "w+" for tokenization.')
-            raise AttributeError()
-        self._memmap = value
 
     @property
     def meta(self):
@@ -117,22 +62,6 @@ class Tokenizer(ABC):
         elif not isinstance(value, Metadata):
             log.error(f'Cannot use metadata of type: {type(value)}')
         self._meta = value
-
-    def tokenize_memmap(self, text: str):
-        """
-            Tokenize a text and write the result into a memmap to be retrieved later. 
-            The memmap is expected to be a 1d array in which the tokenized text is written continuously.
-            If it is not one dimensional, an error will be thrown.
-        """
-        if not isinstance(text, str):
-            log.error(f'Text to tokenize is not a string')
-            raise TypeError()
-        if self.memmap is None:
-            log.error(f'Memmap was not set')
-            raise TypeError()
-        offset = self.meta.num_tokens
-        tokens: List[int] = self.encode(text)
-        self.memmap[offset: offset + len(tokens)] = tokens
 
     @abstractclassmethod
     def encode(self, text: str, infer: bool = False) -> List[int]:
@@ -215,12 +144,6 @@ class Tokenizer(ABC):
         with open(filepath, 'rb') as pkl_file:
             meta = pickle.load(pkl_file)
         return meta
-
-    @DeprecationWarning
-    def meta_as_dict(self) -> Dict[str, Any]:
-        #does the same as dataclasses.asdict
-        params = set(inspect.signature(Metadata.__init__).parameters.keys()) - set(['self'])
-        return {x:getattr(self.meta, x) for x in params}
 
     def check_dtype_overflow():
         if len(self.meta.max_token_value) > 2 ** self.memmap.dtype.itemsize * 8 -1:

@@ -568,6 +568,7 @@ def get_quantizer(_quant_cfg: DictConfig, model: Module) -> Tuple[Quantizer, Mod
     if hasattr(log,"trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(_quant_cfg), indent=2))
     quant_cfg = ModelQuantConfig(**{**_quant_cfg.model, "model": model})
     if hasattr(log,"trace"): log.trace(f'Configured quantization config: {pprint.PrettyPrinter(indent=1).pformat(quant_cfg)}')
+    log.debug(f'Quantizing model')
     #get_classes necessary, otherwise a circular import error will occur
     quantizer: Quantizer = get_data(log, package_self, _quant_cfg.type, Quantizer)
     return (quantizer, quant_cfg)

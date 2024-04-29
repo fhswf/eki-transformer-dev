@@ -8,6 +8,7 @@ import hydra
 import os
 from qtransform import device_singleton
 from qtransform.utils.helper import load_checkpoint
+from qtransform.model import ModelArgs, GenericModel, get_model_wrapper, DynamicCheckpointQTRModelWrapper
 import torch
 from torch import nn
 from brevitas.export import export_onnx_qcdq, export_qonnx, export_brevitas_onnx
@@ -29,20 +30,7 @@ def run(cfg: DictConfig, **kwargs):
 
     device_singleton.device = cfg.device
     device = device_singleton.device
-    # load model checkpoint
-    _, checkpoint = load_checkpoint(cfg=cfg)
-    from qtransform.model import get_model
-    model = None
-    #either load model from checkpoint metadata or from hydra config
-    #depending on where export script is called (from train: hydra config, else: checkpoint metadata)
-    if "model" in cfg and "cls" in cfg.model:
-        model = get_model(cfg.model)
-    elif "model_cfg" in checkpoint:
-        model = get_model(checkpoint['model_cfg'])
-    else:
-        log.error("No model defintion provided in either checkpoint or cfg.model")
-        return 1
-    
+
     from omegaconf import DictConfig, OmegaConf, errors
     try: ## this is so dirty, but for some reason OmegaConf does not work here...
         _run = cfg.run.running_model
@@ -52,32 +40,18 @@ def run(cfg: DictConfig, **kwargs):
     #the model passed from the training script should be configured completely
     #the model does not exist yet when calling the export script directly
     if  _run:
-        model = kwargs["model"]
+        model_wrapper: DynamicCheckpointQTRModelWrapper = kwargs["model_wrapper"]
     else:
-        quant_cfg = cfg.get('quantization')
-        replace_layers_later = None
-        if quant_cfg and quant_cfg.quantize:    
-            log.debug(f'Running quantized model')
-            from qtransform.quantization import get_quantizer
-            quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
-            #add qat qparams (scale and zero)
-            model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
-            #merge or replace batchnorm after loading their params, otherwise proceeed with default values
-        model.load_state_dict(checkpoint['model_state_dict'])
-        if replace_layers_later is not None:
-            model, replace_layers_later = quantizer.get_quantized_model(replace_layers_later)
-        if replace_layers_later is not None:
-            log.warning(f'Layers {replace_layers_later.layers.keys()} could not be quantized during export.')
+        model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
+    model: GenericModel = model_wrapper.model
+    assert isinstance(model, GenericModel), f'model is not of type GenericModel'
     #log.debug(f"Model structure: {model}")
     #log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
-
-    input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
-    max_token_id = checkpoint['model_cfg']['args']['vocab_size']
+    input_dim = (1, model.config.block_size)
+    #input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
+    max_token_id = model.config.vocab_size
+    #max_token_id = checkpoint['model_cfg']['args']['vocab_size']
     sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
-
-    filename = cfg.run.from_checkpoint.split("/")[-1] + ".onnx"
-    if cfg.run.get("output"):
-        filename = cfg.run.get("output")
 
     """
     export function maps to torch onnx export:
@@ -112,7 +86,9 @@ def run(cfg: DictConfig, **kwargs):
     #elif not os.path.isdir(root_path):
     #    log.error(f'root_path {root_path} is not a directory.')
     #    raise ValueError()
-
+    filename = cfg.model.from_file.filename
+    if os.path.isabs(filename):
+        _, filename = os.path.split(filename)
     model_name = f"{str(cfg.run.export_fn)}_{'_'.join(map(str,input_dim))}_" + filename
     from qtransform.utils.introspection import concat_paths
     model_path = concat_paths([root_path, model_name])

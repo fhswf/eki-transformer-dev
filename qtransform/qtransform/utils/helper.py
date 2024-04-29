@@ -2,17 +2,28 @@ import datetime
 import os
 from typing import Any, Dict, Tuple, Union
 import hydra
-import hydra
 from pprint import pprint
 from hydra.core.hydra_config import HydraConfig
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import OmegaConf, DictConfig, open_dict
 import torch
 import logging
 from torch import nn
 from stat import S_ISFIFO
+from yaml import dump, safe_load
+import onnx
+import onnxruntime as ort
+from qonnx.core.modelwrapper import ModelWrapper
+# maybe only do this when it is required, for this howiever is always the case
+from onnx.shape_inference import infer_shapes
+from dataclasses import dataclass, field
+from hydra.core.utils import JobReturn, JobStatus
+from hydra.experimental.callback import Callback
+from pathlib import Path
+import pickle
+from pprint import PrettyPrinter
+from qtransform import ConfigSingleton
+
 log = logging.getLogger(__name__)
-
-
 
 def get_default_chkpt_folder() -> str:
     """
@@ -21,36 +32,67 @@ def get_default_chkpt_folder() -> str:
     """
     return os.path.join(os.getenv("HOME"), *__package__.split("."), "checkpoint_dir")
 
-def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
-    """ load torch model checkpoint"""
-    #checkpoint_dir: specify custom path for checkpoints, otherwise use directory checkpoint_dir in qtransform/utils/checkpoint_dir
-    chkpt_folder = get_default_chkpt_folder()
-    if "from_checkpoint" not in cfg.run:
-        log.error(f'Key "from_checkpoint" not specified in run config, e.g. run.from_checkpoint="<path>"')
-        raise KeyError()
-    #from_checkpoint is the absolute path to a file, ignore checkpoint_dir 
-    if os.path.isabs(cfg.run.from_checkpoint):
-        chkpt_folder, from_checkpoint = os.path.split(cfg.run.from_checkpoint)
-    elif "checkpoint_dir" in cfg.run:
-        if os.path.isabs(cfg.run.checkpoint_dir):
-            chkpt_folder = cfg.run.checkpoint_dir
-            from_checkpoint = cfg.run.from_checkpoint
-        else:
+#idea: generic fromfile for dataset and models
+@dataclass
+class FromFile():
+    """
+    Keep args for composing checkpoint/ onnx model path inside of dataclass to avoid dict checks in multiple
+    places.
+    """
+    filename: str
+    model_dir: str
+    _filename: str = field(init=False, repr = False)
+    _model_dir: str = field(init=False, repr = False, default=get_default_chkpt_folder())
+
+    def __init__(self, filename: str, model_dir: str):
+        self.model_dir = model_dir
+        self.filename = filename
+    
+    @property
+    def filename(self):
+        return self._filename
+    
+    @filename.setter
+    def filename(self, filename: str):
+        assert isinstance(filename, str), f'{filename} (type: {type(filename)}) is  not a valid filename string.'
+        #make sure that model_dir is never none and filename always is a filename, not an absolute path
+        model_dir, filename = os.path.split(filename)
+        if len(model_dir) > 0:
+            if isinstance(self.model_dir, str) and len(self.model_dir) > 0:
+                log.warning(f'Overwriting model_dir with path from filename')
+            self.model_dir = model_dir
+        self._filename = filename
+
+    @property
+    def model_dir(self):
+        return self._model_dir
+
+    @model_dir.setter
+    def model_dir(self, model_dir: str):
+        if not isinstance(model_dir, str):
+            model_dir = get_default_chkpt_folder()
+            log.warning(f'invalid type for model_dir, assuming default checkpoint {self.model_dir}')
+        elif not os.path.isabs(model_dir):
             #outputs are stored in <current directory>/outputs/<checkpoint_dir>
             try:
-                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.checkpoint_dir)
+                model_dir =  os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", model_dir) #os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", model_dir)
             except:
                 log.debug(f'Could not get cwd from hydra. Reason: ', exc_info=True)
                 log.debug(f'Using os.getcwd')
-                chkpt_folder = os.getcwd()
-            from_checkpoint = cfg.run.from_checkpoint
-    else:
-        log.error(f'Neither absolute path to checkpoint nor "run.checkpoint_dir" was specified')
-        raise RuntimeError()
-    checkpoint_path = os.path.join(chkpt_folder, from_checkpoint)
-    if not os.path.isfile(checkpoint_path):
-            log.error(f"Checkpoint {checkpoint_path} is not a file")
-            raise FileNotFoundError
+                model_dir = os.getcwd()
+        self._model_dir = model_dir
+
+    def get_filepath(self) -> str:
+        return os.path.join(self.model_dir, self.filename)
+
+def load_checkpoint(from_file: Union[Dict, DictConfig, FromFile]) -> Tuple[int, Union[Any, Dict]]:
+    """ load torch model checkpoint and return the epoch count"""
+    if not isinstance(from_file, FromFile):
+        from_file = FromFile(**from_file)
+    checkpoint_path = from_file.get_filepath()
+    if not os.path.exists(checkpoint_path):
+        log.error(f'Checkpoint {checkpoint_path} does not exist')
+        raise FileNotFoundError()
     log.info(f"Loading checkpoint from {checkpoint_path}")
     from_epoch = 0    
     from qtransform import device_singleton
@@ -59,7 +101,7 @@ def load_checkpoint(cfg: DictConfig) -> Tuple[int, Union[Any, Dict]]:
         from_epoch = checkpoint['epoch']
     else:
         try:
-            i = str(cfg.run.from_checkpoint).index("epoch:")
+            i = str(filepath).index("epoch:")
             import re
             p = re.compile("[0-9]+")
             from_epoch = int(p.search(str(cfg.run.from_checkpoint)[i:]).group(0))
@@ -74,56 +116,46 @@ def load_state_dict_proxy(model, checkpoint, **kwargs):
         kwargs.update({"strict": strict})
     return model.load_state_dict(checkpoint, **kwargs)
 
-def save_checkpoint(cfg: DictConfig, 
-    model: nn.Module, 
-    dataset: str, 
-    optimizer, 
+def save_checkpoint(model: nn.Module, 
+    optimizer,
     timestamp:datetime, 
     metrics:Dict, 
-    epoch:int, 
-    model_cfg: Any,
-    tokenizer_cfg: Any,
-    quant_cfg: Union[DictConfig, None] = None,
-    steps:int = None,
-    ) -> str:
+    epoch:int, ) -> str:
     """save torch model checkpoint from training, returns path to saved file."""
     
-    chkpt_folder = get_default_chkpt_folder()
-    if "checkpoint_dir" in cfg.run:
-        if os.path.isabs(cfg.run.checkpoint_dir):
-            chkpt_folder = cfg.run.checkpoint_dir
-        else:
-            try:
-                chkpt_folder = os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", cfg.run.checkpoint_dir)
-            except:
-                chkpt_folder = os.getcwd()
+    cfg = ConfigSingleton().config
+    dataset_name = cfg.dataset.name
+    from_file = cfg.model.from_file
+    model_cfg=cfg.model
+    log.debug(f'model_cfg when saving checkpoint: {PrettyPrinter(indent=1).pformat(model_cfg)}')
+    tokenizer_cfg=cfg.tokenizer
+    quant_cfg = cfg.get('quantization', None)
+    #TODO: infer filename (choice) of model config
+    filename = f"{ConfigSingleton().config.runtime.choices.model}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
+    if not isinstance(from_file, FromFile) and isinstance(from_file, Union[Dict, DictConfig]):
+        from_file["filename"] = filename
+        from_file = FromFile(**from_file)
+    else:
+        log.error(f'Cannot compose model_path with from_file: {from_file}')
+        raise TypeError()
+    from_file.filename = filename
+    checkpoint_path = from_file.get_filepath()
+    chkpt_folder, _ = os.path.split(checkpoint_path)
     os.makedirs(chkpt_folder, exist_ok=True)
-    if epoch % cfg.run.save_epoch_interval == 0:
-        if steps is not None:
-            checkpoint_path = os.path.join(chkpt_folder,f"{OmegaConf.to_container(HydraConfig.get().runtime.choices)['model']}_{dataset.replace('/', '__')}_{timestamp}__epoch:{epoch}")
-        else:
-            checkpoint_path = os.path.join(chkpt_folder,f"{OmegaConf.to_container(HydraConfig.get().runtime.choices)['model']}_{dataset.replace('/', '__')}_{timestamp}__epoch:{epoch}__steps:{steps}")
-
-        log.info(f"Model checkpoint saving to {checkpoint_path}")
-        torch.save(obj={
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "epoch": epoch,
-                "steps": steps,
-                "model_cfg": model_cfg,
-                "tokenizer_cfg": tokenizer_cfg, 
-                "metrics": metrics,
-                "quant_cfg": quant_cfg, 
-                "quantized": True if cfg.get('quantization', {"quantize": False})["quantize"] is True else False
-                }, f=checkpoint_path)
-        log.info(f"Model checkpoint saved to {checkpoint_path}")
+    log.info(f"Model checkpoint saving to {checkpoint_path}")
+    torch.save(obj={
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "epoch": epoch,
+            "model_cfg": model_cfg,
+            "tokenizer_cfg": tokenizer_cfg, 
+            "metrics": metrics,
+            "quant_cfg": quant_cfg, 
+            "quantized": True if quant_cfg.get("quantize", False) is True else False
+            }, f=checkpoint_path)
+    log.info(f"Model checkpoint saved to {checkpoint_path}")
     return checkpoint_path
 
-import onnx
-import onnxruntime as ort
-from qonnx.core.modelwrapper import ModelWrapper
-# maybe only do this when it is required, for this howiever is always the case
-from onnx.shape_inference import infer_shapes
 
 def load_onnx_model(path: str) -> ModelWrapper:
     """
@@ -176,3 +208,4 @@ def write_to_pipe(cfg: DictConfig, content: str) -> None:
         #problematic if something should be done after writing into the pipe
         with open(pipe_name, 'w') as pipe:
             pipe.write(content)
+

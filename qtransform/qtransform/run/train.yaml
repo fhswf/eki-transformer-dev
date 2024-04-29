@@ -1,17 +1,13 @@
 command: train
 
 always_save_checkpoint : True # if True, always save a checkpoint after each eval
-# model_chkpt_dir: ${oc.env:HOME}
-checkpoint_dir: models
-from_checkpoint: #specify checkpoint to train from absolute path or relative to checkpoint_dir 
-from_pretrained: # loads model state dict from  huggingface model
-epochs: 3
+epochs: 10
 gradient_accumulation_steps : 1 # used to simulate larger batch sizes, leave empty or set to 1 for no accumulation
 flash: False
 export: False ## perform an export after #epochs are done
 compile: True
-max_iters :  # number of training iterations for one epoch. total number of iterations: max_iters * epochs. Use this only for testing the framework
-
+max_iters : # number of training iterations for one epoch. total number of iterations: max_iters * epochs
+save_epoch_interval: 1
 log_steps_interval : 10
 grad_clip : 0.7 # clip gradients at this value, or disable if :: 0.0
 
@@ -20,14 +16,13 @@ eval_epoch_interval : 1 #perform eval after specified amount of epochs
 # eval_iters: 200 #retrieve specified amount of batches for evaluation (unused)
 
 save_steps_interval: 500 # save model pt every n steps (=batches for now)
-save_epoch_interval: 1
 export_steps_interval: # unused
 
 scheduler_steps_interval: 500 # adjust learning rate every x steps (=batches for now) only applies when  scheduler_step_type == "steps"
 scheduler_step_type: "steps"  ## either  'epoch' or 'steps' (= samples or batches ?= len of dataloader)
 #TODO: profiling can display a lot of information at the cost of readability. toggling args could prevent it at the cost of
 #      omiting resource details
-profile: #display resource consumption for each epoch
+profile: #display resource consumption for each epoch if "active" is set to True
   active: False
   args:
     record_shapes: True

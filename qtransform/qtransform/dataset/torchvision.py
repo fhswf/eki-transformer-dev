@@ -1,6 +1,6 @@
 from dataclasses import dataclass, fields
 from typing import Callable, Tuple
-from qtransform.dataset import DatasetSplits, OldDatasetWrapper
+from qtransform.dataset import DatasetSplits
 from qtransform.utils.introspection import get_classes
 from torchvision import datasets, transforms
 import torch
@@ -10,7 +10,8 @@ from omegaconf import DictConfig
 import logging
 log = logging.getLogger(__name__)
 
-class TorchvisionDatasetWrapper(OldDatasetWrapper):
+@DeprecationWarning
+class TorchvisionDatasetWrapper():
     def __init__(self, cfg: DictConfig) -> None:
         super().__init__(cfg)
         self.available_datasets = get_classes(datasets, Dataset)

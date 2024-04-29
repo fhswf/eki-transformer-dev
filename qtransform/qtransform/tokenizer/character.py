@@ -1,6 +1,6 @@
 from numpy import array, memmap
 from omegaconf import DictConfig
-from qtransform.dataset.tokenizer import Tokenizer, Metadata
+from qtransform.tokenizer import Tokenizer, Metadata
 import logging
 from typing import List, Dict
 import pickle

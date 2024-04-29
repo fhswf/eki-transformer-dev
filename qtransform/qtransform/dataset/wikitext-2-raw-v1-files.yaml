@@ -1,0 +1,8 @@
+name: wikitext
+name_args:
+  subset: wikitext-2-raw-v1
+tokenized:
+  type: files #store dataset as a flat binary numpy array file
+
+defaults:
+  - untokenized/huggingface

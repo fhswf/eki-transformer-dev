@@ -7,14 +7,21 @@ hydra:
   #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
   searchpath:
     - pkg://qtransform
+#TODO: write last checkpoint/ onnx model name here
 defaults:
   - _self_
   - model: 
-  - dataset: 
+  #use fields from "config.yaml" (defined below) and override them with default config from dataset
+  - dataset/tokenized: default 
+  - dataset/untokenized: default
+  - dataset/dataloader: default
+  #default config from the lines above are overwritten with specified config
+  - dataset:
+  - tokenizer: transformers
   - optim: default
   - optim/scheduler: default
   - run: ???
-  - quantization: None
+  - quantization: default
   - override hydra/job_logging: perlevel
   - override hydra/help: main
   #- override hydra/job_logging: colorlog
@@ -26,35 +33,51 @@ device : 'cuda'
 debug: False
 
 dataset:
-  wrapper: ??? #name of dataset wrapper to use which returns an instance of type Dataset
-  module: ??? #name of python file which declares wrapper class
   name: ???
-  root_path: ~/.qtransform/datasets
-  #points to the directory containing the dataset used for training/validation etc. 
-  #the list is composed of subentries under root_path (root_path included) in hierarchical order
-  #the filename of the dataset is not included as it could be split into multiple files (take MNIST for example)
-  dataset_dir: #structure something along the lines of: ~/.qtransform/datasets/huggingface/tiny_shakespeare
-    - ${dataset.root_path}
-    - ${dataset.module}
-    - ${dataset.name}
-  sizes:
-    train: 0.0 #all dataset splits are empty by default
-    eval: 0.0
-    bench: 0.0
-  tokenizer: 
-      dtype: ${data.dtype}
-      meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
+  name_args: #criteria to distinguish dataset (e.g. subset from huggingface dataset)
+  root_path: ~/.qtransform/datasets #~/.cache/huggingface/datasets/qtransform/
+  tokenized:
+    cache_dir: #directory where tokenized datasets are stored
+      - ${dataset.root_path}
+      - ${dataset.tokenized.type}
+      - ${dataset.name}
+    #filename of tokenized split: <cache_filename_prefix>-<split>-<dataset_suffix>. "dataset_suffix" is specified by the format of tokenized data
+    #the split is specified in between the prefix and the suffix
+    cache_filename_prefix: cache-${tokenizer.encoding}-${model.args.block_size}- #leads to: "cache-gpt2-128-". 
+
+
+
+tokenizer: 
+  encoding: ???
+  dtype: ${data.dtype}
+  meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
 seed: 1234567890
 
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.
 
 model: 
+  type: ??? #checkpoint, onnx model, pretrained huggingface model ...
+  #TODO: seperation of path with model_dir and filename is kind of redundant
+  from_file:
+    model_dir: models #if absolute: append model_dir to filepath. if relative: use dir "outputs" of working directory
+    filename: #filename of onnx model/ checkpoint. if absolute: ignore model_dir. otherwise, prepend model_dir to filename 
+
   calc_loss_in_model: False
 
 quantization:
   quantize: False
 
+#timestamp from previous run (e.g. 2024-04-11_10-39-33)
+#looks for pickle files located in output directory (defined above in hydra field)
+#from_file field of pickle file should usually be used instead of user-supplied model
+#https://github.com/facebookresearch/hydra/issues/1805#issuecomment-1069772177
+from_previous_run:
+
 #filepath of named pipe. currently, the path of saved checkpoints and (q)onnx models are written into it
 #by default, write into /dev/null
 pipe: /dev/null
+
+callbacks:
+  update_from_file: qtransform.utils.callbacks.FromFileInfoCallback
+  pickle_config: qtransform.utils.callbacks.PickleJobInfoCallback
