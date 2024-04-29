@@ -36,11 +36,18 @@ def call_on_run_start(callbacks: Dict[str, Callback]):
         log.debug(f'Calling {callback_name}')
         callback.on_run_start(cfg)
 
-def call_on_run_end(callbacks: Dict[str, Callback]):
+def call_on_run_end(callbacks: Dict[str, Callback]) -> Dict[str, Any]:
+    """
+    Calls callbacks at the end of the run script and collects the return values of each of them.
+    """
     cfg = ConfigSingleton().config
+    args = {}
     for callback_name, callback in callbacks.items():
         log.debug(f'Calling {callback_name}')
-        callback.on_run_end(cfg)
+        arg = callback.on_run_end(cfg)
+        if arg is not None:
+            args[callback_name] = arg
+    return args
 
 #overall, callbacks arent that useful for manipulating the state of the application, but they could be useful for type checking
 #the problem is that callbacks are called with the config at the start of the run script and do not reflect changes made to it
@@ -84,7 +91,7 @@ class FromFileInfoCallback(Callback):
         ConfigSingleton().config = new_config
 
     def on_run_end(self, config: DictConfig, **kwargs: Any) -> None:
-        pass
+        return None
 
 #from: hydra.experimental.callbacks
 class PickleJobInfoCallback(Callback):
@@ -98,7 +105,7 @@ class PickleJobInfoCallback(Callback):
     def on_run_start(self, config: DictConfig, **kwargs: Any) -> None:
         log.info(f'Saving hydra config at the end of run script')
 
-    def on_run_end(self, config: DictConfig, **kwargs: Any) -> None:
+    def on_run_end(self, config: DictConfig, **kwargs: Any) -> str:
         """
         Pickle the job's config in ${output_dir}/config.pickle.
         It is saved at the end in order to reflect dynamic changes in the config
@@ -110,9 +117,24 @@ class PickleJobInfoCallback(Callback):
             config["runtime"]["choices"] = HydraConfig().get().runtime.choices
         self._save_pickle(obj=config, filename=filename, output_dir=self.output_dir)
         self.log.info(f"Saving job configs in {self.output_dir / filename}")
+        return os.path.join(output_dir, filename)
 
     def _save_pickle(self, obj: Any, filename: str, output_dir: Path) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
         assert output_dir is not None
         with open(str(output_dir / filename), "wb") as file:
             pickle.dump(obj, file, protocol=4)
+
+class ToPipeCallBack(Callback):
+    """
+    Reads and writes content from a named pipe.
+    The content could be a pickled config file to replicate previous runs.
+    """
+    def __init__(self) -> None:
+        self.log = getLogger(f"{__name__}.{self.__class__.__name__}")
+
+    def on_run_start(self, config: DictConfig, **kwargs: Any) -> None:
+        log.info(f'Printing generated config pickle file into pipe at successful execution of run script')
+
+    def on_run_end(self, config: DictConfig, **kwargs: Any) -> str:
+        pass

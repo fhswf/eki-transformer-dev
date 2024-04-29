@@ -12,6 +12,7 @@ from qtransform.utils.callbacks import Callback, call_on_run_start, call_on_run_
 import brevitas
 from importlib import import_module
 from typing import Dict
+from qtransform.utils.helper import write_to_pipe
 
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 log = logging.getLogger(__name__)
@@ -98,6 +99,7 @@ def main():
                 log.error(f'Command "{cfg.run.command}" not recognized')
     except:
         log.critical("Script execution failed. Reason: ", exc_info=True)
+    #unsure if config should be pickled if errors occured
     call_on_run_end(callbacks)
 
 if __name__ == "__main__":

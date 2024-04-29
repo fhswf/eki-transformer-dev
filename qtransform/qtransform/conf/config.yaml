@@ -81,3 +81,7 @@ pipe: /dev/null
 callbacks:
   update_from_file: qtransform.utils.callbacks.FromFileInfoCallback
   pickle_config: qtransform.utils.callbacks.PickleJobInfoCallback
+  #wip
+  #to_pipe: 
+  #  class: qtransform.utils.callbacks.ToPipeCallback
+  #  args: 
