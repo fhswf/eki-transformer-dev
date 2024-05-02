@@ -18,9 +18,9 @@ class FromFileInfoCallback(Callback):
         from_previous_run = config.from_previous_run
         if from_previous_run is None:
             return
-        log.info(f'Updating config with from_previous_run={from_previous_run}')
+        self.log.info(f'Updating config with from_previous_run={from_previous_run}')
         if os.path.isfile(from_previous_run):
-            log.warn(f'from_previous_run expects directory path, not filepath. Removing filename')
+            self.log.warn(f'from_previous_run expects directory path, not filepath. Removing filename')
             output_dir, _ = os.path.split(from_previous_run)
         elif os.path.isabs(from_previous_run):
             output_dir = from_previous_run
@@ -33,7 +33,7 @@ class FromFileInfoCallback(Callback):
             new_config = pickle.load(input)
         assert isinstance(config, DictConfig), f'Pickle file from {from_previous_run} is not a DictConfig file'
             #del config["run"]
-        log.debug(f'Loaded config from previous run: {PrettyPrinter(indent=1).pformat(config)}')
+        self.log.debug(f'Loaded config from previous run: {PrettyPrinter(indent=1).pformat(config)}')
         #unsure in what way the HydraConfig() config could be used for our purposes. for now, only use cfg from hydra.main()
         current_cfg = ConfigSingleton().config
         with open_dict(new_config):
