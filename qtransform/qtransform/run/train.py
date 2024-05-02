@@ -124,7 +124,6 @@ def run(cfg: DictConfig):
         log.info(f'Updating from_file for rerun')
         cfg.model.from_file.filename = last_checkpoint
         cfg.model.from_file.model_dir = None
-
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
         from hydra import compose

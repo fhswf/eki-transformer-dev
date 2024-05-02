@@ -79,9 +79,10 @@ from_previous_run:
 pipe: /dev/null
 
 callbacks:
-  update_from_file: qtransform.utils.callbacks.FromFileInfoCallback
-  pickle_config: qtransform.utils.callbacks.PickleJobInfoCallback
-  #wip
-  #to_pipe: 
-  #  class: qtransform.utils.callbacks.ToPipeCallback
-  #  args: 
+  update_from_file: 
+    cls: qtransform.utils.callbacks.from_file.FromFileInfoCallback
+  pickle_config: 
+    cls: qtransform.utils.callbacks.pickle_job_info.PickleJobInfoCallback
+    #init params of the respective callback class
+    args: 
+      to_pipe: ${pipe} #write config file path into pipe. stops execution until pipe is consumed, therefore move callback to last

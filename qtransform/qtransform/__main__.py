@@ -8,11 +8,12 @@ import qtransform
 from qtransform.utils import addLoggingLevel
 from pprint import PrettyPrinter
 from qtransform import ConfigSingleton
-from qtransform.utils.callbacks import Callback, call_on_run_start, call_on_run_end
+from qtransform.utils.callbacks import Callbacks
+from qtransform.utils.helper import write_to_pipe
 import brevitas
 from importlib import import_module
 from typing import Dict
-from qtransform.utils.helper import write_to_pipe
+
 
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 log = logging.getLogger(__name__)
@@ -31,24 +32,6 @@ def module_wrapper(cfg: DictConfig):
     ConfigSingleton().config = cfg
     main()
 
-def get_callbacks(callback_cfg: DictConfig) -> Dict[str, Callback]:
-    #hydra allows for a much more versatile callback configuration (via config.yaml), 
-    #but for our purposes this is enough
-    callbacks = {}
-    if callbacks is None:
-        log.info(f'No callbacks supplied')
-        return callbacks
-    for callback_name, callback_class in callback_cfg.items():
-        split = callback_class.split('.')
-        module: str = '.'.join(split[:-1])
-        callback_class = split[-1]
-        module = import_module(module)
-        try:
-            #callbacks should be a class and have no parameters in constructor
-            callbacks[callback_name] = getattr(module, callback_class, None)()
-        except:
-            log.warning(f'Module {module.__name__ + "." + callback_class} not found', exc_info=True)
-    return callbacks
 
 def main():
     cfg = ConfigSingleton().config
@@ -72,8 +55,8 @@ def main():
         log.error("No run command found in run config, run config was: " + str(cfg.run))
         raise KeyError
     #call callbacks
-    callbacks = get_callbacks(cfg.callbacks)
-    call_on_run_start(callbacks)
+    callbacks = Callbacks(cfg.callbacks)
+    callbacks.call_on_run_start(cfg)
     #config could have been changed by callbacks at this point
     cfg = ConfigSingleton().config
     #make sure that callbacks are still called after exceptions
@@ -100,7 +83,8 @@ def main():
     except:
         log.critical("Script execution failed. Reason: ", exc_info=True)
     #unsure if config should be pickled if errors occured
-    call_on_run_end(callbacks)
+    cfg = ConfigSingleton().config
+    callbacks.call_on_run_end(cfg)
 
 if __name__ == "__main__":
     module_wrapper()

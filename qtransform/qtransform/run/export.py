@@ -114,9 +114,6 @@ def run(cfg: DictConfig, **kwargs):
     except Exception:
         log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)
         raise RuntimeError()
-    #write path to fifo
-    from qtransform.utils.helper import write_to_pipe
-    write_to_pipe(cfg, model_path)
 
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None
