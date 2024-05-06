@@ -1,3 +1,4 @@
+import os
 from qtransform.dataset import TokenizedDatasetGenerator, DatasetSplits, DatasetSplitType, MODEL_INPUT_NAME, MODEL_LABEL_NAME, MODEL_MASK_NAME
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform.tokenizer import TransformersTokenizer
@@ -93,6 +94,9 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         def tokenizer_function(batch):
             return {MODEL_INPUT_NAME: [tokenizer_singleton.tokenizer.encode(x) for x in batch[text_column_name]]}
         dump_file_names = {split.name: self.DUMP_FILE_PATH + self.CACHE_FILENAME_PREFIXES[split] + "tokenized.arrow" for split in DatasetSplitType}
+        # ensure folders are present for custom  chache files
+        for k,v in dump_file_names.items():
+            os.makedirs(name="/".join(v.split("/")[:-1]), exist_ok=True)
 
         #tokenize them
         tokenized_datasets = untokenized_data.map(
@@ -123,6 +127,9 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
 
         cache_file_names = {split.name: self.get_filepath_split(split) for split in DatasetSplitType}
         log.debug(f'tokenized_datasets: {tokenized_datasets}')
+        # ensure folders are present for custom  chache files
+        for k,v in cache_file_names.items():
+            os.makedirs(name="/".join(v.split("/")[:-1]), exist_ok=True)
 
         lm_datasets = tokenized_datasets.map(
             group_texts,

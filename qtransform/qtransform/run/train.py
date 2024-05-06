@@ -72,8 +72,8 @@ def run(cfg: DictConfig):
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model_wrapper.to(device=device)
-    log.debug(model_wrapper.model)
-
+    if hasattr(log,"trace"): log.trace(model_wrapper.model)
+    
     if model_wrapper.epochs >= 1:
         cfg.run.epochs = model_wrapper.epochs + cfg.run.epochs
         #TODO: construct absolute filepath for checkpoint

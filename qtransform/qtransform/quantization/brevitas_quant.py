@@ -151,8 +151,8 @@ class BrevitasQuantizer(Quantizer):
         #exceptions: dtype, device have to be retrieved from general config
         signature_unquantized_layer = inspect.signature(layer.__init__)
         signature_quantized_layer = inspect.signature(quantized_layer_class.__init__)
-        log.debug(f'Constructor signature of layer {layer_name} (class {layer.__class__}): {signature_unquantized_layer}')
-        log.debug(f'Constructor signature of quantized layer {quantized_class_name}: {signature_quantized_layer}')
+        if hasattr(log,"trace"): log.trace(f'Constructor signature of layer {layer_name} (class {layer.__class__}): {signature_unquantized_layer}')
+        if hasattr(log,"trace"): log.trace(f'Constructor signature of quantized layer {quantized_class_name}: {signature_quantized_layer}')
         hyperparameters = dict()
         necessary_params = set(signature_unquantized_layer.parameters.keys()) & set(signature_quantized_layer.parameters.keys())
         for attribute_name in necessary_params - set(['self', 'dtype', 'device', 'inplace']):
@@ -172,7 +172,7 @@ class BrevitasQuantizer(Quantizer):
         args = {**hyperparameters, **quantizers}
         if layer_cfg.args is not None:
             args.update(**layer_cfg.args)
-        log.debug(f'Quantizing layer \"{layer_name}\" with args: \"{args}\"')
+        if hasattr(log,"trace"): log.trace(f'Quantizing layer \"{layer_name}\" with args: \"{args}\"')
         #create object of quantized layer, passing hyperparameters from current layer and (custom) quantizer classes
         try:
             quantized_layer = quantized_layer_class(**args)

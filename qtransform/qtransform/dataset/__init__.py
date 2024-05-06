@@ -66,7 +66,8 @@ class DatasetSplits:
 
 class TokenizedDatasetFactory():
 
-    def get_tokenized_data(cfg: DictConfig) -> (DatasetSplits, Callable):
+    @classmethod
+    def get_tokenized_data(clz, cfg: DictConfig) -> (DatasetSplits, Callable):
         """
         Loads tokenized data and returns a DatasetSplits instance along a collate_fn for torch Dataloaders.
         If the tokenized data does not exist locally, the untokenized data is processed.

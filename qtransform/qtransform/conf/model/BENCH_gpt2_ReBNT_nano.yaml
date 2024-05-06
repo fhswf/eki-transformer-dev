@@ -1,3 +1,4 @@
+type: CHECKPOINT
 cls: GPT
 calc_loss_in_model: True
 args:

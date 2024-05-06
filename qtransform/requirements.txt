@@ -7,11 +7,9 @@ setuptools>=62.4
 setuptools_rust
 tiktoken
 tensorboard
-git+https://github.com/fhswf/brevitas.git@fhswf-dev
 torchvision
 typing_inspect
 numpy>=1.24.1
-qonnx
 onnxoptimizer
 onnxruntime-gpu #make onnx models run on CUDA
 python-dateutil
@@ -24,4 +22,7 @@ tokenizers>=0.13.3
 sentencepiece
 tabulate
 fsspec[http]<=2023.10.0,>=2023.1.0 #for datasets package
-finn #still not found sometimes. TODO: find out why
+git+https://github.com/fhswf/brevitas.git@fhswf-dev
+git+https://github.com/iksnagreb/brevitas.git@34c350afde0a69b7a39b13eb4748b979bdae1eff
+git+https://github.com/iksnagreb/qonnx.git@finn/pull/901
+git+https://github.com/iksnagreb/finn.git@v0.10/merge/attention
