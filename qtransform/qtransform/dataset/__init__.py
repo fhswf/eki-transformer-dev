@@ -9,10 +9,10 @@ from dataclasses import dataclass, fields, InitVar
 from enum import IntEnum
 from os import listdir, makedirs
 from os.path import join, exists
-from qtransform.tokenizer import Tokenizer, get_tokenizer
+# from qtransform.tokenizer import Tokenizer, get_tokenizer
 import datasets
 from datasets.dataset_dict import DatasetDict
-from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
+# from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 import qtransform.dataset as package_self
 from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
 from qtransform import device_singleton

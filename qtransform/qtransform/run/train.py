@@ -320,7 +320,7 @@ def train_one_epoch(cfg: DictConfig,
             model.train()
             log.info(f'AVERAGE EVAL LOSS FOR BATCHES {i}/{run_len}: {mean.item()}')
 
-        if i % cfg.run.save_steps_interval == 0: 
+        if i % cfg.run.save_steps_interval == cfg.run.save_steps_interval - 1:
             ## interval or end of training, epochs is also 1 for mini_run
             # last_checkpoint is the absolute filepath of the saved checkpoint
             last_checkpoint: str = save_checkpoint(cfg=cfg, 
@@ -331,7 +331,7 @@ def train_one_epoch(cfg: DictConfig,
                 epoch=epoch, 
                 metrics=loss, 
                 model_cfg=cfg.model, 
-                tokenizer_cfg=cfg.dataset.tokenizer,
+                tokenizer_cfg=cfg.tokenizer,
                 quant_cfg = cfg.get('quantization', None),
                 steps=i,
                 )
