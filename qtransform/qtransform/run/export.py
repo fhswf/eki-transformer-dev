@@ -133,9 +133,6 @@ def run(cfg: DictConfig, **kwargs):
     onnx_model = QModelWrapper(onnx_model)
     o =  execute_onnx(onnx_model, {"input": sample_tensor.cpu().numpy()})
     print(o)
-    #write path to fifo
-    from qtransform.utils.helper import write_to_pipe
-    write_to_pipe(cfg, model_path)
 
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None

@@ -124,10 +124,6 @@ def run(cfg: DictConfig):
         log.info(f'Updating from_file for rerun')
         cfg.model.from_file.filename = last_checkpoint
         cfg.model.from_file.model_dir = None
-
-
-    #write checkpoint into fifo if model is not exported, otherwise write path to onnx model into fifo
-    from qtransform.utils.helper import write_to_pipe
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
         from hydra import compose
@@ -146,9 +142,6 @@ def run(cfg: DictConfig):
             OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
         kwargs = {"model_wrapper": model_wrapper}
         export.run(cfg, **kwargs)
-    else:
-        #write checkpoint into fifo
-        write_to_pipe(cfg, last_checkpoint)
 
 def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
            optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:

@@ -33,6 +33,10 @@ class DatasetSplitType(IntEnum):
     EVAL = 1
     BENCH = 2
 
+    @classmethod
+    def get_split(split):
+        return split.name
+
 #TODO: type of each split is still not clearly defined. For huggingface, it is a huggingface dataset. For files, it is a torch Dataset.
 @dataclass
 class DatasetSplits:
@@ -144,6 +148,8 @@ class TokenizedDatasetGenerator(ABC):
         #TODO: create function which composes filename from list and adds a seperator (-) to avoid if else statements
         if self.cfg.tokenized.cache_filename_prefix[-1] != "-":
             cache_filename_prefix += "-"
+        #avoid directory seperators for encoding
+        cache_filename_prefix = cache_filename_prefix.replace('/', '-')
         self.CACHE_FILENAME_PREFIXES = {split: cache_filename_prefix + split.name + "-" for split in DatasetSplitType}
         log.debug(f'CACHE_FILENAME_PREFIXES: {self.CACHE_FILENAME_PREFIXES}')
 

@@ -175,7 +175,7 @@ def load_onnx_model(path: str) -> ModelWrapper:
         log.warning(f"shape infernce faild due to {e}. Continue without infer_shapes. Good luck!")
     return model
 
-def write_to_pipe(cfg: DictConfig, content: str) -> None:
+def write_to_pipe(pipe_name: str, content: str) -> None:
     """
     Write into a named pipe in order for other qtransform processes to access information from this current instance.
     The filepath of checkpoints or ONNX models could be written into the pipe in order to continue training from it or 
@@ -184,10 +184,10 @@ def write_to_pipe(cfg: DictConfig, content: str) -> None:
     The "pipe" field from the hydra config specifies the filepath of the named pipe (by default: /dev/null). If the pipe does
     not exist yet and the current operating system is UNIX-like, it will be created. 
     """
-    #write checkpoint into named_pipe
-    pipe_name = cfg.get('pipe', '/dev/null')
     #by default, write checkpoint to /dev/null if pipe name is omited
-    pipe_name = '/dev/null' if pipe_name is None else pipe_name
+    if not isinstance(pipe_name, str):
+        log.debug(f'Invalid type for pipe: {pipe_name}. Using /dev/null')
+        pipe_name = '/dev/null'
     if not os.path.exists(pipe_name):
         from sys import platform
         if platform == "win32":
