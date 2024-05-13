@@ -78,6 +78,9 @@ def main():
             case "test":
                 from qtransform.run import test
                 test.run(cfg)
+            case "script":
+                from qtransform.run import script
+                script.run(cfg)
             case _:
                 log.error(f'Command "{cfg.run.command}" not recognized')
     except:
