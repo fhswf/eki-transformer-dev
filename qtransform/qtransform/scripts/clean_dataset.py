@@ -1,24 +1,44 @@
+import logging
+log = logging.getLogger(__name__)
+
+import re
 import enum
-import random
 import json
 import glob
 import os
-from collections import Counter
-
-import logging
 from typing import Any
-log = logging.getLogger(__name__)
 
-
+import enchant
 import qtransform
 args = [ "run=script", "run.file=none" ]
 @qtransform.with_config(args, logging.DEBUG)
 def run_standalone(cfg):
 	log.info(f"running {__file__}")
 	file = "/home/kuhmichel/.qtransform/datasets/downloads/TinyStories_all_data"
+	stats = {
+		"errors": 0,
+		"succcess": 0,
+	}
+	words = dict()
+	#pat = re.compile(r"(.+?)[\s'\",!,\.,\?,-]{1,}")
+	pat = re.compile(r"([\w][\w]*'?\w?)")
+	#english = enchant.Dict("en_US")
+	english = enchant.DictWithPWL("en_US","mywords.txt")
 	for _i, e in enumerate(gather_files(file)):
-		data = process_story(e)
-		if _i > 10:
+		yes, data = process_story(e)
+		if not yes:
+			stats['errors'] = stats['errors'] + 1
+		else:
+			stats['succcess'] = stats['succcess'] + 1
+		if yes:
+			story = data[Keys.story]
+			
+			story_words = pat.findall(story)
+			for word in story_words:
+				if not english.check(word):
+					print(word)
+					print(story)
+		if _i > 100:
 			break
 
 class Keys(str, enum.Enum):
@@ -32,20 +52,24 @@ class Keys(str, enum.Enum):
 	def __str__(self):
 		return f'{str(self.value)}'
 
+
 def process_story(data:dict):
 	story = kget(data, Keys.story)
 	try:
 		story = clean_punctuation(story)
 		# checks must return True if check failed!
+		#  better reporting?
 		fail = check_len(story) \
 			or check_ascii(story) \
 			or check_odd_symbols(story) \
 			or check_punct(story)
 		if not fail:
-			return kset(data, Keys.story, story)
+			return True, kset(data, Keys.story, story)
+		else:
+			return False, data
 	except Exception as e:
 		log.warning(f"check failed {e}, story is skipped")
-		return False
+		return False, data
 
 def gather_files(file):
 	if isinstance(file, str):
@@ -96,24 +120,39 @@ def kset(d, key:str, v:Any):
 			return kset(d[keys[0]], '.'.join(keys[1:]))
 		else:
 			d[key] = v
+			return d
 	else:
 		log.error(f"d must be of type dict, found {type(d)}")
 		raise Exception 
 
-def write_outputs(file, split_size_str = "100MB"):
+def write_outputs(file, split_size_bytes = 100000000, overwrite=False):
+	""" Generator type writing pipline. used via gen.send(data). Calls str() around data."""
 	if isinstance(file, str):
 		if os.path.isdir(file):
 			log.debug(f"assume file {file} is a folder")
 			log.debug(f"putting files in folder with enumeration")
+			counter = 1
 			# create folder/test001.txt files
+			partfile = os.path.join(file, "part" + str(counter) + ".txt")
 			while True:
 				data = yield
 				# TODO
-		elif os.path.isfile(file):
+				with open(partfile, 'a') as o:
+					o.write(str(data))
+				if os.path.getsize(partfile) > split_size_bytes:
+					counter = counter + 1
+					partfile = os.path.join(file, "part" + str(counter) + ".txt")
+		elif os.path.isdir(os.path.dirname(file)):
 			log.debug(f"assume file {file} is a pointer to a file")
+			if os.path.isfile(file) and not overwrite:
+				log.error(f"output file present, overwrite: {overwrite}, stopping")
+				raise Exception
+			else:
+				log.warning("Overwriting file")
 			with open(file, 'w') as o:
 				while True:
 					data = yield
+					o.write(str(data))
 		else:
 			log.error(f"unsupported filetype {file}, of type {type(file)}")
 			raise Exception 
