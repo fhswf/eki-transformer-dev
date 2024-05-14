@@ -19,27 +19,26 @@ def run_standalone(cfg):
 		"errors": 0,
 		"succcess": 0,
 	}
-	words = dict()
-	#pat = re.compile(r"(.+?)[\s'\",!,\.,\?,-]{1,}")
-	pat = re.compile(r"([\w][\w]*'?\w?)")
-	#english = enchant.Dict("en_US")
-	english = enchant.DictWithPWL("en_US","mywords.txt")
+	ouputs = write_outputs(file="outputs")
+	next(ouputs)
+
 	for _i, e in enumerate(gather_files(file)):
-		yes, data = process_story(e)
-		if not yes:
-			stats['errors'] = stats['errors'] + 1
-		else:
-			stats['succcess'] = stats['succcess'] + 1
+		if kget(e,Keys.source) == Keys.gpt3:
+			continue
+		good_grammer, data = process_story_grammer(e)
+		good_vocab, data = process_story_vocab(e) 
+		yes = good_grammer and good_vocab
 		if yes:
-			story = data[Keys.story]
+			stats['succcess'] = stats['succcess'] + 1
+			ouputs.send(data[Keys.story])
+			ouputs.send("\n<|endoftext|>\n")
+		else:
+			stats['errors'] = stats['errors'] + 1
 			
-			story_words = pat.findall(story)
-			for word in story_words:
-				if not english.check(word):
-					print(word)
-					print(story)
-		if _i > 100:
+		if _i > 60000:
 			break
+	print(unknown_words)
+	print(stats)
 
 class Keys(str, enum.Enum):
 	story = 'story'
@@ -49,11 +48,48 @@ class Keys(str, enum.Enum):
 	instruction_words = 'instruction.words'
 	instruction_features = 'instruction.features'
 	summary = 'summary'
+	gpt4 = "GPT-4"
+	gpt3 = "GPT-3.5"
 	def __str__(self):
 		return f'{str(self.value)}'
+	
+#pat = re.compile(r"(.+?)[\s'\",!,\.,\?,-]{1,}")
+pat = re.compile(r"([\w][\w]*'?\w?)")
+number = re.compile(r"^[+-]?((\d+(\.\d+)?)|(\.\d+))$")
+unknown_words = dict()
+#english = enchant.Dict("en_US")
+english_us = enchant.DictWithPWL("en_US","mywords.txt")
+english_gb = enchant.DictWithPWL("en_GB","mywords.txt")
+blacklist  = enchant.PyPWL("blacklist.txt")
+def process_story_vocab(data:str):
+	story = data[Keys.story]
+	story_words = pat.findall(story)
+	word:str
+	for word in story_words:
+		if bool(number.search(word)):
+			continue
+		if not english_us.check(word) and not english_gb.check(word):
+			word = word.rstrip("'r")
+			word = word.rstrip("'l")
+			word = word.rstrip("'s")
+			#word = word.rstrip("'re")
+			#word = word.rstrip("'ll")
+			word = word.rstrip("'v")
+			#word = word.rstrip("'ve")
+			if word == "":
+				continue
+			if not english_us.check(word) and not english_gb.check(word):
+				if unknown_words.get(word, None) is not None:
+					unknown_words[word] = unknown_words[word]+1
+				else:
+					unknown_words[word] = 1
+				return False, data
+		if blacklist.check(word):
+			return False, data
 
+	return True, data
 
-def process_story(data:dict):
+def process_story_grammer(data:dict):
 	story = kget(data, Keys.story)
 	try:
 		story = clean_punctuation(story)
@@ -125,7 +161,7 @@ def kset(d, key:str, v:Any):
 		log.error(f"d must be of type dict, found {type(d)}")
 		raise Exception 
 
-def write_outputs(file, split_size_bytes = 100000000, overwrite=False):
+def write_outputs(file, split_size_bytes = 10000000, overwrite=False):
 	""" Generator type writing pipline. used via gen.send(data). Calls str() around data."""
 	if isinstance(file, str):
 		if os.path.isdir(file):
@@ -136,6 +172,8 @@ def write_outputs(file, split_size_bytes = 100000000, overwrite=False):
 			partfile = os.path.join(file, "part" + str(counter) + ".txt")
 			while True:
 				data = yield
+				if data == None:
+					continue
 				# TODO
 				with open(partfile, 'a') as o:
 					o.write(str(data))
