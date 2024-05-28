@@ -33,6 +33,20 @@ class Model(ABC):
         raise NotImplementedError
 from dataclasses import fields
 
+
+
+
+"sinusoidal": QuantSinusoidalPositionalEncoding(
+            input_quant, output_quant, return_quant_tensor
+),
+# Fixed, binary positional encoding with quantizers
+"binary": QuantBinaryPositionalEncoding(
+    input_quant, output_quant, return_quant_tensor
+),
+
+
+
+
 class GPT(GenericModel):
     def __init__(self, config: ModelArgs):
         super().__init__(config)

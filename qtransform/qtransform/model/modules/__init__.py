@@ -1,6 +1,6 @@
 import torch
 import math
-from torch import nn 
+from torch import Tensor, nn 
 from torch.nn import functional as F
 from qtransform.model import modules as custom_nn
 from dataclasses import dataclass
@@ -22,6 +22,43 @@ class EltwiseAdd(nn.Module):
     def forward(self, input, other):
         return input + other
     
+class SinPosEmb(nn.Module):
+    """Sinosoidal Position Embedding. Does not add anything, only computes sin/cos embbedding, basically returns a constant."""
+    def __init__(self, emb_dim__model: int, max_seq_len: int):
+        """
+        Arguments:
+            emb_dim__model: int, vocab embedding dimensionality
+            max_seq_len: int, maximum sequence length
+        """
+        super().__init__()
+        pos_id = torch.as_tensor([[n] for n in range(max_seq_len)])
+        freq_div = f = torch.as_tensor([1e4 ** -(i / emb_dim__model) for i in range(0, emb_dim__model, 2)])
+        pe = torch.zeros(max_seq_len, emb_dim__model)
+        pe[:, 0::2] = torch.sin(pos_id * freq_div)
+        pe[:, 1::2] = torch.cos(pos_id * freq_div)
+        self.register_buffer('pe', pe)
+
+    def forward(self) -> Tensor:
+        return self.pe
+    
+class IntPosEmb(torch.nn.Module):
+    """Position Embedding as encoded onehot Vector. Does not add anything, returns a constant."""
+    def __init__(self, emb_dim__model: int, max_seq_len: int):
+        """
+        Arguments:
+            emb_dim__model: int, vocab embedding dimensionality
+            max_seq_len: int, maximum sequence length
+        """
+        super().__init__()
+        pe = torch.as_tensor([
+            [(n & (1 << bit)) >> bit for bit in range(emb_dim__model)] for n in range(max_seq_len)
+        ])
+        self.register_buffer('pe', pe)
+
+    def forward(self):
+        #   Note: Convert encoding to bipolar representation
+        return 2 * self.pe - 1
+
 
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
 def new_gelu(x):
