@@ -120,7 +120,8 @@ def save_checkpoint(model: nn.Module,
     optimizer,
     timestamp:datetime, 
     metrics:Dict, 
-    epoch:int, ) -> str:
+    epoch:int, 
+    **kwargs) -> str:
     """save torch model checkpoint from training, returns path to saved file."""
     
     cfg = ConfigSingleton().config

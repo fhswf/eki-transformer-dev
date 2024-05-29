@@ -185,7 +185,7 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             raise RuntimeError()
         for split in splits:
             split_cfg: HuggingfaceSplitConfig = self.get_split_mapping(split)
-            log.debug(f'Getting split: {split_cfg.mapping}')
+            log.info(f'Loading HF dataset: {self.cfg.name} Subset: {self.subset} Split: {split_cfg.mapping}')
             try:
                 #TODO: dataset_split not used sometimes 
                 dataset_split = load_dataset(self.cfg.name, name=self.subset, split=split_cfg.mapping)
@@ -204,7 +204,7 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
                         #splits train and test always present after train_test_split
                         dataset_split = dataset_split.train_test_split(split_cfg.size)["test"]
             except ValueError as split_not_found_error:
-                log.error(f'Split "{split.split}" does not exist with "exists: {split_cfg.exists}", "mapping: {split_cfg.mapping}". Maybe check mapping?')
+                log.error(f'Split "{split.name}" does not exist with "exists: {split_cfg.exists}", "mapping: {split_cfg.mapping}". Maybe check mapping?')
                 raise split_not_found_error
             except FileNotFoundError as dataset_not_found_error:
                 log.error(f'Dataset "{self.cfg.name}" with subset: "{self.subset}" does not exist.')

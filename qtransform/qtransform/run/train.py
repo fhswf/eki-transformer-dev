@@ -96,7 +96,7 @@ def run(cfg: DictConfig):
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
     train_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
-
+    
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
     #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
@@ -316,17 +316,18 @@ def train_one_epoch(cfg: DictConfig,
         if i % cfg.run.save_steps_interval == cfg.run.save_steps_interval - 1:
             ## interval or end of training, epochs is also 1 for mini_run
             # last_checkpoint is the absolute filepath of the saved checkpoint
-            last_checkpoint: str = save_checkpoint(cfg=cfg, 
+            last_checkpoint: str = save_checkpoint(
+                #cfg=cfg, 
                 model=model, 
                 optimizer=optimizer, 
-                dataset=cfg.dataset.name,
+                #dataset=cfg.dataset.name,
                 timestamp=timestamp, 
                 epoch=epoch, 
                 metrics=loss, 
-                model_cfg=cfg.model, 
-                tokenizer_cfg=cfg.tokenizer,
-                quant_cfg = cfg.get('quantization', None),
-                steps=i,
+                #model_cfg=cfg.model, 
+                #tokenizer_cfg=cfg.tokenizer,
+                #quant_cfg = cfg.get('quantization', None),
+                #steps=i,
                 )
             
         # advance learning rate

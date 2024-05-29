@@ -1,0 +1,19 @@
+cls: GPT
+calc_loss_in_model: True
+args:
+  n_layer : 2
+  n_head : 4
+  n_embd : 384
+  dropout : 0.1 # for pretraining 0 is good, for finetuning try 0.1+
+  bias : True # do we use bias inside LayerNorm and Linear layers? # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+  block_size : 256
+  vocab_size : 4096
+  transformer_active_func: ReLU
+  norm_layer: BatchNormTranspose
+  flash: False
+  single_output: False
+  use_weight_tying: True
+  shift_targets: True
+  #python -m qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=12 run.epochs=1 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048 debug=True +model.type=CHECKPOINT  model=NEW_BENCH
+  #python -m qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=12 run.epochs=1 tokenizer=hf_gptneo +model.type=CHECKPOINT  model=NEW_BENCH
+  #python -m qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=12 run.epochs=1 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048 +model.type=CHECKPOINT  model=NEW_BENCH2

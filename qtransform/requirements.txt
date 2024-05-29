@@ -18,7 +18,7 @@ pyyaml
 protobuf==3.20.3 #importerror: cannot import builder from google.protobuf.internal, reinstall works. why?
 huggingface-hub<1.0,>=0.19.3
 transformers>=4.36
-tokenizers>=0.13.3 
+tokenizers>=0.13.3,<0.19 
 sentencepiece
 tabulate
 fsspec[http]<=2023.10.0,>=2023.1.0 #for datasets package
