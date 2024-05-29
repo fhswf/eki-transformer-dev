@@ -133,7 +133,7 @@ def run(cfg: DictConfig):
         export_cfg = compose(config_name="config", overrides=["run=export"])
         with open_dict(cfg):
             cfg.run = export_cfg.run
-        OmegaConf.update(cfg, "model.from_file.filename", last_checkpoint, force_add=True)
+        OmegaConf.update(cfg, "model.from_file.filename", last_checkpoint+".onnx", force_add=True)
         OmegaConf.update(cfg, "model.from_file.model_dir", None, force_add=True)
         OmegaConf.update(cfg, "run.running_model", True, force_add=True)
         if model_wrapper.quantized:

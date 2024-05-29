@@ -41,7 +41,7 @@ class SinPosEmb(nn.Module):
     def forward(self) -> Tensor:
         return self.pe
     
-class IntPosEmb(torch.nn.Module):
+class BinPosEmb(torch.nn.Module):
     """Position Embedding as encoded onehot Vector. Does not add anything, returns a constant."""
     def __init__(self, emb_dim__model: int, max_seq_len: int):
         """

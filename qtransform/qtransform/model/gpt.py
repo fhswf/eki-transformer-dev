@@ -6,7 +6,7 @@ from typing import Optional
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
-from qtransform.model.modules import LayerNorm, TransformerBlock
+from qtransform.model.modules import LayerNorm, TransformerBlock, SinPosEmb, BinPosEmb
 from qtransform.model import modules as custom_nn
 from qtransform.model import ModelArgs, GenericModel
 from brevitas import nn as qnn
@@ -40,7 +40,16 @@ class GPT(GenericModel):
         self.single_output = config.single_output
         self.use_weight_tying = config.single_output
         self.norm_size = None
-
+        pe: nn.Module
+        if config.pos_layer == "learned":
+            pe = nn.Embedding(config.block_size, config.n_embd)
+        elif config.pos_layer == "sin":
+            pe = SinPosEmb(config.block_size, config.n_embd)
+        elif config.pos_layer == "binary":
+            pe = BinPosEmb(config.block_size, config.n_embd)
+        else:
+            raise AttributeError("unre " + config.pos_layer)
+        
         if config.norm_layer == "LayerNorm":
             self.norm_size = config.n_embd
         elif config.norm_layer == "BatchNormIdPure":
@@ -60,7 +69,7 @@ class GPT(GenericModel):
             ln_out = getattr(custom_nn, config.norm_layer, None)
             self.transformer = nn.ModuleDict(dict(
                 wte = nn.Embedding(config.vocab_size, config.n_embd),
-                wpe = nn.Embedding(config.block_size, config.n_embd),
+                wpe = pe,
                 emb_add = custom_nn.EltwiseAdd(),
                 dropout = nn.Dropout(config.dropout),
                 layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
@@ -118,7 +127,7 @@ class GPT(GenericModel):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, idx, targets=None):
-
+        """? idx shape: batch, seq, _ """
         device = idx.device
         b, t = idx.size()
         #print(f'{idx}----------{idx.size()}')
