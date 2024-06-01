@@ -12,5 +12,5 @@ args:
   norm_layer: BatchNormTranspose
   flash: False
   single_output: False
-  use_weight_tying: True
+  use_weight_tying: False
   shift_targets: True

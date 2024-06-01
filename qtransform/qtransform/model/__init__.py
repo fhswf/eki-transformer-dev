@@ -121,7 +121,8 @@ class ModelArgs():
     custom_ln: bool = False #use CustomBatchNorm1d before BatchNorm
     use_causal: bool = False
     shift_targets: bool = False # True: labels are shifted by one to the right inside the model, False: shifting is done by dataloader
-
+    pos_layer: str = 'learned'
+    
 @dataclass
 class ModelConfig():
     type: str #ONNX or DYNAMIC_CHECKPOINT
