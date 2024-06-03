@@ -14,6 +14,3 @@ args:
   single_output: False
   use_weight_tying: True
   shift_targets: True
-  #python -m qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=12 run.epochs=1 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048 debug=True +model.type=CHECKPOINT  model=NEW_BENCH
-  #python -m qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=12 run.epochs=1 tokenizer=hf_gptneo +model.type=CHECKPOINT  model=NEW_BENCH
-  #python -m qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=12 run.epochs=1 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048 +model.type=CHECKPOINT  model=NEW_BENCH2
