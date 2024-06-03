@@ -14,4 +14,4 @@ args:
   single_output: False
   use_weight_tying: False
   shift_targets: True
-  pos_layer: "learned"
+  pos_layer: "sin"

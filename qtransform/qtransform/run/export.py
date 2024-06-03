@@ -104,8 +104,10 @@ def run(cfg: DictConfig, **kwargs):
     o = model(sample_tensor)
     print(o)
     # Save the input and output data for verification purposes later
-    np.save("inp.npy", sample_tensor.detach().numpy())
-    np.save("out.npy", o[0].detach().numpy())
+    in_tensor  = sample_tensor.cpu()
+    out_tensor = o[0].cpu()
+    np.save("inp.npy", in_tensor.detach().numpy())
+    np.save("out.npy", out_tensor.detach().numpy())
     #only write something into pipe if no errors occur
     try:
         shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental

@@ -6,7 +6,7 @@ from typing import Optional
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
-from qtransform.model.modules import LayerNorm, TransformerBlock, SinPosEmb, BinPosEmb
+from qtransform.model.modules import LayerNorm, TransformerBlock, SinPosEmb, BinPosEmb, unpack_from_quant
 from qtransform.model import modules as custom_nn
 from qtransform.model import ModelArgs, GenericModel
 from brevitas import nn as qnn
@@ -114,7 +114,7 @@ class GPT(GenericModel):
         params are actually used as weights in the final layer, so we include them.
         """
         n_params = sum(p.numel() for p in self.parameters())
-        if non_embedding:
+        if non_embedding and hasattr(self.transformer.wpe, "weight"):
             n_params -= self.transformer.wpe.weight.numel()
         return n_params
 
@@ -151,10 +151,10 @@ class GPT(GenericModel):
         loss = None
         if targets is None and self.single_output:
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.linear_out(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            logits = unpack_from_quant(self.linear_out(x[:, [-1], :])) # note: using list [-1] to preserve the time dim
         else:
             # if we are given some desired targets also calculate the loss
-            logits = self.linear_out(x)
+            logits = unpack_from_quant(self.linear_out(x))
             if targets is not None:
                 #squeeze batch and block_size dimension together, retain non-softmaxed word probabilities
                 #logits become a 1d tensor, containing the index of the next word

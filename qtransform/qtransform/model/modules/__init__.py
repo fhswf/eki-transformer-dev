@@ -10,8 +10,16 @@ from brevitas.nn.quant_layer import ActQuantType
 from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 from qtransform import device_singleton
 from brevitas import nn as qnn
+from brevitas.quant_tensor import QuantTensor
 
-__all__ = ['EltwiseAdd']
+__all__ = ['EltwiseAdd', 'SinPosEmb', 'BinPosEmb']
+
+
+def unpack_from_quant(tensor: torch.Tensor | QuantTensor):
+    """ Unpacks the standard PyTorch tensor from a brevitas QuantTensor if applicable"""
+    if isinstance(tensor, QuantTensor):
+        return tensor.value
+    return tensor
 
 class EltwiseAdd(nn.Module):
     """Layer Wrapper for torch '+' operator to Replace with qnn.QuantEltwiseAdd Fake Layer that adds two intputs together."""
@@ -24,13 +32,14 @@ class EltwiseAdd(nn.Module):
     
 class SinPosEmb(nn.Module):
     """Sinosoidal Position Embedding. Does not add anything, only computes sin/cos embbedding, basically returns a constant."""
-    def __init__(self, emb_dim__model: int, max_seq_len: int):
+    def __init__(self, max_seq_len: int, emb_dim__model: int):
         """
         Arguments:
             emb_dim__model: int, vocab embedding dimensionality
             max_seq_len: int, maximum sequence length
         """
         super().__init__()
+        print(f"emb_dim__model {emb_dim__model}", f"max_seq_len {max_seq_len}")
         pos_id = torch.as_tensor([[n] for n in range(max_seq_len)])
         freq_div = f = torch.as_tensor([1e4 ** -(i / emb_dim__model) for i in range(0, emb_dim__model, 2)])
         pe = torch.zeros(max_seq_len, emb_dim__model)
@@ -38,12 +47,13 @@ class SinPosEmb(nn.Module):
         pe[:, 1::2] = torch.cos(pos_id * freq_div)
         self.register_buffer('pe', pe)
 
-    def forward(self) -> Tensor:
+    def forward(self, x) -> Tensor:
+        """x is unused for computation"""
         return self.pe
     
 class BinPosEmb(torch.nn.Module):
     """Position Embedding as encoded onehot Vector. Does not add anything, returns a constant."""
-    def __init__(self, emb_dim__model: int, max_seq_len: int):
+    def __init__(self, max_seq_len: int, emb_dim__model: int):
         """
         Arguments:
             emb_dim__model: int, vocab embedding dimensionality
@@ -55,7 +65,8 @@ class BinPosEmb(torch.nn.Module):
         ])
         self.register_buffer('pe', pe)
 
-    def forward(self):
+    def forward(self, x):
+        """x is unused for computation"""
         #   Note: Convert encoding to bipolar representation
         return 2 * self.pe - 1
 
