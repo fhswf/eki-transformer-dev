@@ -1,0 +1,9 @@
+quantize: True
+kind: ptq 
+type: BrevitasPTQQuantizer
+#type: BrevitasQuantizer #unsure if a new Framework for ptq should be implemented
+
+defaults: 
+  - model: ??? #yaml quant config of model (usually under directory model)
+model:
+  dtype: ${data.dtype}

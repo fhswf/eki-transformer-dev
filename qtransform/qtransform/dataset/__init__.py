@@ -1,154 +1,272 @@
-from typing import Any, Union, Dict
+from typing import Any, Union, Dict, Callable, Tuple, List
 from omegaconf import DictConfig, open_dict
 import logging
 from torch.utils.data import Dataset, DataLoader
 from qtransform.utils.introspection import _get_module, get_classes, concat_paths, get_dtype
-import qtransform.classloader
-from dataclasses import dataclass, fields
-from enum import Enum
-from os.path import join
+import qtransform
+from qtransform import classloader
+from dataclasses import dataclass, fields, InitVar
+from enum import IntEnum
+from os import listdir, makedirs
+from os.path import join, exists
+# from qtransform.tokenizer import Tokenizer, get_tokenizer
+import datasets
+from datasets.dataset_dict import DatasetDict
+# from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
+import qtransform.dataset as package_self
+from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
+from qtransform import device_singleton
+#TokenizedDatasetWrapper
+import numpy as np
+from typing import Tuple
+import torch
+from pprint import PrettyPrinter
+
+#TODO: PrettyPrinter(indent=1).pformat(content) everywhere
 
 log = logging.getLogger(__name__)
 
-class DatasetRunType(Enum):
-    TRAIN = "train"
-    EVAL = "eval"
-    BENCH = "bench"
 
+#TODO: python 3.11 could support StrEnum to avoid having to use .name.lower() for split name
+class DatasetSplitType(IntEnum):
+    TRAIN = 0
+    EVAL = 1
+    BENCH = 2
+
+    @classmethod
+    def get_split(split):
+        return split.name
+
+#TODO: type of each split is still not clearly defined. For huggingface, it is a huggingface dataset. For files, it is a torch Dataset.
 @dataclass
-class DatasetSizes:
-    """
-        Remember the size of datasets in percent to retain the size when shuffling and to 
-        do checks before data should be loaded. 
-    """
-    train: float = 0.0 #size of training data
-    eval: float = 0.0 #size of the subset of training data to check if model is overfitting
-    test: float = 0.0
-    bench: float = 0.0 
-
-    def __post_init__(self):
-        empty_split = 0 #check how many splits are not empty
-        count = 0
-        for field in fields(self):
-            attr = getattr(self, field.name)
-            if not isinstance(attr, float):
-                log.error(f'{field.name} is not a floating point number.')
-                raise KeyError()
-            if attr < 0.0 or attr > 1.0:
-                log.error(f'Data split {field.name} has to be within range 0.0 and 1.0, not {attr}')
-                raise ValueError()
-            if attr == 0.0:
-                empty_split += 1
-            count += 1
-        if self.eval > 0.0 and self.train == 0.0:
-            log.error(f'Cannot validate training if size of training data is empty')
-            raise ValueError()
-        elif self.eval == 1.0:
-            log.warning(f'Size of validation split is equal to training split (eval = 1.0)')
-        #all fields are 0.0, no point in continuing process as no data can be loaded
-        if count == empty_split:
-            log.error(f'Sizes of specified splits are zero.')
-            raise ValueError()
-
-@dataclass
-class DatasetInfo:
+class DatasetSplits:
     """
         Dataclass containing the datasets for training, eval, testing, benchmark along with the name of the dataset.
-        After construction, a simple type check is done with the __post_init__ hook.
     """
-    name: str
-    train: Dataset = None
-    eval: Dataset = None
-    test: Dataset = None
-    bench: Dataset = None
+    splits: InitVar[Dict[DatasetSplitType, Any]] = None
+    
+    def __init__(self):
+        #access splits with Enum values
+        #DatasetSplits.eval not possible, DatasetSplits[DatasetSplitType.EVAL] possible
+        self.splits = {
+            DatasetSplitType.TRAIN: None,
+            DatasetSplitType.EVAL: None,
+            DatasetSplitType.BENCH: None
+        }
+    
+    # make class subscritable aka: self[DatasetSplitType.TRAIN] or self["TRAIN"] works
+    def __getitem__(self, item):
+        if isinstance(item, str):
+            item = getattr(DatasetSplitType, item.upper())
+        return self.splits[item]
 
-    """def __setattr__(self, __name, __value):
-        if __name not in self.fields.keys():
-            log.error(f'DatasetInfo should only contain fields: {self.fields.keys()}')
-            raise KeyError()
-        field = self.fields[__name]
-        current_attr = getattr(self, field.name)
-        if current_attr is not None and not isinstance(current_attr, field.type):
-                log.error(f'DatasetInfo field {field.name} expects field type {field.type}, not {type(current_attr)}')
-                raise TypeError()"""
 
-    def __post_init__(self):
-        self.fields = {x.name:x for x in fields(self)}
-        for field in self.fields.values():
-            current_attr = getattr(self, field.name)
-            if current_attr is not None and not isinstance(current_attr, field.type):
-                log.error(f'DatasetInfo field {field.name} expects field type {field.type}, not {type(current_attr)}')
-                raise TypeError()
+    #TODO: setting split to any value theoretically possible
+    def __setitem__(self, index, item):
+        if not hasattr(item, '__getitem__'):
+            log.error(f'No iteration with torch dataloader possible if {item.__class__.__name__} does not implement __getitem__')
+        self.splits[index] = item
+
+
+class TokenizedDatasetFactory():
+
+    @classmethod
+    def get_tokenized_data(clz, cfg: DictConfig) -> (DatasetSplits, Callable):
+        """
+        Loads tokenized data and returns a DatasetSplits instance along a collate_fn for torch Dataloaders.
+        If the tokenized data does not exist locally, the untokenized data is processed.
+        The configuration for untokenized and tokenized data differs primarily in the format of data,
+        e.g. tokenize a huggingface dataset into a numpy array.
+
+
+        Arguments:
+        cfg: Config containing dataset fields (e.g. tokenized and untokenized)
+
+        Returns:
+            Tuple of DatasetSplits and Callable (collate_fn)
+        """
+        dataset_splits = DatasetSplits()
+        #generators
+        tokenized_data_fetcher: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.tokenized.type, cfg)
+        log.debug(f'Tokenized data fetcher: {tokenized_data_fetcher.__class__.__name__}')
+        untokenized_data_fetcher: TokenizedDatasetGenerator = get_tokenized_dataset_generator(cfg.untokenized.type, cfg)
+        log.debug(f'Untokenized data fetcher: {untokenized_data_fetcher.__class__.__name__}')
+
+        #check if datasets exist
+        status_splits = tokenized_data_fetcher.check_tokenized()
+        log.debug(f'status_splits: {PrettyPrinter(indent=1).pformat(status_splits)}')
+        untokenized_split_names = [split for split, status in status_splits.items() if status["exists"] is False]
+        if len(untokenized_split_names) > 0:
+            log.info(f'Splits "{[x.name for x in untokenized_split_names]}" do not exist. Tokenizing now.')
+            #tokenize datasets
+            untokenized_splits = untokenized_data_fetcher.get_untokenized_data(splits=untokenized_split_names)
+            tokenized_data_fetcher.tokenize_data(untokenized_splits)
+        tokenized_splits = tokenized_data_fetcher.get_tokenized_dataset()
+        collator_fn = tokenized_data_fetcher.get_collator()
+
+        return (tokenized_splits, collator_fn)
+
+
 
 from abc import ABC, abstractmethod
-class DatasetWrapper(ABC):
-    """
-    Capsule around Dataset, to unify their interfaces.
-    Each DatasetWrapper has to contain a method to (down)load the data, create a Dataloader, 
-    and provide information on whether the dataset contained in this wrapper provides training, eval/test or benchmark data.
-    """
+import os
+#splits should have these column names
+MODEL_INPUT_NAME = "input_ids"
+MODEL_LABEL_NAME = "labels"
+MODEL_MASK_NAME = "attention_mask"
 
-    dataset_sizes: DatasetSizes = None
-    cfg: DictConfig = None
+#TODO: no check if intermediate results of tokenization exist (tokenized but not grouped for huggingface)
+class TokenizedDatasetGenerator(ABC):
+
+    #contains file extension and other distinguishing factors (e.g. block_size, tokenized or grouped..)
+    #split is prepended to suffix -> (cache_file_prefix, split, DATASET_FILE_SUFFIX)
+    DATASET_FILE_SUFFIX: str
+    DUMP_FILE_PATH: str #path for intermediate result of tokenization (e.g. tokenized but not grouped). not every generator needs to use this
+    DATASET_FILE_PATH: str #by default: cache_dir from config
+    CACHE_FILENAME_PREFIXES: Dict[DatasetSplitType, str]
+
 
     def __init__(self, cfg: DictConfig):
-        self.cfg: DictConfig = cfg
-        if self.cfg.get('name') is None:
-            log.error(f'No dataset name specified.')
-            raise KeyError()
-        if self.cfg.get('sizes') is None:
-            log.warning(f'No sizes for the data splits specified.')
-            raise KeyError()
-        #add empty args property to avoid None checking every time
-        if self.cfg.get('args') is None:
+        """
+        Defines the approach to retrieve tokenized data and tokenize raw data. Each implementation of TokenizedDatasetGenerator
+        defines this for one specific type such as huggingface, raw files or other internet sources.
+
+        In order to unify the parameters and return types of the different approaches, huggingface's
+        DatasetDict is expected to be used in some way or another.
+        """ 
+        super().__init__()
+        log.info(f"TokenizedDatasetGenerator config:  {cfg}")
+        self.cfg = cfg
+        if self.cfg.name_args is None:
             with open_dict(self.cfg):
-                self.cfg["args"] = {}
-        self.dataset_sizes = DatasetSizes(**cfg.sizes)
-        self.dataset_info = DatasetInfo(name=self.cfg.name)
-        self.tokenized_dir = concat_paths([*cfg.dataset_dir, "tokenized", cfg.tokenizer.encoding])
-        self.dataset_file = join(self.tokenized_dir, self.cfg.name+ '-' + self.cfg.tokenizer.dtype + '.bin')
-        #currently, dtype has to be set by user. maybe it could also be automatically infered by the max tokens property of Tokenizer
-        self.dtype = get_dtype(self.cfg.tokenizer.dtype)
+                self.cfg.name_args = {}
+        self.block_size = cfg.tokenized.args.block_size
+        #field "name_args" from default config not included
+        self.DATASET_FILE_PATH = concat_paths(self.cfg.tokenized.cache_dir)
+        makedirs(self.DATASET_FILE_PATH, exist_ok=True)
+        cache_filename_prefix = self.cfg.tokenized.cache_filename_prefix
+        #TODO: create function which composes filename from list and adds a seperator (-) to avoid if else statements
+        if self.cfg.tokenized.cache_filename_prefix[-1] != "-":
+            cache_filename_prefix += "-"
+        #avoid directory seperators for encoding
+        cache_filename_prefix = cache_filename_prefix.replace('/', '-')
+        self.CACHE_FILENAME_PREFIXES = {split: cache_filename_prefix + split.name + "-" for split in DatasetSplitType}
+        log.debug(f'CACHE_FILENAME_PREFIXES: {self.CACHE_FILENAME_PREFIXES}')
 
-    @classmethod
     @abstractmethod
-    def load_dataset(self) -> DatasetInfo:
+    def get_tokenized_dataset(self) -> DatasetSplits:
         """
-            Loads a dataset from the config specified in the constructor. The split argument specifies
-            the size of the returned dataset which have been stored in an instance of type DataSizes. 
+        Return all tokenized datasets and wrap them inside of a DatasetSplits instance.
+        If splits are not found, an error is thrown instead of tokenizing immediately. 
+        Use the method tokenize_dataset() for that and check if tokenized datasets are found with 
+        the method check_tokenized().
+        """
+        raise NotImplementedError
 
-            TODO:   Check if it leads to performance issues in terms of memory usage if Datasets for all
-                    types (train, test, eval, bench) is created at once
+    #TODO: create filename from list, seperating each entrry with "-"
+    def check_tokenized(self) -> Dict[DatasetSplitType,  Dict[str, Union[bool, str]]]:
         """
-        pass
+        Checks for tokenized files under the path composed in the hydra config.
+        The filepath is defined in the get_filepath_split function.
+        {
+            <DatasetSplitType.TRAIN: 0>: {
+                'exists': False or True,
+                'filepath': 'cfg-path-to-file'
+            },
+            <DatasetSplitType.EVAL: 1>: {
+                'exists': False or True,
+                'filepath': 'cfg-path-to-file'
+            },
+            <DatasetSplitType.BENCH: 2>: {
+                'exists': False or True,
+                'filepath': 'cfg-path-to-file'
+            },
+        }
+        """
+        splits = [split for split in DatasetSplitType]
+        filepath_splits =  {split: self.get_filepath_split(split) for split in splits}
+        status_splits = {split:{"exists": os.path.exists(filepath_splits[split]), "filepath": filepath_splits[split]} for split in splits}
+        return status_splits
 
-    def check_split(self, split: str):
-        """
-            Checks whether the DatasetSizes dataclass contains a field with name split.
-        """
-        splits = [x.name for x in fields(DatasetSizes)]
-        if split not in splits:
-            log.error(f'Datasets can only be split among {splits}, not {split}')
-            raise ValueError()
 
-    @classmethod
     @abstractmethod
-    def shuffle(self):
+    def get_intermediate_tokenized_data(self) -> Dict[DatasetSplitType,  Dict[str, Union[bool, str]]]:
         """
-            Idea:   Have an instance of type dataset (named all_datasets), its size is the sum of all instantiated datasets in DatasetInfo
-                    E.g. training, eval dataset each are 10MB, all_datasets is 20MB of size
-                    When shuffle is called, the training and eval datasets are created from all_datasets, containing different tensors than before.
-            TODO:   Test the behavior of non-sequential datasets (test dataset goes from 90-100% and from 0-10%)
-            TODO:   check size of dataset and splits, pick random number with torch.rand
+        Checks if untokenized data has been processed in some way. If it does exist, that data should be tokenized.
+        If it does not exist, the raw data from get_untokenized_data is fetched and processed.
         """
-        pass
+        raise NotImplementedError
 
-def get_data(dataset_cfg: DictConfig) -> DatasetWrapper:
-    import qtransform.dataset as package_self
-    dataset_wrapper: DatasetWrapper = qtransform.classloader.get_data(log, package_self, dataset_cfg.wrapper, DatasetWrapper, args={"cfg": dataset_cfg})
-    return dataset_wrapper
+    @abstractmethod
+    def tokenize_data(self, untokenized_data: DatasetDict) -> None:
+        """
+        Tokenizes raw data alongside the approach implemented within the specific TokenizedDatasetGenerator class.
+        It is expected that the split names of "untokenized_data" should have the names of DatasetSplitType (TRAIN, EVAL, BENCH).
+        """
+        #slice spits: https://huggingface.co/docs/datasets/loading#slice-splits
+        #keys of DatasetDict are split types
+        raise NotImplementedError
+    
+    @abstractmethod
+    def get_untokenized_data(self, splits: List[DatasetSplitType]) -> datasets.DatasetDict:
+        raise NotImplementedError
 
-def get_loader(dataloader_cfg: DictConfig, data:Dataset) -> DataLoader:
-    log.debug(f"get_loader config: {dataloader_cfg}")
-    loader = DataLoader(data, **dataloader_cfg)
-    return loader
+    @abstractmethod
+    def get_collator(self) -> Callable:
+        raise NotImplementedError
+
+    def get_filepath_split(self,split: DatasetSplitType) -> str:
+        """
+        Gets the filepath of a split by joining the attributes
+        DATASET_FILE_PATH, CACHE_FILENAME_PREFIXES and DATASET_FILE_SUFFIX.
+        They should usually be set within the hydra config.
+
+        Arguments:
+        split: The split of type DatasetSplitType. The different splits are differentiated by the split name at the end of the filename prefix.
+
+        """
+        return os.path.join(self.DATASET_FILE_PATH, self.CACHE_FILENAME_PREFIXES[split] + self.DATASET_FILE_SUFFIX)
+
+class DataLoaderWrapper():
+
+    def __init__(self, dataset_cfg: DictConfig):
+        self.dataloader_cfg = dataset_cfg.dataloader
+        data_and_collator = TokenizedDatasetFactory.get_tokenized_data(dataset_cfg)
+        self.tokenized_dataset_splits: DatasetSplits = data_and_collator[0]
+        log.debug(f'Dataset: {self.tokenized_dataset_splits}')
+        self.collate_fn: Callable = data_and_collator[1]
+        device = device_singleton.device
+        if device.type == 'cuda':
+            cuda_kwargs = {'pin_memory': True,}
+            #struct flag of dictconf prevents additional keys to be added (https://omegaconf.readthedocs.io/en/latest/usage.html#struct-flag)
+            with open_dict(self.dataloader_cfg):
+                self.dataloader_cfg.update(cuda_kwargs)
+        log.info(f'Dataloader cfg: {self.dataloader_cfg}')
+
+    def get_loader(self, split: DatasetSplitType) -> DataLoader:
+        loader = DataLoader(dataset=self.tokenized_dataset_splits[split], **{"collate_fn": self.collate_fn, **self.dataloader_cfg})
+        log.debug(f'len of dataset loader: {len(loader)}')
+        return loader
+    
+    def get_data_format(self):
+        """
+        Get information about how the input ids and labels are stored within each sample.
+        For example, huggingface uses a dictionary while files uses a tuple.
+        """
+
+
+def get_tokenized_dataset_generator(generator_module: str, dataset_cfg: DictConfig) -> TokenizedDatasetGenerator:
+    """
+    Basically does the same thing as get_dataset_wrapper without having to specify the name of the wrapper class.
+    """
+    log.info(f'loading tokenized dataset generator from module "{generator_module}"')
+    module_name = package_self.__package__ + "." + generator_module
+    #bug with get_classes that retrieves the last TokenizedDatasetGenerator class with the same name
+    #some kind of check that names are unique could be useful
+    classes =  get_classes(package_self, parent_class=TokenizedDatasetGenerator).values()
+    log.debug(f'Found classes: {classes}')
+    found_class = list(filter(lambda x: x.__module__ == module_name , classes))
+    if len(found_class) == 0:
+        log.error(f'Could not find TokenizedDatasetGenerator in module: {module_name} with specified type: {generator_module}')
+        raise ValueError()
+    return found_class[0](dataset_cfg)

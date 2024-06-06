@@ -1,0 +1,16 @@
+name: fhswf/TinyStoriesV2_cleaned
+tokenized:
+  type: huggingface #name of python module which implements a class of type TokenizedDatasetGenerator
+
+untokenized: 
+  splits: 
+    bench: #benchmarking split does not exist, therefore use a slice of train split
+      split: test
+    eval:
+      split: eval
+      mapping: test
+      size: 0.1
+      exists: False
+      
+defaults:
+  - untokenized/huggingface

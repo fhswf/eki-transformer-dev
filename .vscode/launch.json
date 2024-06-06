@@ -9,10 +9,19 @@
             "type": "python",
             "request": "launch",
             "module": "qtransform",
-            "justMyCode": true,
-            "args": ["run=train", "debug=True", "model=gpt_2_small", "dataset=huggingface", "dataset.name=openwebtext"],
+            "justMyCode": false,
+            "args": ["run=train", "model=gpt_2_h2l2e256b64_GeBN","dataset=huggingface", "debug=True", "dataset.name=openwebtext", "+export=True", "run.epochs=100", "run.max_iters=300", "dataset/tokenizer=transformers", "dataset.tokenizer.encoding=gpt2", "+trace=True"],
             "console": "integratedTerminal",
-            "python": "python"
-        }
+        }, 
+        {
+            "name": "Python: Module 2",
+            "type": "python",
+            "python": "python",
+            "request": "launch",
+            "module": "qtransform",
+            "justMyCode": false,
+            "args": ["run=train", "model=gpt_2_h4l4e256b64_ReBN","dataset=huggingface", "debug=True", "dataset.name=tiny_shakespeare", "+export=True", "run.epochs=4", "run.max_iters=300", "dataset/tokenizer=tiktoken", "dataset.tokenizer.encoding=gpt2", "debug=True", "quantization=qat", "quantization/model=4b_default_gpt2_bn",  "run.max_iters=150"],
+            "console": "integratedTerminal",
+        } 
     ]
 }

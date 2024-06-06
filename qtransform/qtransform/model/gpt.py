@@ -6,7 +6,9 @@ from typing import Optional
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
-from qtransform.model.modules import LayerNorm, TransformerBlock 
+from qtransform.model.modules import LayerNorm, TransformerBlock, SinPosEmb, BinPosEmb, unpack_from_quant
+from qtransform.model import modules as custom_nn
+from qtransform.model import ModelArgs, GenericModel
 from brevitas import nn as qnn
 import logging
 log = logging.getLogger(__name__)
@@ -29,43 +31,70 @@ class Model(ABC):
         This does not refelct the required size during training and might also not be accurate in your hardware.
         """
         raise NotImplementedError
-    
-@dataclass
-class GPTConfig:
-    block_size: int = 1024
-    vocab_size: int = 50304 # GPT-2 vocab_size of 50257, padded up to nearest multiple of 64 for efficiency
-    n_layer: int = 12
-    n_head: int = 12
-    n_embd: int = 768
-    dropout: float = 0.0
-    bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
-    flash: bool = False # cuda flas hattention
-    transformer_active_func: str = 'ReLU' #specify which activation function to use in MLP (feed forwad neural network)
-
 from dataclasses import fields
-class GPT(nn.Module):
-    def __init__(self, config: GPTConfig):
-        super().__init__()
-        try:
-            self.config = config if isinstance(config, GPTConfig) else GPTConfig(**config) 
-        except:   
-            log.error(f'Model config {config} could not be applied. Config can only have options: {[x.name for x in fields(GPTConfig)]}')
-        assert config.vocab_size is not None
-        assert config.block_size is not None
-        log.info(f"Model config: {self.config}")
-        self.transformer = nn.ModuleDict(dict(
-            wte = nn.Embedding(config.vocab_size, config.n_embd),
-            wpe = nn.Embedding(config.block_size, config.n_embd),
-            dropout = nn.Dropout(config.dropout),
-            layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
-            ln_out = LayerNorm(config.n_embd, bias=config.bias),
-        ))
+
+class GPT(GenericModel):
+    def __init__(self, config: ModelArgs):
+        super().__init__(config)
+        #TODO: attribute initialization from config could go to GenericModel
+        self.single_output = config.single_output
+        self.use_weight_tying = config.single_output
+        self.norm_size = None
+        pe: nn.Module
+        if config.pos_layer == "learned":
+            pe = nn.Embedding(config.block_size, config.n_embd)
+        elif config.pos_layer == "sin":
+            pe = SinPosEmb(config.block_size, config.n_embd)
+        elif config.pos_layer == "binary":
+            pe = BinPosEmb(config.block_size, config.n_embd)
+        else:
+            raise AttributeError("unre " + config.pos_layer)
+        
+        if config.norm_layer == "LayerNorm":
+            self.norm_size = config.n_embd
+        elif config.norm_layer == "BatchNormIdPure":
+            self.norm_size = config.block_size
+        elif config.norm_layer in ["BatchNorm", "InstanceNorm"]:
+            self.norm_size = config.block_size
+        elif config.norm_layer == "BatchNormTranspose":
+            self.norm_size = config.n_embd
+        elif config.norm_layer == "BatchNormIdNoReplace":
+            self.norm_size = config.block_size
+        elif config.norm_layer == "None":
+            self.norm_size = None
+        else:
+            raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
+        log.debug(f" config.vocab_size {config.vocab_size}, config.n_embd {config.n_embd}")
+        if self.norm_size:
+            ln_out = getattr(custom_nn, config.norm_layer, None)
+            self.transformer = nn.ModuleDict(dict(
+                wte = nn.Embedding(config.vocab_size, config.n_embd),
+                wpe = pe,
+                emb_add = custom_nn.EltwiseAdd(),
+                dropout = nn.Dropout(config.dropout),
+                layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
+                ln_out = ln_out(self.norm_size, config.bias),
+            ))
+        else:
+            ln_out = nn.Identity
+            self.transformer = nn.ModuleDict(dict(
+                wte = nn.Embedding(config.vocab_size, config.n_embd),
+                wpe = nn.Embedding(config.block_size, config.n_embd),
+                emb_add = custom_nn.EltwiseAdd(),
+                dropout = nn.Dropout(config.dropout),
+                layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
+            ))
+
         self.linear_out = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
         # This behavior is deprecated and will be an error in future versions"
         # not 100% sure what this is, so far seems to be harmless. TODO investigate
-        self.transformer.wte.weight = self.linear_out.weight # https://paperswithcode.com/method/weight-tying
+
+        # https://paperswithcode.com/method/weight-tying
+        if self.use_weight_tying:
+            self.transformer.wte.weight = self.linear_out.weight
 
         # init all weights
         self.apply(self._init_weights)
@@ -85,7 +114,7 @@ class GPT(nn.Module):
         params are actually used as weights in the final layer, so we include them.
         """
         n_params = sum(p.numel() for p in self.parameters())
-        if non_embedding:
+        if non_embedding and hasattr(self.transformer.wpe, "weight"):
             n_params -= self.transformer.wpe.weight.numel()
         return n_params
 
@@ -98,28 +127,50 @@ class GPT(nn.Module):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, idx, targets=None):
+        """? idx shape: batch, seq, _ """
         device = idx.device
         b, t = idx.size()
         #print(f'{idx}----------{idx.size()}')
-        assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
+
+        # remove this line because it messed with fx.trace, do shape check before hand!
+        #assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
+      
         pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0) # shape (1, t)
 
         # forward the GPT model itself
+        #TODO: add padding for FINN support ?
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
-        x = self.transformer.dropout(tok_emb + pos_emb)
+        x = self.transformer.emb_add(tok_emb, pos_emb)
+        x = self.transformer.dropout(x)
         for block in self.transformer.layer:
             x = block(x)
-        x = self.transformer.ln_out(x)
+        if self.norm_size:
+            x = self.transformer.ln_out(x)
 
-        if targets is not None:
-            # if we are given some desired targets also calculate the loss
-            logits = self.linear_out(x)
-            loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
-        else:
+        loss = None
+        if targets is None and self.single_output:
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.linear_out(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
-            loss = None
+            logits = unpack_from_quant(self.linear_out(x[:, [-1], :])) # note: using list [-1] to preserve the time dim
+        else:
+            # if we are given some desired targets also calculate the loss
+            logits = unpack_from_quant(self.linear_out(x))
+            if targets is not None:
+                #squeeze batch and block_size dimension together, retain non-softmaxed word probabilities
+                #logits become a 1d tensor, containing the index of the next word
+                if self.config.shift_targets:
+                    
+                    # move labels to correct device to enable model parallelism
+                    targets = targets.to(logits.device)
+                    # Shift so that tokens < n predict n
+                    shift_logits = logits[..., :-1, :].contiguous()
+                    shift_labels = targets[..., 1:].contiguous()
+
+                    from torch.nn import CrossEntropyLoss
+                    loss_fct = CrossEntropyLoss()
+                    loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+                else:
+                    loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), ignore_index=-1)
 
         return logits, loss
 
@@ -135,11 +186,9 @@ class GPT(nn.Module):
                 block.attn.bias = block.attn.bias[:,:,:block_size,:block_size]
 
     @classmethod
-    def from_pretrained(cls, model_type, override_args=None):
+    def from_pretrained(cls, model, model_type):
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
-        override_args = override_args or {} # default to empty dict
-        # only dropout can be overridden see more notes below
-        assert all(k == 'dropout' for k in override_args)
+
         from transformers import GPT2LMHeadModel
         print("loading weights from pretrained gpt: %s" % model_type)
 
@@ -150,73 +199,82 @@ class GPT(nn.Module):
             'gpt2-large':   dict(n_layer=36, n_head=20, n_embd=1280), # 774M params
             'gpt2-xl':      dict(n_layer=48, n_head=25, n_embd=1600), # 1558M params
         }[model_type]
-        print("forcing vocab_size=50257, block_size=1024, bias=True")
         config_args['vocab_size'] = 50257 # always 50257 for GPT model checkpoints
         config_args['block_size'] = 1024 # always 1024 for GPT model checkpoints
         config_args['bias'] = True # always True for GPT model checkpoints
-        # we can override the dropout rate, if desired
-        if 'dropout' in override_args:
-            print(f"overriding dropout rate to {override_args['dropout']}")
-            config_args['dropout'] = override_args['dropout']
-        # create a from-scratch initialized minGPT model
-        config = GPTConfig(**config_args)
-        model = GPT(config)
+        print("our model")
+        print(model)
+        config = model.config 
+        print(config)
         sd = model.state_dict()
         sd_keys = sd.keys()
         sd_keys = [k for k in sd_keys if not k.endswith('.attn.bias')] # discard this mask / buffer, not a param
 
+
+        ### troch model import
+        #import torch
+        #model_t = torch.hub.load('huggingface/transformers', 'modelForCausalLM', 'gpt2')
+        #model_t_sd_keys = model_t.state_dict().keys()
+        #print("torch model")
+        #print(model_t)
+        #print(model_t_sd_keys)
+
         # init a huggingface/transformers model
         model_hf = GPT2LMHeadModel.from_pretrained(model_type)
+        print("theirs")
+        print(model_hf)
         sd_hf = model_hf.state_dict()
-
         # copy while ensuring all of the parameters are aligned and match in names and shapes
         sd_keys_hf = sd_hf.keys()
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.masked_bias')] # ignore these, just a buffer
         sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.attn.bias')] # same, just the mask (buffer)
+
+        
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.ln_1.weight')] # ignore norm layers
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.ln_1.bias')] # ignore norm layers
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.ln_2.weight')] # ignore norm layers
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.ln_2.bias')] # ignore norm layers
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.ln_f.weight')] # ignore norm layers
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('.ln_f.bias')] # ignore norm layers
+
+        # fixed by weight tying anyways?
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('lm_head.weight')] # ignore head layer
+        sd_keys_hf = [k for k in sd_keys_hf if not k.endswith('lm_head.bias')] # ignore head layer
+
         transposed = ['attn.c_attn.weight', 'attn.c_proj.weight', 'mlp.c_fc.weight', 'mlp.c_proj.weight']
         # basically the openai checkpoints use a "Conv1D" module, but we only want to use a vanilla Linear
         # this means that we have to transpose these weights when we import them
-        assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+
+        # ignore missing keys
+        # assert len(sd_keys_hf) == len(sd_keys), f"mismatched keys: {len(sd_keys_hf)} != {len(sd_keys)}"
+
         for k in sd_keys_hf:
+            # h == layer in our model
+            if k.startswith("transformer.h"):   
+                ak = k.split('.')
+                ak[1] = 'layer'
+                _k = '.'.join(ak)
+            else:
+                _k = k
+
+            print(_k)
+            print(sd[_k].shape)
+            print(k)
+            print(sd_hf[k].shape[::-1])
+
             if any(k.endswith(w) for w in transposed):
                 # special treatment for the Conv1D weights we need to transpose
-                assert sd_hf[k].shape[::-1] == sd[k].shape
+                assert sd_hf[k].shape[::-1] == sd[_k].shape
                 with torch.no_grad():
-                    sd[k].copy_(sd_hf[k].t())
+                    sd[_k].copy_(sd_hf[k].t())
             else:
                 # vanilla copy over the other parameters
-                assert sd_hf[k].shape == sd[k].shape
+                assert sd_hf[k].shape == sd[_k].shape
                 with torch.no_grad():
-                    sd[k].copy_(sd_hf[k])
+                    sd[_k].copy_(sd_hf[k])
+        
 
         return model
-
-    def configure_optimizers(self, weight_decay, learning_rate, betas, device_type):
-        # start with all of the candidate parameters
-        param_dict = {pn: p for pn, p in self.named_parameters()}
-        # filter out those that do not require grad
-        param_dict = {pn: p for pn, p in param_dict.items() if p.requires_grad}
-        # create optim groups. Any parameters that is 2D will be weight decayed, otherwise no.
-        # i.e. all weight tensors in matmuls + embeddings decay, all biases and layernorms don't.
-        decay_params = [p for n, p in param_dict.items() if p.dim() >= 2]
-        nodecay_params = [p for n, p in param_dict.items() if p.dim() < 2]
-        optim_groups = [
-            {'params': decay_params, 'weight_decay': weight_decay},
-            {'params': nodecay_params, 'weight_decay': 0.0}
-        ]
-        num_decay_params = sum(p.numel() for p in decay_params)
-        num_nodecay_params = sum(p.numel() for p in nodecay_params)
-        print(f"num decayed parameter tensors: {len(decay_params)}, with {num_decay_params:,} parameters")
-        print(f"num non-decayed parameter tensors: {len(nodecay_params)}, with {num_nodecay_params:,} parameters")
-        # Create AdamW optimizer and use the fused version if it is available
-        fused_available = 'fused' in inspect.signature(torch.optim.AdamW).parameters
-        use_fused = fused_available and device_type == 'cuda'
-        extra_args = dict(fused=True) if use_fused else dict()
-        #optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-        optimizer = torch.optim.Adam(optim_groups, lr=learning_rate, betas=betas, **extra_args)
-        print(f"using fused AdamW: {use_fused}")
-
-        return optimizer
 
     def estimate_mfu(self, fwdbwd_per_iter, dt):
         """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """
@@ -235,7 +293,7 @@ class GPT(nn.Module):
         return mfu
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(self, idx, max_new_tokens, temperature=5.0, top_k=None, stop_id=None):
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
@@ -258,5 +316,5 @@ class GPT(nn.Module):
             idx_next = torch.multinomial(probs, num_samples=1)
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
-
+    
         return idx

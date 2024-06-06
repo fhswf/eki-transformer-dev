@@ -1,0 +1,88 @@
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+  sweep:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+    subdir: ${hydra.job.num}
+  #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
+  searchpath:
+    - pkg://qtransform
+#TODO: write last checkpoint/ onnx model name here
+defaults:
+  - _self_
+  - model: 
+  #use fields from "config.yaml" (defined below) and override them with default config from dataset
+  - dataset/tokenized: default 
+  - dataset/untokenized: default
+  - dataset/dataloader: default
+  #default config from the lines above are overwritten with specified config
+  - dataset:
+  - tokenizer: transformers
+  - optim: default
+  - optim/scheduler: default
+  - run: ???
+  - quantization: default
+  - override hydra/job_logging: perlevel
+  - override hydra/help: main
+  #- override hydra/job_logging: colorlog
+  #- override hydra/hydra_logging: colorlog
+
+data:
+  dtype: 'float32' # 'float32', 'bfloat16', or 'float16'. if llms are used, the dtype has to be supported by torch.Tensor and numpy
+device : 'cuda'
+debug: False
+
+dataset:
+  name: ???
+  name_args: #criteria to distinguish dataset (e.g. subset from huggingface dataset)
+  root_path: ~/.qtransform/datasets #~/.cache/huggingface/datasets/qtransform/
+  tokenized:
+    cache_dir: #directory where tokenized datasets are stored
+      - ${dataset.root_path}
+      - ${dataset.tokenized.type}
+      - ${dataset.name}
+    #filename of tokenized split: <cache_filename_prefix>-<split>-<dataset_suffix>. "dataset_suffix" is specified by the format of tokenized data
+    #the split is specified in between the prefix and the suffix
+    cache_filename_prefix: cache-${tokenizer.encoding}-${model.args.block_size}- #leads to: "cache-gpt2-128-". 
+
+
+
+tokenizer: 
+  encoding: ???
+  dtype: ${data.dtype}
+  meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
+seed: 1234567890
+
+# DDP settings
+#backend : 'nccl' # 'nccl', 'gloo', etc.
+
+model: 
+  type: ??? #checkpoint, onnx model, pretrained huggingface model ...
+  #TODO: seperation of path with model_dir and filename is kind of redundant
+  from_file:
+    model_dir: models #if absolute: append model_dir to filepath. if relative: use dir "outputs" of working directory
+    filename: #filename of onnx model/ checkpoint. if absolute: ignore model_dir. otherwise, prepend model_dir to filename 
+
+  calc_loss_in_model: False
+
+quantization:
+  quantize: False
+
+#timestamp from previous run (e.g. 2024-04-11_10-39-33)
+#looks for pickle files located in output directory (defined above in hydra field)
+#from_file field of pickle file should usually be used instead of user-supplied model
+#https://github.com/facebookresearch/hydra/issues/1805#issuecomment-1069772177
+from_previous_run:
+
+#filepath of named pipe. currently, the path of saved checkpoints and (q)onnx models are written into it
+#by default, write into /dev/null
+pipe: /dev/null
+
+callbacks:
+  update_from_file: 
+    cls: qtransform.utils.callbacks.from_file.FromFileInfoCallback
+  pickle_config: 
+    cls: qtransform.utils.callbacks.pickle_job_info.PickleJobInfoCallback
+    #init params of the respective callback class
+    args: 
+      to_pipe: ${pipe} #write config file path into pipe. stops execution until pipe is consumed, therefore move callback to last

@@ -3,7 +3,6 @@ kind: qat #currently, only qat is supported
 type: BrevitasQuantizer #The Framework that supports quantization, appended with Quantizer (corresponds to the classes in this package)
 
 defaults: 
-  - model: ???
+  - model: ??? #yaml quant config of model (usually under directory model)
 model:
   dtype: ${data.dtype}
-  device: ${device}

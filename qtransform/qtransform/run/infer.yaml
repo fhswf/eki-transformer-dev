@@ -1,3 +1,14 @@
 command: infer
 
-onnx_model:
+num_samples: 10 #generate num_samples 
+max_new_tokens: 500
+temperature: 0.7
+top_k: 200
+start: "My name is Mariama, my favorite" #"\n" #generates text starting with #start (\n, "<|endoftext|>" or etc.) Can also specify a file, use as: "FILE:prompt.txt" where prompt.txt is absolute
+compile: False #use torch.compile
+
+#path of directory create files containing the infered samples. if empty, write onto stdout. 
+#the file name is composed as: INFER_<datetime>_<ONNX or CHECKPOINT>.out
+out_dir: 
+
+debug: False #use karpathy's inference

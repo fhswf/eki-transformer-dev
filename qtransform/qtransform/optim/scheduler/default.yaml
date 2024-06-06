@@ -1,8 +1,10 @@
 # learning rate decay settings
 decay_lr : True # whether to decay the learning rate. uses torch.optim.lr_scheduler schedulers
-scheduler: StepLR
-warmup_iters : 2000 # how many steps to warm up for
-args:
-  lr_decay_iters : 600000 # should be ~: max_iters per Chinchilla
-  min_lr : 6e-5 # minimum learning rate, should be ~: learning_rate/10 per Chinchilla
-  step_size: 1
+schedulers: #dictionary to support field overwriting
+  "1": #numbers unfortunately have to be quoted
+    name: StepLR #should be name of torch class within torch.optim, e.g. StepLR, ExponentialLR
+    args: #parameters of class
+      step_size: 1 #steplr lowers lr after step_size epochs. avoid lowering lr to be negligible
+      gamma: 0.95
+milestones: #specify after what epoch each scheduler should step. order of entries reflect order of schedulers. if only one scheduler is used, leave empty
+warmup_epochs: 2 #currently does nothing.

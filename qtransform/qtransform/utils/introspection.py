@@ -5,9 +5,27 @@ import sys
 from os.path import join
 from numpy import dtype as np_dtype
 from os.path import expanduser
-
+from typing import Dict, Any
 log = logging.getLogger(__name__)
-def get_classes(module: ModuleType, parent_class: type):
+
+def load_class(logger: logging.Logger, module: ModuleType, parent_class: type, class_name:str,  args: Dict[str, Any] = None):
+    """ 
+    searches for classes in module with parent_class as parent.
+    creates a class with class_name as its name and passes args to its __init__ constructor.
+    """
+    logger.info(f"Loading class {module.__name__}.{class_name}(parent: {parent_class})")
+    found_classes = get_classes(module, parent_class)
+    log.debug(f'found_classes: {found_classes}')
+    if class_name not in found_classes:
+        logger.error(f"{parent_class.__name__} {class_name} not found in {module.__name__}")
+        raise KeyError
+    cls: Any = found_classes[class_name]
+    if args:
+        logger.info(f'Passing arguments {args} to class: {cls}')
+        return cls(**args)    
+    return cls()
+
+def get_classes(module: ModuleType, parent_class: type) -> Dict[str, Any]:
     """
     'module' should be either a list of paths to look for
     modules in or a python module.
@@ -24,7 +42,7 @@ def get_classes(module: ModuleType, parent_class: type):
     
     classes = {}
     for p in pkgutil.iter_modules(paths):
-        m = importlib.import_module(package + "." + p[1])
+        m = importlib.import_module(package + "." + p[1]) #p[1] is the module name
         for name, obj in inspect.getmembers(m):
             if parent_class is not None: 
                 if inspect.isclass(obj) and issubclass(obj, parent_class):
@@ -110,42 +128,3 @@ def concat_strings(strings: List[str]) -> str:
         Concats a list of immutable strings by joining them together. 
     """
     return ''.join(strings)
-
-from torch.nn import Module
-def get_devices(model: Module) -> Dict[str, List[int]]:
-    """
-        Returns a dictionary containing the layers of a model along with the devices of each tensor within each layer.
-        The devices are represented as an integer, -1 means that the tensor is located on the cpu. Tensor.get_device() is used
-        for that. The name of a layer can be nested (transformer.layer.1.mha).
-        Example: 
-        {
-            "linear": [-1, -1]
-        } 
-        for a simple model containing one layer with two tensors located on the cpu.
-
-        Keep in mind that only the devices of instances of nn.Module and nn.parameter.Parameter are returned, regular Tensors are not.
-        Example: 
-
-            class foo(nn.Module):
-                def __init__(self, dim: tuple):
-                    super().__init__()
-                    self.attn_mask = torch.tril(torch.ones(dim))
-                def forward(self, input):
-                    pass
-        
-        The parameter dictionary of an instance of class foo is empty, as attn_mask is a Tensor which does not appear in parameters().
-        A simple fix for that is to make the attn_mask attribute of type torch.nn.parameter.Parameter with by doing:
-            self.attn_mask = torch.nn.parameter.Parameter(torch.tril(torch.ones(dim)))
-        Doing that will make device of attn_mask appear within the dictionary.
-    """
-    devices = dict()
-    #go through all parameters of model
-    
-    #go through all sublayers
-    for module_name, module in model.named_modules():
-        device_module = list()
-        for parameter in module.parameters():
-            device_module.append(parameter.get_device())
-        devices[module_name] = device_module
-    
-    return devices
