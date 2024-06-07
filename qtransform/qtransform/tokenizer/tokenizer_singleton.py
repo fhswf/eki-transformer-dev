@@ -5,6 +5,7 @@ from logging import getLogger
 
 log = getLogger(__name__)
 
+# TODO: make this lazy, so that the call to tokinzer.encode/decode has parallism in case of hf tokenizers
 class TokenizerSingleton():
     """
     Singleton used to access tokenizer from different places during execution time.
