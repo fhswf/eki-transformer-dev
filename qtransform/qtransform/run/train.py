@@ -91,6 +91,9 @@ def run(cfg: DictConfig):
     #    model = GPT.from_pretrained(model=model, model_type=cfg.run.from_pretrained)
     #    epochs_to_run = range(1, cfg.run.epochs + 1)
 
+    # for now. This just prevent the error msg, maybe in the future we find a way of using the hf-tok-parallelism feature
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
     tokenizer_singleton.tokenizer = cfg.tokenizer
     from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
