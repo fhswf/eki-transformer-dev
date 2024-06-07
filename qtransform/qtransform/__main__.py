@@ -13,7 +13,7 @@ from qtransform.utils.helper import write_to_pipe
 import brevitas
 from importlib import import_module
 from typing import Dict
-
+import sys
 
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 log = logging.getLogger(__name__)
@@ -50,6 +50,7 @@ def main():
         log.debug("DEBUG ENABLED")
     import json
     if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
+    log.info(f"Launch command: {sys.argv}")
     log.debug(f'LAUNCHED WITH CONFIG: {cfg}')
     if "command" not in cfg.run:
         log.error("No run command found in run config, run config was: " + str(cfg.run))

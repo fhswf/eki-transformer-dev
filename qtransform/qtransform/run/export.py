@@ -108,6 +108,10 @@ def run(cfg: DictConfig, **kwargs):
     out_tensor = o[0].cpu()
     np.save("inp.npy", in_tensor.detach().numpy())
     np.save("out.npy", out_tensor.detach().numpy())
+
+    # TODO 
+    # verfiy tensor output before and after qonnx conversion
+
     #only write something into pipe if no errors occur
     try:
         shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
