@@ -89,7 +89,7 @@ def run(cfg: DictConfig, **kwargs):
     filename = cfg.model.from_file.filename
     if os.path.isabs(filename):
         _, filename = os.path.split(filename)
-    model_name = f"{str(cfg.run.export_fn)}_{'_'.join(map(str,input_dim))}_" + filename
+    model_name = f"{str(cfg.run.export_fn)}_" + filename
     from qtransform.utils.introspection import concat_paths
     model_path = concat_paths([root_path, model_name])
 
@@ -106,8 +106,8 @@ def run(cfg: DictConfig, **kwargs):
     # Save the input and output data for verification purposes later
     in_tensor  = sample_tensor.cpu()
     out_tensor = o[0].cpu()
-    np.save("inp.npy", in_tensor.detach().numpy())
-    np.save("out.npy", out_tensor.detach().numpy())
+    np.save(model_name + ".inp.npy", in_tensor.detach().numpy())
+    np.save(model_name + ".out.npy", out_tensor.detach().numpy())
 
     # TODO 
     # verfiy tensor output before and after qonnx conversion

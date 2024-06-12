@@ -131,8 +131,13 @@ def save_checkpoint(model: nn.Module,
     log.debug(f'model_cfg when saving checkpoint: {PrettyPrinter(indent=1).pformat(model_cfg)}')
     tokenizer_cfg=cfg.tokenizer
     quant_cfg = cfg.get('quantization', None)
-    #TODO: infer filename (choice) of model config
-    filename = f"{ConfigSingleton().config.runtime.choices.model}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
+    #TODO: redo FromFile class. model_dir should be a globaly defined path (prob should not change per runtime)
+    #TODO: redo FromFile filename prob does not need to be encapsulated by a class
+    if cfg.model.get("model_name", None) is not None:
+        filename = f"{cfg.model.get('model_name')}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
+    else:
+        filename = f"{cfg.runtime.choices.model}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
+
     if not isinstance(from_file, FromFile) and isinstance(from_file, Union[Dict, DictConfig]):
         from_file["filename"] = filename
         from_file = FromFile(**from_file)

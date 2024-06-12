@@ -319,35 +319,33 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             self.model = torch_compile(self.model)
         else:
             log.error(f'Cannot compile with torch version: {torch_version} (needs to be >= 2.0)')
-            
+
+model_args_dict = {
+    "M": (str,"cls"),
+    "s": (int,"args.block_size"),
+    "t": (int,"args.vocab_size"),
+    "l": (int,"args.n_layer"),
+    "h": (int,"args.n_head"),
+    "e": (int,"args.n_embd"),
+    "A": (str,"args.transformer_active_func"),
+    "N": (str,"args.norm_layer"),
+    "P": (str,"args.pos_layer"),
+}
+def update_conf(_config, _str):
+    key = _str[0]
+    value = _str[1:]
+    f, conf_key = model_args_dict.get(key, None)
+    if conf_key is not None:
+        OmegaConf.update(_config, conf_key, f(value), force_add=True)
+    else:
+        raise NameError(f"key substring[0] not defined for model args in model.cstr")
+
 def get_model(model_cfg: DictConfig) -> nn.Module:
     """ get model info and return a configured torch nn.Module instance """
     log.debug(f"get_model config: {model_cfg}")
     if model_cfg.get('cls') is None:
         log.error(f'No model class specified')
         raise KeyError()
-    from qtransform import model as _model
-  
-    model_args_dict = {
-        "M": (str,"cls"),
-        "s": (int,"args.block_size"),
-        "t": (int,"args.vocab_size"),
-        "l": (int,"args.n_layer"),
-        "h": (int,"args.n_head"),
-        "e": (int,"args.n_embd"),
-        "A": (str,"args.transformer_active_func"),
-        "N": (str,"args.norm_layer"),
-        "P": (str,"args.pos_layer"),
-    }
-    def update_conf(_config, _str):
-        key = _str[0]
-        value = _str[1:]
-        f, conf_key = model_args_dict.get(key, None)
-        if conf_key is not None:
-            OmegaConf.update(_config, conf_key, f(value), force_add=True)
-            pass
-        else:
-            raise NameError(f"key substring[0] not defined for model args in model.cstr")
 
     # if model.cstr is present try to infer some model args from this string, then update model.model_name to update placeholder
     cstr = model_cfg.get('cstr')
@@ -357,6 +355,7 @@ def get_model(model_cfg: DictConfig) -> nn.Module:
             update_conf(model_cfg, substring)
 
     #models need to specify their hyperparameters in init parameter named "config"
+    from qtransform import model as _model
     args = model_cfg.get("args")
     model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module)
     if args:
