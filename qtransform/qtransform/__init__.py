@@ -53,13 +53,14 @@ class ConfigSingleton(metaclass=SingletonMeta):
             except:
                 log.error(f'Config value invalid: "{value}"', exc_info=True)
         self._config = value
+
 def get_module_config_path():
     return os.path.join('/'.join(__file__.split('/')[:-2]), 'qtransform' , 'conf')
 
 def main(cfg):
     """Run this app like amodule, Note: cfg is a Hydra config (OmegaConf Object)"""
-    from qtransform import  __main__ as mn
-    mn.main(cfg)
+    from qtransform import  __main__ as _self
+    _self.main(cfg)
 
 
 def jls_extract_def(loglevel=logging.INFO):
@@ -98,7 +99,7 @@ def with_hyrda(arg, loglevel):
         cfg = old_cfg
 
 def with_config(arg, loglevel):
-    """simiar to with_hyrda but only for singular function definition"""
+    """simiar to with_hyrda but a function a decorator for singular function definitions"""
     def wrapper_decorator(func):
         def wrapped_func(*args, **kwargs):
             initialize_config_dir, config_path, compose = jls_extract_def(loglevel)

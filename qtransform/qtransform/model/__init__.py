@@ -122,7 +122,7 @@ class ModelArgs():
     use_causal: bool = False
     shift_targets: bool = False # True: labels are shifted by one to the right inside the model, False: shifting is done by dataloader
     pos_layer: str = 'learned'
-    
+
 @dataclass
 class ModelConfig():
     type: str #ONNX or DYNAMIC_CHECKPOINT
@@ -130,6 +130,8 @@ class ModelConfig():
     calc_loss_in_model: bool
     args: ModelArgs
     from_file: FromFile = None #torch checkpoint or ONNX model path
+    model_name: str = "Missing-Model-Name" # used to name the saved checkpoints
+    cstr: str = None # infer model args from a config string: Mgpt2-s256-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned
 
     def __setattr__(self, name, value):
         if name == "args" and not isinstance(value, ModelArgs):
@@ -325,9 +327,37 @@ def get_model(model_cfg: DictConfig) -> nn.Module:
         log.error(f'No model class specified')
         raise KeyError()
     from qtransform import model as _model
-    args = model_cfg.get("args")
+  
+    model_args_dict = {
+        "M": (str,"cls"),
+        "s": (int,"args.block_size"),
+        "t": (int,"args.vocab_size"),
+        "l": (int,"args.n_layer"),
+        "h": (int,"args.n_head"),
+        "e": (int,"args.n_embd"),
+        "A": (str,"args.transformer_active_func"),
+        "N": (str,"args.norm_layer"),
+        "P": (str,"args.pos_layer"),
+    }
+    def update_conf(_config, _str):
+        key = _str[0]
+        value = _str[1:]
+        f, conf_key = model_args_dict.get(key, None)
+        if conf_key is not None:
+            OmegaConf.update(_config, conf_key, f(value), force_add=True)
+            pass
+        else:
+            raise NameError(f"key substring[0] not defined for model args in model.cstr")
+
+    # if model.cstr is present try to infer some model args from this string, then update model.model_name to update placeholder
+    cstr = model_cfg.get('cstr')
+    if cstr is not None and isinstance(cstr, str) and cstr != "":
+        # csr example: Mgpt2-s256-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned
+        for substring in cstr.split("-"):
+            update_conf(model_cfg, substring)
 
     #models need to specify their hyperparameters in init parameter named "config"
+    args = model_cfg.get("args")
     model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module)
     if args:
         model = model(config = args)

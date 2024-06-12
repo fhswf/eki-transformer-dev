@@ -52,6 +52,7 @@ def run(cfg: DictConfig):
         with open_dict(cfg.dataset.dataloader):
             cfg.dataset.dataloader.update(cuda_kwargs)
     torch.manual_seed(cfg.seed)    
+    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     #TODO: move quant_config as subconfig into model_cfg to perform quantization within modelwrapper
