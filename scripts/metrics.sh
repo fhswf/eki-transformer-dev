@@ -1,6 +1,7 @@
 #!/bin/bash
 FILE=$1
 
+# find . -name 'log.txt' | xargs  -I % ~/eki/eki-transformer-dev/scripts/metrics.sh % > logs.toml
 echo "[[runs]]"
 echo "log_file = \"$1\""
 

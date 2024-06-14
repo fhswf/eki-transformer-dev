@@ -118,7 +118,7 @@ def run(cfg: DictConfig, **kwargs):
         match cfg.run.export_fn:
             case "qonnx":
                 export_qonnx(model, shape, export_path=model_path, **kwargs)
-                export_qonnx(model, shape, export_path="attention.onnx", **kwargs)
+                # export_qonnx(model, shape, export_path="attention.onnx", **kwargs)
             case "qcdq":
                 export_onnx_qcdq(model, shape, export_path=model_path, **kwargs)
             case "onnx":
