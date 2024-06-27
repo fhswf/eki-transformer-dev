@@ -140,6 +140,10 @@ class GPT(GenericModel):
 
         # forward the GPT model itself
         #TODO: add padding for FINN support ?
+        
+        ## sometimes the model is not synced completly
+        #        self.to(device=device)
+
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
         x = self.transformer.emb_add(tok_emb, pos_emb)

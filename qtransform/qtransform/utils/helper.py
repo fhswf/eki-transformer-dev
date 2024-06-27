@@ -215,3 +215,10 @@ def write_to_pipe(pipe_name: str, content: str) -> None:
         with open(pipe_name, 'w') as pipe:
             pipe.write(content)
 
+
+def validate_model():
+    """
+    Passes one eval dataset sample and a random generated tensor through the model.
+    Compares model output to past model.
+    """
+    pass
