@@ -27,7 +27,7 @@ def run(cfg: DictConfig, **kwargs):
     log.info(f"time is: {timestamp}")
     log.debug(f'Run config: {cfg.run}')
     model = None
-
+    torch.set_printoptions(precision=10)
     device_singleton.device = cfg.device
     device = device_singleton.device
 
