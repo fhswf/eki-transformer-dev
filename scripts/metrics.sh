@@ -5,6 +5,15 @@ FILE=$1
 echo "[[runs]]"
 echo "log_file = \"$1\""
 
+# batch_size
+# 'batch_size': 32
+batch_size=$(grep  -E -i -w  'Dataloader cfg:' $FILE  | awk '{print substr($0, index($0, "batch_size") )}' | cut -d "," -f 1 | grep -o -P '[\d]*')
+echo "batch_size = \"$output\""
+
+# quant_config
+batch_size=$(grep  -E -i -w  'quantization\/model'  $FILE  | awk '{print substr($0, index($0, "quantization/model") )}' | cut -d "=" -f 2 | cut -d "'" -f 1)
+echo "quant_config = \"$output\""
+
 # model config
 output=$(grep  -E -i -w  'Model config:'  $FILE | cut -d '-' -f 4 | sed -n '0,/config/p' | tr -d ' ')
 echo "config = \"$output\""
@@ -25,7 +34,9 @@ echo "eval_loss = [ $output ]"
 
 # number of entries per eval iters, can be used to split the above
 # output=$(sed -n '0,/eval_data/p' $FILE  | sed  -n '/train_data/,/eval/p' | wc -l | xargs bash -c 'echo $(($0 - 3))')
-echo "eval_iter = 50"
+
+echo "batches_per_eval_datapoint = 500"
+echo "batches_per_train_datapoint = 10"
 
 # last loss before eval (loss after evry epoch)
 #output=$(grep  -E -i -w  'last train loss was'  $FILE | awk '{print $8}' |  awk '{printf(" %f ,",$1 )}')
