@@ -124,10 +124,10 @@ def run(cfg: DictConfig, **kwargs):
     model.cpu()
     sample_tensor.cpu()
     patch_non_affine_norms(model)
-    re_init_quantizers(model, eval_dataloader)
+    # re_init_quantizers(model, eval_dataloader)
     model.eval()
     o1 = model(sample_tensor)
- 
+    
     # Save the input and output data for verification purposes later
     in_tensor  = sample_tensor.cpu()
     out_tensor = o1[0].cpu()
@@ -177,6 +177,8 @@ def run(cfg: DictConfig, **kwargs):
     if not torch.allclose(o1, o2,atol=1e-3):
         log.error(f"sample tensor after export is not close to model output before export")
         import matplotlib.pyplot as plt
+        plt.show(torch.squeeze(0, sample_tensor).detach().numpy(),interpolation='none')
+        plt.savefig('input.png')
         plt.imshow(torch.squeeze(o1,0), interpolation='none')
         plt.savefig('model.png')
         plt.imshow(torch.squeeze(o2,0), interpolation='none')
@@ -250,7 +252,7 @@ def prepare_and_transform_for_export(cfg, model: torch.nn.Module, inplace=False,
         raise NotImplementedError
 
 
-def re_init_quantizers(model, eval_data, num_passes=1):
+def re_init_quantizers(model, eval_data, num_passes=20):
     """ requires dataset to be loaded. Runs eval set through the model. Without eval mode veing active."""
     @torch.no_grad()
     def _run(model, eval_data, num_passes):
@@ -277,7 +279,8 @@ def re_init_quantizers(model, eval_data, num_passes=1):
             #vinputs = vlabels.to(device=device_singleton.device)
             vinputs.cpu()
             vinputs.cpu()
-            voutputs, _ = model(vinputs)  
+            voutputs, loss = model(vinputs, vlabels) 
+            print(loss)
         return 
     model.train()
     _run(model, eval_data, num_passes)    

@@ -40,7 +40,7 @@ class GPT(GenericModel):
         self.single_output = config.single_output
         self.use_weight_tying = config.single_output
         self.norm_size = None
-        print(config)
+        #print(config)
         pe: nn.Module
         if config.pos_layer == "learned":
             pe = nn.Embedding(config.block_size, config.n_embd)

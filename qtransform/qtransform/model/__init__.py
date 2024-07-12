@@ -329,11 +329,13 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
             self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.replace_layers_later)
             self.quant_cfg.model = self.model"""
-        log.warning(f'replace_layers_later not supported yet for qat')
+        if self.replace_layers_later is not None:
+            log.warning(f'{self.replace_layers_later=} not supported yet for qat, ignoring option')
+        
         self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
         self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.quant_cfg)
         self.quantized = True
-
+        
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         if labels is not None:
             logits, loss = self.model(idx_cond, labels)
