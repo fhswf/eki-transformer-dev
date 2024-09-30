@@ -3,6 +3,7 @@ from typing import Any, Dict, Generator, Union, List
 from dataclasses import dataclass
 from omegaconf import DictConfig, open_dict
 import hydra
+from omegaconf import OmegaConf
 from torch import nn
 import torch
 import tiktoken
@@ -71,7 +72,14 @@ def infer(cfg: DictConfig, device: Any):
     #TODO: make inference work for huggingface pretrained models
     model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
     model_wrapper.model.to(device=device)
-
+    
+    # try and get tokenizer conf from checkpoint
+    # TODO do we have a generic way via the picke file? To combine model and tokenizer
+    # TODO actually Tokenizer is very much bound to the model for all steps: train, test, infer. Why not combine them completely in QTRModelWrapper?)
+    if OmegaConf.is_missing(cfg, "tokenizer") or OmegaConf.is_missing(cfg, "tokenizer.encodig") or cfg.get("tokenizer.encodig") is None:
+        if hasattr(model_wrapper, "tokenizer_cfg"):
+            OmegaConf.update(cfg, "tokenizer", model_wrapper.tokenizer_cfg)
+    
     # encode the beginning of the prompt
     if start.startswith('FILE:'):
         with open(start[5:], 'r', encoding='utf-8') as f:
@@ -88,6 +96,7 @@ def infer(cfg: DictConfig, device: Any):
         """
         tokenizer_singleton.tokenizer = cfg.tokenizer
         tokenizer = tokenizer_singleton.tokenizer
+        # TODO is this warning still up to date?
         log.warning(f'Dataset and tokenizer usage is still a WIP, for now gpt2 tiktokenizer is used for inference')
         start_ids = tokenizer.encode(start)
         x = (torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...])

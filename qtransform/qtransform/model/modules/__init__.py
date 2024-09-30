@@ -39,9 +39,10 @@ class SinPosEmb(nn.Module):
             max_seq_len: int, maximum sequence length
         """
         super().__init__()
+        # TODO in/out.py TEsting during export
         print(f"emb_dim__model {emb_dim__model}", f"max_seq_len {max_seq_len}")
         pos_id = torch.as_tensor([[n] for n in range(max_seq_len)])
-        freq_div = f = torch.as_tensor([1e4 ** -(i / emb_dim__model) for i in range(0, emb_dim__model, 2)])
+        freq_div = torch.as_tensor([1e4 ** -(i / emb_dim__model) for i in range(0, emb_dim__model, 2)])
         pe = torch.zeros(max_seq_len, emb_dim__model)
         pe[:, 0::2] = torch.sin(pos_id * freq_div)
         pe[:, 1::2] = torch.cos(pos_id * freq_div)

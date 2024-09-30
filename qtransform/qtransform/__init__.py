@@ -53,13 +53,14 @@ class ConfigSingleton(metaclass=SingletonMeta):
             except:
                 log.error(f'Config value invalid: "{value}"', exc_info=True)
         self._config = value
+
 def get_module_config_path():
     return os.path.join('/'.join(__file__.split('/')[:-2]), 'qtransform' , 'conf')
 
 def main(cfg):
     """Run this app like amodule, Note: cfg is a Hydra config (OmegaConf Object)"""
-    from qtransform import  __main__ as mn
-    mn.main(cfg)
+    from qtransform import  __main__ as _self
+    _self.main(cfg)
 
 
 def jls_extract_def(loglevel=logging.INFO):
@@ -98,7 +99,7 @@ def with_hyrda(arg, loglevel):
         cfg = old_cfg
 
 def with_config(arg, loglevel):
-    """simiar to with_hyrda but only for singular function definition"""
+    """simiar to with_hyrda but a function a decorator for singular function definitions"""
     def wrapper_decorator(func):
         def wrapped_func(*args, **kwargs):
             initialize_config_dir, config_path, compose = jls_extract_def(loglevel)
@@ -129,16 +130,23 @@ class DeviceSingleton:
         match value:
             case 'cuda':
                 new_device = 'cuda' if cuda.is_available() else 'cpu'
+                if new_device == "cpu":
+                    log.warning("specified to use gpus, but cuda is not avaiable")
             case 'gpu':
                 new_device = 'cuda' if cuda.is_available() else 'cpu'
+                if new_device == "cpu":
+                    log.warning("specified to use gpus, but cuda is not avaiable")
             case 'mps':
                 new_device = 'mps' if backends.mps.is_available() else 'cpu'
+                if new_device == "cpu":
+                    log.warning("specified to use mps, but mps is not avaiable")
             case 'cpu':
                 new_device = 'cpu'
             case _:
                 log.warning(f'Device {new_device} not recognized. Using default: CPU')
                 new_device = 'cpu'
         self._device = device(new_device)
+        
         log.info(f'Device specified: {value}. Using device: {new_device}')
         # torch.set_default_device(self._device) # does not work for dataloader forks....
 

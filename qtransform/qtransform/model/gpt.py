@@ -40,6 +40,7 @@ class GPT(GenericModel):
         self.single_output = config.single_output
         self.use_weight_tying = config.single_output
         self.norm_size = None
+        #print(config)
         pe: nn.Module
         if config.pos_layer == "learned":
             pe = nn.Embedding(config.block_size, config.n_embd)
@@ -139,6 +140,10 @@ class GPT(GenericModel):
 
         # forward the GPT model itself
         #TODO: add padding for FINN support ?
+        
+        ## sometimes the model is not synced completly
+        #        self.to(device=device)
+
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
         x = self.transformer.emb_add(tok_emb, pos_emb)
@@ -175,6 +180,7 @@ class GPT(GenericModel):
         return logits, loss
 
     def crop_block_size(self, block_size):
+        raise NotImplementedError("crop_block_size does not crop all embedding layer atm")
         # model surgery to decrease the block size if necessary
         # e.g. we may load the GPT2 pretrained model checkpoint (block size 1024)
         # but want to use a smaller block size for some smaller, simpler model
@@ -187,6 +193,7 @@ class GPT(GenericModel):
 
     @classmethod
     def from_pretrained(cls, model, model_type):
+        raise NotImplementedError("from_pretrained was not updated for a while")
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
 
         from transformers import GPT2LMHeadModel

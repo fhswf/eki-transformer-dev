@@ -1,8 +1,8 @@
 hydra:
   run:
-    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+    dir: outputs/${hydra.job.name}/${now:%y%m%d-%H\:%M\:%S}
   sweep:
-    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+    dir: outputs/${hydra.job.name}/${now:%y%m%d-%H\:%M\:%S}
     subdir: ${hydra.job.num}
   #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
   searchpath:
@@ -44,12 +44,13 @@ dataset:
     #filename of tokenized split: <cache_filename_prefix>-<split>-<dataset_suffix>. "dataset_suffix" is specified by the format of tokenized data
     #the split is specified in between the prefix and the suffix
     cache_filename_prefix: cache-${tokenizer.encoding}-${model.args.block_size}- #leads to: "cache-gpt2-128-". 
-
-
+    # where are theese keys?
+    #type:
+    #name:q
 
 tokenizer: 
   encoding: ???
-  dtype: ${data.dtype}
+  dtype: ${data.dtype} # TODO change this abs path might change and this will break and noone will know why
   meta_file: meta.pkl #filename of metadata, contains encoding and vocab if character tokenization is used
 seed: 1234567890
 

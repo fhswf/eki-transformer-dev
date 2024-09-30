@@ -3,7 +3,7 @@ from copy import deepcopy
 import logging
 from typing import Any
 import numpy as np
-from omegaconf import DictConfig
+from omegaconf import DictConfig, open_dict
 import hydra
 import os
 from qtransform import device_singleton
@@ -27,9 +27,15 @@ def run(cfg: DictConfig, **kwargs):
     log.info(f"time is: {timestamp}")
     log.debug(f'Run config: {cfg.run}')
     model = None
-
+    torch.set_printoptions(precision=10)
     device_singleton.device = cfg.device
     device = device_singleton.device
+
+    if device.type == 'cuda':
+        cuda_kwargs = {'pin_memory': True,}
+        if "dataset" in cfg and cfg.dataset is not None:
+            with open_dict(cfg.dataset.dataloader):
+                cfg.dataset.dataloader.update(cuda_kwargs)
 
     from omegaconf import DictConfig, OmegaConf, errors
     try: ## this is so dirty, but for some reason OmegaConf does not work here...
@@ -40,8 +46,10 @@ def run(cfg: DictConfig, **kwargs):
     #the model passed from the training script should be configured completely
     #the model does not exist yet when calling the export script directly
     if  _run:
+        log.info("Getting model config from model_wrapper kwargs")
         model_wrapper: DynamicCheckpointQTRModelWrapper = kwargs["model_wrapper"]
     else:
+        log.info("Getting model config from hydra config")
         model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     model: GenericModel = model_wrapper.model
     assert isinstance(model, GenericModel), f'model is not of type GenericModel'
@@ -52,6 +60,18 @@ def run(cfg: DictConfig, **kwargs):
     max_token_id = model.config.vocab_size
     #max_token_id = checkpoint['model_cfg']['args']['vocab_size']
     sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
+
+
+    # now we need a dataset to calibrate missing quantizers before export 
+
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+    from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
+    tokenizer_singleton.tokenizer = cfg.tokenizer
+    from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
+    dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
+    eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
+
 
     """
     export function maps to torch onnx export:
@@ -89,7 +109,7 @@ def run(cfg: DictConfig, **kwargs):
     filename = cfg.model.from_file.filename
     if os.path.isabs(filename):
         _, filename = os.path.split(filename)
-    model_name = f"{str(cfg.run.export_fn)}_{'_'.join(map(str,input_dim))}_" + filename
+    model_name = f"{str(cfg.run.export_fn)}_" + filename
     from qtransform.utils.introspection import concat_paths
     model_path = concat_paths([root_path, model_name])
 
@@ -100,21 +120,30 @@ def run(cfg: DictConfig, **kwargs):
         "onnx": f'{export.__module__}.{export.__name__}'
     }
 
+    # model.to(device=device)
+    model.cpu()
+    sample_tensor.cpu()
+    patch_non_affine_norms(model)
+    # re_init_quantizers(model, eval_dataloader)
     model.eval()
-    o = model(sample_tensor)
-    print(o)
+    o1 = model(sample_tensor)
+    
     # Save the input and output data for verification purposes later
     in_tensor  = sample_tensor.cpu()
-    out_tensor = o[0].cpu()
-    np.save("inp.npy", in_tensor.detach().numpy())
-    np.save("out.npy", out_tensor.detach().numpy())
+    out_tensor = o1[0].cpu()
+    np.save(model_name + ".inp.npy", in_tensor.detach().numpy())
+    np.save(model_name + ".out.npy", out_tensor.detach().numpy())
+
+    # TODO 
+    # verfiy tensor output before and after qonnx conversion
+
     #only write something into pipe if no errors occur
     try:
         shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
         match cfg.run.export_fn:
             case "qonnx":
                 export_qonnx(model, shape, export_path=model_path, **kwargs)
-                export_qonnx(model, shape, export_path="attention.onnx", **kwargs)
+                # export_qonnx(model, shape, export_path="attention.onnx", **kwargs)
             case "qcdq":
                 export_onnx_qcdq(model, shape, export_path=model_path, **kwargs)
             case "onnx":
@@ -133,8 +162,30 @@ def run(cfg: DictConfig, **kwargs):
     from onnx.shape_inference import infer_shapes
     onnx_model = infer_shapes(onnx_model._model_proto)
     onnx_model = QModelWrapper(onnx_model)
-    o =  execute_onnx(onnx_model, {"input": sample_tensor.cpu().numpy()})
-    print(o)
+    o2 =  execute_onnx(onnx_model, {"input": sample_tensor.cpu().numpy()})
+    o2 = torch.from_numpy(o2["output"])
+    o1 = o1[0]
+    o1 = o1.detach().cpu()
+    o2 = o2.detach().cpu()
+
+    torch.set_printoptions(precision=10)
+    print(o1)
+    print(o2)
+
+    if not torch.equal(o1, o2):
+        log.warning(f"sample tensor after export does not equal model output before export")
+    if not torch.allclose(o1, o2,atol=1e-3):
+        log.error(f"sample tensor after export is not close to model output before export")
+        import matplotlib.pyplot as plt
+        plt.show(torch.squeeze(0, sample_tensor).detach().numpy(),interpolation='none')
+        plt.savefig('input.png')
+        plt.imshow(torch.squeeze(o1,0), interpolation='none')
+        plt.savefig('model.png')
+        plt.imshow(torch.squeeze(o2,0), interpolation='none')
+        plt.savefig('onnx.png')
+        mask = torch.isclose(o1, o2,atol=1e-3)
+        plt.imshow(torch.squeeze(mask,0), interpolation='none')
+        plt.savefig('mask.png')
 
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None
@@ -200,6 +251,83 @@ def prepare_and_transform_for_export(cfg, model: torch.nn.Module, inplace=False,
         # TODO use some merge config. where for evry norm layer a merge layer is specified.
         raise NotImplementedError
 
-    
 
-    
+def re_init_quantizers(model, eval_data, num_passes=20):
+    """ requires dataset to be loaded. Runs eval set through the model. Without eval mode veing active."""
+    @torch.no_grad()
+    def _run(model, eval_data, num_passes):
+        max_len = len(eval_data)
+        run_len = min(max_len, num_passes)
+        log.info(f"eval_data len is {max_len}, num_passes set to {num_passes}. Running eval for {run_len}")
+        # TODO use cfg.run.eval_iters for eval iter limits when we need it
+        for i, vdata in enumerate(eval_data):
+            if i > run_len:
+                break
+            vinputs = None
+            vlabels = None
+           
+            if len(vdata) > 2:
+                vinputs = vdata['input_ids']
+                vlabels = vdata['labels']
+                vattention_mask = vdata['attention_mask']
+            elif len(vdata) == 2:
+                vinputs, vlabels = vdata
+            else:
+                log.error(f"unsupported dataloader output. len was {len(vdata)}. ")
+                raise NotImplementedError
+            #vinputs = vinputs.to(device=device_singleton.device)
+            #vinputs = vlabels.to(device=device_singleton.device)
+            vinputs.cpu()
+            vinputs.cpu()
+            voutputs, loss = model(vinputs, vlabels) 
+            print(loss)
+        return 
+    model.train()
+    _run(model, eval_data, num_passes)    
+    model.eval()
+    pass
+
+
+def patch_non_affine_norms(model: torch.nn.Module):
+    """    
+    Fixes export issues of normalization layers with disabled affine parameters.
+    Somehow the export to ONNX trips when it encounters the weight and bias tensor
+    to be 'None'.
+    """
+    # Check whether a layer is a normalization layer of some supported type
+    def is_norm_layer(module):
+        # Set of normalization layer (bases) which maybe need to be patched
+        norm_layers = {
+            # All BatchNorm and InstanceNorm variants derive from this baseclass
+            torch.nn.modules.batchnorm._NormBase,  # noqa: Access to _NormBase
+            # LayerNorm has a unique implementation
+            torch.nn.LayerNorm,
+        }
+        # Check the module against all supported norm layer types
+        return any(isinstance(module, norm) for norm in norm_layers)
+
+    # Iterate all modules in the model container
+    for name, module in model.named_modules():
+        # If the module is a normalization layer it might require patching the
+        # affine parameters
+        if is_norm_layer(module):
+            # Check whether affine scale parameters are missing
+            if hasattr(module, "weight") and module.weight is None:
+                # There need to be running statistics to patch the scales
+                if hasattr(module, "running_var"):
+                    # Patch the affine bias by all 1 tensor of the same shape,
+                    # type and device as the running variance
+                    module.weight = torch.nn.Parameter(
+                        torch.ones_like(module.running_var)
+                    )
+            # Check whether affine bias parameters are missing
+            if hasattr(module, "bias") and module.bias is None:
+                # There need to be running statistics to patch the scales
+                if hasattr(module, "running_mean"):
+                    # Patch the affine bias by all 0 tensor of the same shape,
+                    # type and device as the running mean
+                    module.bias = torch.nn.Parameter(
+                        torch.zeros_like(module.running_var)
+                    )
+    # Return the patched model container
+    return model

@@ -19,11 +19,11 @@ from qtransform import device_singleton
 from qtransform.utils.helper import load_state_dict_proxy
 from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpointQTRModelWrapper
 from qtransform import ConfigSingleton
+from torch.profiler import profile, record_function, ProfilerActivity
+from functools import lru_cache
 
 log = logging.getLogger(__name__)
-from torch.profiler import profile, record_function, ProfilerActivity
 
-from functools import lru_cache
 
 # Keep track of 10 different messages and then warn again
 @lru_cache(1)
@@ -52,6 +52,7 @@ def run(cfg: DictConfig):
         with open_dict(cfg.dataset.dataloader):
             cfg.dataset.dataloader.update(cuda_kwargs)
     torch.manual_seed(cfg.seed)    
+    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     #TODO: move quant_config as subconfig into model_cfg to perform quantization within modelwrapper
@@ -90,6 +91,9 @@ def run(cfg: DictConfig):
     #        raise Exception
     #    model = GPT.from_pretrained(model=model, model_type=cfg.run.from_pretrained)
     #    epochs_to_run = range(1, cfg.run.epochs + 1)
+
+    # for now. This just prevent the error msg, maybe in the future we find a way of using the hf-tok-parallelism feature
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     tokenizer_singleton.tokenizer = cfg.tokenizer
     from qtransform.dataset import DataLoaderWrapper, DatasetSplitType

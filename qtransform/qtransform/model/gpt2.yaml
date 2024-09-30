@@ -1,0 +1,20 @@
+cls: GPT
+calc_loss_in_model: True
+model_name: gpt2-s${.args.block_size}-t${.args.vocab_size}-l${.args.n_layer}-h${.args.n_head}-e${.args.n_embd}-A${.args.transformer_active_func}-N${.args.norm_layer}-P${.args.pos_layer}
+cstr: # example: Mgpt2-s256-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned
+type: CHECKPOINT
+args:
+  n_layer : ???
+  n_head : ???
+  n_embd : ???
+  dropout : 0.1 # for pretraining 0 is good, for finetuning try 0.1+
+  bias : True # do we use bias inside LayerNorm and Linear layers? # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+  block_size : ???
+  vocab_size : 2048 # tied to tokenizer and overwritten?
+  transformer_active_func: ReLU
+  norm_layer: BatchNormTranspose
+  flash: False
+  single_output: False
+  use_weight_tying: False
+  shift_targets: True
+  pos_layer: "learned"
