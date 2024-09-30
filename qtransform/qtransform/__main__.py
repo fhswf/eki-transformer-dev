@@ -5,15 +5,16 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from pickle import load
 import logging
 import qtransform
-from qtransform.utils import addLoggingLevel
+from qtransform.utils import addLoggingHandler, addLoggingLevel
 from pprint import PrettyPrinter
 from qtransform import ConfigSingleton
 from qtransform.utils.callbacks import Callbacks
-from qtransform.utils.helper import write_to_pipe
+from qtransform.utils.helper import get_output_dir, write_to_pipe
 import brevitas
 from importlib import import_module
 from typing import Dict
 import sys
+from qtransform.utils import ID
 
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 log = logging.getLogger(__name__)
@@ -25,13 +26,14 @@ def cli_wrapper(cfg: DictConfig):
     note that additional configs can be loaded via --config-dir https://github.com/facebookresearch/hydra/issues/874
     """
     ConfigSingleton().config = cfg
+    addLoggingHandler(os.path.join(get_output_dir(), ID + ".log"))
     main()
 
 @hydra.main(version_base=None, config_path="conf", config_name="config.yaml")
 def module_wrapper(cfg: DictConfig):
     ConfigSingleton().config = cfg
+    addLoggingHandler(os.path.join(get_output_dir(), ID + ".log"))
     main()
-
 
 def main():
     cfg = ConfigSingleton().config
@@ -62,9 +64,10 @@ def main():
     cfg = ConfigSingleton().config
     #make sure that callbacks are still called after exceptions
     #this is an issue with our implementation of callbacks currently
-    run_failed=0
+    exit_code=0
     try:
-        match cfg.run.command:
+        # TODO we cloud make this dynamic by importing by module name via a string 
+        match cfg.run.command: 
             case "train":          
                 from qtransform.run import train
                 train.run(cfg)
@@ -83,22 +86,29 @@ def main():
             case "script":
                 from qtransform.run import script
                 script.run(cfg)
+            case "analysis":
+                from qtransform.run import analysis
+                analysis.run(cfg)
+            # TODO chaining options together inside
+            #case "analysis":
+            #    from qtransform.run import multi
+            #    multi.run(cfg)
             case _:
                 log.error(f'Command "{cfg.run.command}" not recognized')
     except Exception as e:
-        run_failed=1 # generic error
+        exit_code = 1 # generic error
         log.critical("Script execution failed. Reason: ", exc_info=True)
         # OutOfMemoryError does not exsist in static python torch package...
         if e.__class__.__name__ == "OutOfMemoryError":
-            run_failed = 2
+            exit_code = 2
     #unsure if config should be pickled if errors occured
     cfg = ConfigSingleton().config
     callbacks.call_on_run_end(cfg)
 
-    if run_failed is not None and run_failed > 0:
-        log.error(f"Exited with Status Code: {str(run_failed)}")
-        exit(run_failed)
-    log.info(f"Exited with Status Code: {str(run_failed)}")
+    if exit_code is not None and exit_code > 0:
+        log.error(f"Exited with Status Code: {str(exit_code)}")
+        exit(exit_code)
+    log.info(f"Exited with Status Code: {str(exit_code)}")
 
 if __name__ == "__main__":
     module_wrapper()

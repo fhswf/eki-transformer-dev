@@ -2,6 +2,8 @@ import os
 import re
 import time
 import numpy as np
+from typing import Any
+import omegaconf
 from omegaconf import DictConfig, open_dict, OmegaConf
 from qtransform.classloader import get_data
 from torch import nn, Tensor, from_numpy
@@ -165,6 +167,7 @@ class QTRModelWrapper(ABC):
     model: Union[ModelWrapper, GenericModel] 
     model_type: ModelType
     _model_cfg: ModelConfig #missing args from config are replaced with default values of dataclass
+    _tokenizer_cfg: Any # TODO Any to some new data class
 
     def __init__(self, model_cfg: Union[ModelConfig, DictConfig]):
         pass
@@ -172,10 +175,33 @@ class QTRModelWrapper(ABC):
     @property
     def model_cfg(self):
         return self._model_cfg
-    
+
+    @property
+    def tokenizer_cfg(self):
+        return self._tokenizer_cfg
+
+    @tokenizer_cfg.setter
+    def tokenizer_cfg(self, value):
+        self._tokenizer_cfg = value
+
     @model_cfg.setter
     def model_cfg(self, value: Union[ModelConfig, DictConfig]):
-        self._model_cfg = value if isinstance(value, ModelConfig) else ModelConfig(**value)
+        if isinstance(value, ModelConfig):
+            self._model_cfg = value
+        else:
+            try:
+                self._model_cfg = ModelConfig(**value)
+            # TODO this is temporary and should be deleted once we create new train sweeps on pc2
+            except omegaconf.errors.InterpolationKeyError as e:
+                log.warning(f"InterpolationKeyError in Hydra conf {e}")
+                if e.full_key == "model_name":
+                    OmegaConf.update(value, e.full_key, "unkown-s${.args.block_size}-t${.args.vocab_size}-l${.args.n_layer}-h${.args.n_head}-e${.args.n_embd}-A${.args.transformer_active_func}-N${.args.norm_layer}-P${.args.pos_layer}")
+                    self._model_cfg = ModelConfig(**value)
+                elif e.key == "model_name":
+                    OmegaConf.update(value, e.key, "unkown-s${.args.block_size}-t${.args.vocab_size}-l${.args.n_layer}-h${.args.n_head}-e${.args.n_embd}-A${.args.transformer_active_func}-N${.args.norm_layer}-P${.args.pos_layer}")
+                    self._model_cfg = ModelConfig(**value)
+                else:
+                    raise e
 
     @abstractmethod
     def load_model(self, model_cfg: Union[ModelConfig, DictConfig]):
@@ -255,6 +281,7 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             raise KeyError
 
         model_cfg = checkpoint["model_cfg"]
+        self.tokenizer_cfg = checkpoint["tokenizer_cfg"]
         #support for older checkpoints
         with open_dict(model_cfg):
             model_cfg["type"] = "CHECKPOINT"
@@ -302,11 +329,13 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
             self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.replace_layers_later)
             self.quant_cfg.model = self.model"""
-        log.warning(f'replace_layers_later not supported yet for qat')
+        if self.replace_layers_later is not None:
+            log.warning(f'{self.replace_layers_later=} not supported yet for qat, ignoring option')
+        
         self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
         self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.quant_cfg)
         self.quantized = True
-
+        
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         if labels is not None:
             logits, loss = self.model(idx_cond, labels)

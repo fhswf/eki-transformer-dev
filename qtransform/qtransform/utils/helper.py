@@ -2,28 +2,49 @@ import datetime
 import os
 from typing import Any, Dict, Tuple, Union
 import hydra
-from pprint import pprint
-from hydra.core.hydra_config import HydraConfig
-from omegaconf import OmegaConf, DictConfig, open_dict
+from omegaconf import DictConfig
 import torch
 import logging
 from torch import nn
 from stat import S_ISFIFO
-from yaml import dump, safe_load
-import onnx
-import onnxruntime as ort
+from hydra.core.global_hydra import GlobalHydra
 from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
 from dataclasses import dataclass, field
-from hydra.core.utils import JobReturn, JobStatus
-from hydra.experimental.callback import Callback
-from pathlib import Path
-import pickle
 from pprint import PrettyPrinter
 from qtransform import ConfigSingleton
+from inspect import isclass,isfunction
 
 log = logging.getLogger(__name__)
+
+class _SingletonWrapper:
+    """
+    A singleton wrapper class. Its instances would be created for each decorated class. 
+    """
+    def __init__(self, cls):
+        self.__wrapped__ = cls
+        self._instance = None
+
+    def __call__(self, *args, **kwargs):
+        """Returns a single instance of decorated class"""
+        if self._instance is None:
+            self._instance = self.__wrapped__(*args, **kwargs)()
+        return self._instance
+
+    
+def singleton(*args, **kwargs):
+    """ A singleton decorator."""
+    # check for correct usage with parentheses => @singleton()
+    if len(args) > 0: 
+        assert not isclass(args[0]) or not isfunction(args[0]) 
+        
+    def _singleton(cls):
+        """ actual decorator function """
+        assert isclass(cls) # wrap only classes
+        return _SingletonWrapper(cls)
+    
+    return _singleton
 
 def get_default_chkpt_folder() -> str:
     """
@@ -31,6 +52,20 @@ def get_default_chkpt_folder() -> str:
         by the user with the cfg variables "checkpoint_dir".
     """
     return os.path.join(os.getenv("HOME"), *__package__.split("."), "checkpoint_dir")
+
+def get_cwd() -> str:
+    cwd:str
+    if GlobalHydra().is_initialized():
+        cwd = str(hydra.core.hydra_config.HydraConfig.get().runtime.cwd)
+    else:
+        cwd = str(os.getcwd())
+    return cwd
+
+def get_output_dir() -> str:
+    return os.path.join(get_cwd(), "outputs")
+
+def get_debug_dir() -> str:
+    return os.path.join(get_cwd(), "debug")
 
 #idea: generic fromfile for dataset and models
 @dataclass
@@ -76,9 +111,9 @@ class FromFile():
             #outputs are stored in <current directory>/outputs/<checkpoint_dir>
             try:
                 model_dir =  os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", model_dir) #os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", model_dir)
-            except:
-                log.debug(f'Could not get cwd from hydra. Reason: ', exc_info=True)
-                log.debug(f'Using os.getcwd')
+            except Exception as e:
+                log.debug(f'Could not get cwd from hydra. Reason: {e.__class__.__name__}', exc_info=True)
+                log.debug(f'Using {os.getcwd()=}')
                 model_dir = os.getcwd()
         self._model_dir = model_dir
 
@@ -100,6 +135,7 @@ def load_checkpoint(from_file: Union[Dict, DictConfig, FromFile]) -> Tuple[int, 
     if 'epoch' in checkpoint:
         from_epoch = checkpoint['epoch']
     else:
+        raise NotImplementedError("epoch needs to be in checkpoint for now")
         try:
             i = str(filepath).index("epoch:")
             import re
@@ -215,3 +251,10 @@ def write_to_pipe(pipe_name: str, content: str) -> None:
         with open(pipe_name, 'w') as pipe:
             pipe.write(content)
 
+
+def validate_model():
+    """
+    Passes one eval dataset sample and a random generated tensor through the model.
+    Compares model output to past model.
+    """
+    pass

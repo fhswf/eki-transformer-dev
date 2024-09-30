@@ -40,7 +40,7 @@ class GPT(GenericModel):
         self.single_output = config.single_output
         self.use_weight_tying = config.single_output
         self.norm_size = None
-        print(config)
+        #print(config)
         pe: nn.Module
         if config.pos_layer == "learned":
             pe = nn.Embedding(config.block_size, config.n_embd)
@@ -140,6 +140,10 @@ class GPT(GenericModel):
 
         # forward the GPT model itself
         #TODO: add padding for FINN support ?
+        
+        ## sometimes the model is not synced completly
+        #        self.to(device=device)
+
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
         x = self.transformer.emb_add(tok_emb, pos_emb)

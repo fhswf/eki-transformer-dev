@@ -1,0 +1,4 @@
+command: chain # name of this file for self reference
+debug: False
+
+seq: # sequence of run commands. e.g.  [run,analysis,export,analysis]

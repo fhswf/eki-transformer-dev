@@ -19,11 +19,11 @@ from qtransform import device_singleton
 from qtransform.utils.helper import load_state_dict_proxy
 from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpointQTRModelWrapper
 from qtransform import ConfigSingleton
+from torch.profiler import profile, record_function, ProfilerActivity
+from functools import lru_cache
 
 log = logging.getLogger(__name__)
-from torch.profiler import profile, record_function, ProfilerActivity
 
-from functools import lru_cache
 
 # Keep track of 10 different messages and then warn again
 @lru_cache(1)
