@@ -1,7 +1,9 @@
 import logging
+import logging.handlers
 from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, write_to_pipe
+from qtransform.utils.id import ID
 __all__ = [
-    load_checkpoint, save_checkpoint, load_onnx_model, write_to_pipe
+    load_checkpoint, save_checkpoint, load_onnx_model, write_to_pipe, ID
 ]
 
 
@@ -54,4 +56,13 @@ def addLoggingLevel(levelName, levelNum, methodName=None):
     setattr(logging.getLoggerClass(), methodName, logForLevel)
     setattr(logging, methodName, logToRoot)
 
+
+def addLoggingHandler(fileName, logger=None):
+    if logger is None:
+        logger = logging.getLogger('') # root logger aka all loggers
+    handler = logging.FileHandler(fileName, 'w')
+    formatter = logging.Formatter('[%(asctime)s][%(name)s][%(levelname)s] - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    pass
 

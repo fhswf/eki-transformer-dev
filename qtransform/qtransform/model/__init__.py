@@ -1,9 +1,17 @@
+import os
+import re
+import time
+import numpy as np
+from typing import Any
+import omegaconf
 from omegaconf import DictConfig, open_dict, OmegaConf
 from qtransform.classloader import get_data
 from torch import nn, Tensor, from_numpy
 from torch import compile as torch_compile
 from torch import __version__ as torch_version
 import logging
+from qonnx.core.onnx_exec import execute_onnx as qonnx_execute_onnx
+from finn.core.onnx_exec import execute_onnx as finn_execute_onnx
 from dataclasses import dataclass, fields
 from qonnx.core.onnx_exec import execute_onnx
 from qonnx.core.modelwrapper import ModelWrapper
@@ -19,6 +27,8 @@ from qtransform.quantization import get_quantizer, ModelQuantConfig, Quantizer
 from qtransform import ConfigSingleton
 
 from functools import lru_cache
+
+import torch
 
 # Keep track of 10 different messages and then warn again
 @lru_cache(1)
@@ -45,7 +55,40 @@ class ModelInfoMixin():
     @classmethod
     def supports(cls) -> ModelSupport():
         return cls.support
+    
+@DeprecationWarning
+def old_get_model(model_cfg: DictConfig) -> nn.Module:
+    """ get model info and return a configured torch nn.Module instance """
+    log.debug(f"get_model config: {model_cfg}")
+    if model_cfg.get('cls') is None:
+        log.error(f'No model class specified')
+        raise KeyError()
+    pretrained = model_cfg.get('pretrained', False)
+    if pretrained: 
+        assert model_cfg.version is not None, f'pretrained model version needs to be specified'
+        model = GPT2LMHeadModel.from_pretrained(model_cfg.version)
+        #necessary for dataloader to retrieve exactly one full context input
+        with open_dict(model_cfg):
+            model_cfg.args.block_size = model.config.n_positions
+            model_cfg.args.vocab_size = model.config.vocab_size
+            model_cfg.args.calc_loss_in_model = True
+        return model
+    
+    #from qtransform.model import get_model as _get_model
+    #model = _get_model(model_cfg)
 
+    # TODO find out what went wrong here!
+    
+    from qtransform import model as _model
+    args = model_cfg.get("args")
+    #models need to specify their hyperparameters in init parameter named "config"
+    model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module)
+    #construct model if no args have been given
+    if args:
+        model = model(config = args)
+    else:
+        model = model()
+    return model
 
 def get_hf_pretrained(model_cfg: DictConfig) -> nn.Module:
     """
@@ -80,6 +123,7 @@ class ModelArgs():
     custom_ln: bool = False #use CustomBatchNorm1d before BatchNorm
     use_causal: bool = False
     shift_targets: bool = False # True: labels are shifted by one to the right inside the model, False: shifting is done by dataloader
+    pos_layer: str = 'learned'
 
 @dataclass
 class ModelConfig():
@@ -88,6 +132,8 @@ class ModelConfig():
     calc_loss_in_model: bool
     args: ModelArgs
     from_file: FromFile = None #torch checkpoint or ONNX model path
+    model_name: str = "Missing-Model-Name" # used to name the saved checkpoints
+    cstr: str = None # infer model args from a config string: Mgpt2-s256-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned
 
     def __setattr__(self, name, value):
         if name == "args" and not isinstance(value, ModelArgs):
@@ -121,6 +167,7 @@ class QTRModelWrapper(ABC):
     model: Union[ModelWrapper, GenericModel] 
     model_type: ModelType
     _model_cfg: ModelConfig #missing args from config are replaced with default values of dataclass
+    _tokenizer_cfg: Any # TODO Any to some new data class
 
     def __init__(self, model_cfg: Union[ModelConfig, DictConfig]):
         pass
@@ -128,10 +175,33 @@ class QTRModelWrapper(ABC):
     @property
     def model_cfg(self):
         return self._model_cfg
-    
+
+    @property
+    def tokenizer_cfg(self):
+        return self._tokenizer_cfg
+
+    @tokenizer_cfg.setter
+    def tokenizer_cfg(self, value):
+        self._tokenizer_cfg = value
+
     @model_cfg.setter
     def model_cfg(self, value: Union[ModelConfig, DictConfig]):
-        self._model_cfg = value if isinstance(value, ModelConfig) else ModelConfig(**value)
+        if isinstance(value, ModelConfig):
+            self._model_cfg = value
+        else:
+            try:
+                self._model_cfg = ModelConfig(**value)
+            # TODO this is temporary and should be deleted once we create new train sweeps on pc2
+            except omegaconf.errors.InterpolationKeyError as e:
+                log.warning(f"InterpolationKeyError in Hydra conf {e}")
+                if e.full_key == "model_name":
+                    OmegaConf.update(value, e.full_key, "unkown-s${.args.block_size}-t${.args.vocab_size}-l${.args.n_layer}-h${.args.n_head}-e${.args.n_embd}-A${.args.transformer_active_func}-N${.args.norm_layer}-P${.args.pos_layer}")
+                    self._model_cfg = ModelConfig(**value)
+                elif e.key == "model_name":
+                    OmegaConf.update(value, e.key, "unkown-s${.args.block_size}-t${.args.vocab_size}-l${.args.n_layer}-h${.args.n_head}-e${.args.n_embd}-A${.args.transformer_active_func}-N${.args.norm_layer}-P${.args.pos_layer}")
+                    self._model_cfg = ModelConfig(**value)
+                else:
+                    raise e
 
     @abstractmethod
     def load_model(self, model_cfg: Union[ModelConfig, DictConfig]):
@@ -211,6 +281,7 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             raise KeyError
 
         model_cfg = checkpoint["model_cfg"]
+        self.tokenizer_cfg = checkpoint["tokenizer_cfg"]
         #support for older checkpoints
         with open_dict(model_cfg):
             model_cfg["type"] = "CHECKPOINT"
@@ -258,11 +329,13 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
             self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.replace_layers_later)
             self.quant_cfg.model = self.model"""
-        log.warning(f'replace_layers_later not supported yet for qat')
+        if self.replace_layers_later is not None:
+            log.warning(f'{self.replace_layers_later=} not supported yet for qat, ignoring option')
+        
         self.quantizer, self.quant_cfg = get_quantizer(quant_cfg, self.model)
         self.model, self.replace_layers_later = self.quantizer.get_quantized_model(self.quant_cfg)
         self.quantized = True
-
+        
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         if labels is not None:
             logits, loss = self.model(idx_cond, labels)
@@ -275,17 +348,44 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
             self.model = torch_compile(self.model)
         else:
             log.error(f'Cannot compile with torch version: {torch_version} (needs to be >= 2.0)')
-            
+
+model_args_dict = {
+    "M": (str,"cls"),
+    "s": (int,"args.block_size"),
+    "t": (int,"args.vocab_size"),
+    "l": (int,"args.n_layer"),
+    "h": (int,"args.n_head"),
+    "e": (int,"args.n_embd"),
+    "A": (str,"args.transformer_active_func"),
+    "N": (str,"args.norm_layer"),
+    "P": (str,"args.pos_layer"),
+}
+def update_conf(_config, _str):
+    key = _str[0]
+    value = _str[1:]
+    f, conf_key = model_args_dict.get(key, None)
+    if conf_key is not None:
+        OmegaConf.update(_config, conf_key, f(value), force_add=True)
+    else:
+        raise NameError(f"key substring[0] not defined for model args in model.cstr")
+
 def get_model(model_cfg: DictConfig) -> nn.Module:
     """ get model info and return a configured torch nn.Module instance """
     log.debug(f"get_model config: {model_cfg}")
     if model_cfg.get('cls') is None:
         log.error(f'No model class specified')
         raise KeyError()
-    from qtransform import model as _model
-    args = model_cfg.get("args")
+
+    # if model.cstr is present try to infer some model args from this string, then update model.model_name to update placeholder
+    cstr = model_cfg.get('cstr')
+    if cstr is not None and isinstance(cstr, str) and cstr != "":
+        # csr example: Mgpt2-s256-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned
+        for substring in cstr.split("-"):
+            update_conf(model_cfg, substring)
 
     #models need to specify their hyperparameters in init parameter named "config"
+    from qtransform import model as _model
+    args = model_cfg.get("args")
     model = get_data(log, package_name = _model, class_name = model_cfg.get('cls'), parent_class = nn.Module)
     if args:
         model = model(config = args)
@@ -368,15 +468,55 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
 
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         device = idx_cond.device
+        # defaults:
+        input_name =  "input"
+        run_fn = qonnx_execute_onnx
+        # determine if finn onnx or qonnx
+        _a = re.findall(r"\.finn", str(self.model_cfg.from_file))
+        if len(_a) == 1 and _a[0] == ".finn":  # check if model name contains "finn flag" 
+            input_name =  "global_in"
+            run_fn = finn_execute_onnx
+        # elif self.model_cfg.get("runtime") is not None:
+        #     if self.model_cfg.get("runtime") == "finn":
+        #         input_name =  "global_in"
+        #         run_fn = finn_execute_onnx
+        #     elif self.model_cfg.get("runtime") == "qonnx":
+        #         input_name =  "input"
+        #         run_fn = qonnx_execute_onnx
+        #     elif self.model_cfg.get("runtime") == "onnx":
+        #         input_name =  "input"
+        #         run_fn = qonnx_execute_onnx
+        else: # defaults
+            input_name =  "input"
+            run_fn = qonnx_execute_onnx
+
+        #log.info(f"input_name for onnx graph run {input_name},  using function {run_fn.__name__}")
+        # finn removes batch so we do it here
+        if input_name ==  "global_in":
+            idx_cond = torch.squeeze(idx_cond)
+            #print(idx_cond.cpu().numpy())
+            #print(idx_cond.cpu().numpy().size)
+            #np.save("global_in.npy", idx_cond.cpu().numpy())
+
         if labels is not None:
-            idict = {"input": idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
-            warn_once(log, "labels are given to external forwards pass wrapper but they are ignored inside onnx models atm")
+            idict = {input_name: idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
+            warn_once(log, "labels are givin to external forwards pass wrapper but they are ignored inside onns models atm")
         else:
-            idict = {"input": idx_cond.cpu().numpy()}
+            idict = {input_name: idx_cond.cpu().numpy()}
         # use infer_shapes()
         #forward pass of gpt model returns the non-softmaxed token predictions
-        odict = execute_onnx(self.model, idict)
-        logits = from_numpy(odict["output"]).to(device=device)
+        odict = run_fn(self.model, idict)
+        # print(odict)
+        if "global_out" in odict.keys():
+            #print(odict["global_out"])
+            #print(odict["global_out"].size)
+            #np.save("global_out.npy", )
+
+            logits = from_numpy(odict["global_out"]).to(device=device)
+            logits = torch.unsqueeze(logits, 0)
+        else:
+            logits = from_numpy(odict["output"]).to(device=device)
+
         return logits 
 
     def save_model(self):

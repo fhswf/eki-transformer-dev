@@ -1,0 +1,6 @@
+command: analysis
+debug: True
+
+find_outliers: False
+find_device_mismatch:  False
+find_untrained_quantizers:  False

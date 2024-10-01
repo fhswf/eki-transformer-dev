@@ -1,6 +1,6 @@
 import torch
 import math
-from torch import nn 
+from torch import Tensor, nn 
 from torch.nn import functional as F
 from qtransform.model import modules as custom_nn
 from dataclasses import dataclass
@@ -9,8 +9,17 @@ from brevitas.inject.defaults import Uint8ActPerTensorFloat
 from brevitas.nn.quant_layer import ActQuantType
 from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 from qtransform import device_singleton
+from brevitas import nn as qnn
+from brevitas.quant_tensor import QuantTensor
 
-__all__ = ['EltwiseAdd']
+__all__ = ['EltwiseAdd', 'SinPosEmb', 'BinPosEmb']
+
+
+def unpack_from_quant(tensor: torch.Tensor | QuantTensor):
+    """ Unpacks the standard PyTorch tensor from a brevitas QuantTensor if applicable"""
+    if isinstance(tensor, QuantTensor):
+        return tensor.value
+    return tensor
 
 class EltwiseAdd(nn.Module):
     """Layer Wrapper for torch '+' operator to Replace with qnn.QuantEltwiseAdd Fake Layer that adds two intputs together."""
@@ -21,6 +30,47 @@ class EltwiseAdd(nn.Module):
     def forward(self, input, other):
         return input + other
     
+class SinPosEmb(nn.Module):
+    """Sinosoidal Position Embedding. Does not add anything, only computes sin/cos embbedding, basically returns a constant."""
+    def __init__(self, max_seq_len: int, emb_dim__model: int):
+        """
+        Arguments:
+            emb_dim__model: int, vocab embedding dimensionality
+            max_seq_len: int, maximum sequence length
+        """
+        super().__init__()
+        # TODO in/out.py TEsting during export
+        print(f"emb_dim__model {emb_dim__model}", f"max_seq_len {max_seq_len}")
+        pos_id = torch.as_tensor([[n] for n in range(max_seq_len)])
+        freq_div = torch.as_tensor([1e4 ** -(i / emb_dim__model) for i in range(0, emb_dim__model, 2)])
+        pe = torch.zeros(max_seq_len, emb_dim__model)
+        pe[:, 0::2] = torch.sin(pos_id * freq_div)
+        pe[:, 1::2] = torch.cos(pos_id * freq_div)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x) -> Tensor:
+        """x is unused for computation"""
+        return self.pe
+    
+class BinPosEmb(torch.nn.Module):
+    """Position Embedding as encoded onehot Vector. Does not add anything, returns a constant."""
+    def __init__(self, max_seq_len: int, emb_dim__model: int):
+        """
+        Arguments:
+            emb_dim__model: int, vocab embedding dimensionality
+            max_seq_len: int, maximum sequence length
+        """
+        super().__init__()
+        pe = torch.as_tensor([
+            [(n & (1 << bit)) >> bit for bit in range(emb_dim__model)] for n in range(max_seq_len)
+        ])
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        """x is unused for computation"""
+        #   Note: Convert encoding to bipolar representation
+        return 2 * self.pe - 1
+
 
 # @torch.jit.script # good to enable when not using torch.compile, disable when using (our default)
 def new_gelu(x):
@@ -138,7 +188,8 @@ class CausalSelfAttention(nn.Module):
         self.block_size = config.block_size
         self.mha = nn.MultiheadAttention(config.n_embd, config.n_head, dropout=self.dropout, batch_first=True)
         self.flash = config.flash
-        self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
+        # i think this is alerady part of mha, so we dont need this, at least if we want to replicate gpt2 :
+        #self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         self.resid_dropout = nn.Dropout(config.dropout)
         #since synthesis cannot use is_causal due to bool dtype and brevitas mha does not have is_causal in forward pass function
         bias = torch.ones(config.block_size, config.block_size).tril(diagonal=0)
@@ -148,12 +199,15 @@ class CausalSelfAttention(nn.Module):
         #attention is added to tensor
         bias = bias.masked_fill(bias == 1, 0)
         self.register_buffer("bias", bias)
+
+        # TODO figure out we still need this:
+
         # in case we need to do attention by hand:
-        if (not self.flash) or torch.__version__[3] < 2:
-            log.warn("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.2")
-            # causal mask to ensure that attention is only applied to the left in the input sequence
-            self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
-            self.attn_dropout = nn.Dropout(config.dropout)
+        #if (not self.flash) or torch.__version__[3] < 2:
+        #    log.warn("WARNING: using slow attention. Flash Attention requires PyTorch >= 2.2")
+        #    # causal mask to ensure that attention is only applied to the left in the input sequence
+        #    self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
+        #    self.attn_dropout = nn.Dropout(config.dropout)
         #print(self.flash)
         #print(torch.__version__[2])
 
@@ -198,7 +252,8 @@ class CausalSelfAttention(nn.Module):
             #      tensors during eval mode
             #due to inference, input features can be lower than specified max context length which causes problem during attention calculation
             y, weights = self.mha(x, x, x, attn_mask=self.bias[:C,:C], need_weights=False) # Q, K, V, attn_mask y
-        y = self.resid_dropout(self.c_proj(y))
+        #y = self.resid_dropout(self.c_proj(y))
+        y = self.resid_dropout(y)
             #y, weights = self.mha(x, x, x, is_causal=True) # Q, K, V, attn_mask y
         return y
 from logging import getLogger
@@ -263,15 +318,21 @@ class TransformerBlock(nn.Module):
             self.norm_size = None
         else:
             raise AttributeError("cannot determine model for norm layer: " + config.norm_layer)
+    
         if self.norm_size:
             ln_1 = getattr(custom_nn, config.norm_layer, None)
             ln_2 = getattr(custom_nn, config.norm_layer, None)
             self.ln_1 = ln_1(self.norm_size, config.bias)
             self.ln_2 = ln_2(self.norm_size, config.bias)
-
+        # dummy ident for block entry
+        self.in_id = nn.Identity()
+        
         self.attn = CausalSelfAttention(config)
 
     def forward(self, x):
+        # Ident for possible quantization before resudials or norm layers?
+        x = self.in_id(x)
+
         if self.norm_size:
             x = self.ln_1(x)
             x = self.residual1(x, self.attn(x))

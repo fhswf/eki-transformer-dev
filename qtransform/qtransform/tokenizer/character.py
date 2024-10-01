@@ -1,3 +1,4 @@
+from typing_extensions import deprecated
 from numpy import array, memmap
 from omegaconf import DictConfig
 from qtransform.tokenizer import Tokenizer, Metadata
@@ -13,6 +14,7 @@ UNKNOWN_CHAR = "<UNKNOWN>"
 
 #for now, metadata is only used for character tokenization
 @dataclass
+@deprecated("not updated")
 class CharacterMetadata(Metadata):
     itos: Dict[int, str] = None
     stoi: Dict[str, int] = None
@@ -24,6 +26,7 @@ class CharacterMetadata(Metadata):
         if not isinstance(self.stoi, Dict):
             self.stoi = {UNKNOWN_CHAR: 0}
 
+@deprecated("not updated")
 class CharacterTokenizer(Tokenizer):
 
     """

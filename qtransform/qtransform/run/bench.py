@@ -1,8 +1,9 @@
 import logging
 log = logging. getLogger(__name__)
 import torch
+import re
 import torch.nn.functional as F
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig, open_dict, OmegaConf
 from . import generate
 #TODO: make ... import compatible
 from qtransform.model import get_model_wrapper, QTRModelWrapper
@@ -48,6 +49,10 @@ def run(cfg : DictConfig):
     log.debug(f"Model config {cfg.model}")
     model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
     model_wrapper.to(device = device)
+    
+    if OmegaConf.is_missing(cfg, "tokenizer") or OmegaConf.is_missing(cfg, "tokenizer.encodig") or cfg.get("tokenizer.encodig") is None:
+        if hasattr(model_wrapper, "tokenizer_cfg"):
+            OmegaConf.update(cfg, "tokenizer", model_wrapper.tokenizer_cfg)
 
     #dataset
     #TODO: tokenizer from model_cfg
@@ -70,7 +75,7 @@ def run(cfg : DictConfig):
         log.info(f'Benchmark results: \n{benchmark(cfg=cfg, model=model_wrapper, bench_dataloader=bench_dataloader)}')
 
 def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[str, None]:
-    print(model_wrapper.model)
+    # print(model_wrapper.model)
     lens = min(len(bench_dataloader), cfg.run.max_iters)
     log.info(f"Datalaoder has {len(bench_dataloader)} number of samples ")
     log.info(f"Running Benchmark for {lens} samples")
@@ -123,8 +128,10 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
             if hasattr(log,"trace"): log.trace(f"cond_labels_eq_input {cond_labels_eq_input}")
             #print(cond_model_shifts_targets_internally)
             #print(cond_labels_eq_input)
+            #print(inputs.size())
             if cond_model_shifts_targets_internally and cond_labels_eq_input:
                 output = model_wrapper(inputs, labels)
+                #print(output)
                 if not isinstance(output, tuple):
                     raise ValueError(f"as model shifts internally and computes loss, model output needs to be a tuple")
                 logits, loss = output
@@ -136,6 +143,7 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
                     logits = output[0]
                 else:
                     logits = output
+                #print(output)
                 # print("=======")
                 # torch.set_printoptions(edgeitems=5000)
                 # print(logits[0][0])
@@ -163,6 +171,7 @@ def benchmark(cfg, model_wrapper: QTRModelWrapper, bench_dataloader) -> Union[st
             accuracy[i] = measure_accuracy(model_wrapper.model, labels=labels, inputs=probs)
             perplexity[i] = torch.exp(loss)
             #print(f'Loss: {loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}')
+            #print(logits)
             log.debug(f'Loss: {loss}, Perplexity: {torch.exp(loss)}, Acc: {accuracy[i]}')
             
             #log loss

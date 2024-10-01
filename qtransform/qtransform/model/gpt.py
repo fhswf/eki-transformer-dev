@@ -6,7 +6,7 @@ from typing import Optional
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
-from qtransform.model.modules import LayerNorm, TransformerBlock
+from qtransform.model.modules import LayerNorm, TransformerBlock, SinPosEmb, BinPosEmb, unpack_from_quant
 from qtransform.model import modules as custom_nn
 from qtransform.model import ModelArgs, GenericModel
 from brevitas import nn as qnn
@@ -40,7 +40,17 @@ class GPT(GenericModel):
         self.single_output = config.single_output
         self.use_weight_tying = config.single_output
         self.norm_size = None
-
+        #print(config)
+        pe: nn.Module
+        if config.pos_layer == "learned":
+            pe = nn.Embedding(config.block_size, config.n_embd)
+        elif config.pos_layer == "sin":
+            pe = SinPosEmb(config.block_size, config.n_embd)
+        elif config.pos_layer == "binary":
+            pe = BinPosEmb(config.block_size, config.n_embd)
+        else:
+            raise AttributeError("unre " + config.pos_layer)
+        
         if config.norm_layer == "LayerNorm":
             self.norm_size = config.n_embd
         elif config.norm_layer == "BatchNormIdPure":
@@ -60,7 +70,7 @@ class GPT(GenericModel):
             ln_out = getattr(custom_nn, config.norm_layer, None)
             self.transformer = nn.ModuleDict(dict(
                 wte = nn.Embedding(config.vocab_size, config.n_embd),
-                wpe = nn.Embedding(config.block_size, config.n_embd),
+                wpe = pe,
                 emb_add = custom_nn.EltwiseAdd(),
                 dropout = nn.Dropout(config.dropout),
                 layer = nn.ModuleList([TransformerBlock(config) for _ in range(config.n_layer)]),
@@ -105,7 +115,7 @@ class GPT(GenericModel):
         params are actually used as weights in the final layer, so we include them.
         """
         n_params = sum(p.numel() for p in self.parameters())
-        if non_embedding:
+        if non_embedding and hasattr(self.transformer.wpe, "weight"):
             n_params -= self.transformer.wpe.weight.numel()
         return n_params
 
@@ -118,7 +128,7 @@ class GPT(GenericModel):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
     def forward(self, idx, targets=None):
-
+        """? idx shape: batch, seq, _ """
         device = idx.device
         b, t = idx.size()
         #print(f'{idx}----------{idx.size()}')
@@ -129,7 +139,11 @@ class GPT(GenericModel):
         pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0) # shape (1, t)
 
         # forward the GPT model itself
-        #TODO: add padding for FINN support
+        #TODO: add padding for FINN support ?
+        
+        ## sometimes the model is not synced completly
+        #        self.to(device=device)
+
         tok_emb = self.transformer.wte(idx) # token embeddings of shape (b, t, n_embd)
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (1, t, n_embd)
         x = self.transformer.emb_add(tok_emb, pos_emb)
@@ -142,10 +156,10 @@ class GPT(GenericModel):
         loss = None
         if targets is None and self.single_output:
             # inference-time mini-optimization: only forward the lm_head on the very last position
-            logits = self.linear_out(x[:, [-1], :]) # note: using list [-1] to preserve the time dim
+            logits = unpack_from_quant(self.linear_out(x[:, [-1], :])) # note: using list [-1] to preserve the time dim
         else:
             # if we are given some desired targets also calculate the loss
-            logits = self.linear_out(x)
+            logits = unpack_from_quant(self.linear_out(x))
             if targets is not None:
                 #squeeze batch and block_size dimension together, retain non-softmaxed word probabilities
                 #logits become a 1d tensor, containing the index of the next word
@@ -156,13 +170,7 @@ class GPT(GenericModel):
                     # Shift so that tokens < n predict n
                     shift_logits = logits[..., :-1, :].contiguous()
                     shift_labels = targets[..., 1:].contiguous()
-                    # print(logits)
-                    # print(targets)
-                    # print("========")
-                    # print(idx)
-                    # print(shift_logits)
-                    # print(shift_labels)
-                    # Flatten the tokens
+
                     from torch.nn import CrossEntropyLoss
                     loss_fct = CrossEntropyLoss()
                     loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
@@ -172,6 +180,7 @@ class GPT(GenericModel):
         return logits, loss
 
     def crop_block_size(self, block_size):
+        raise NotImplementedError("crop_block_size does not crop all embedding layer atm")
         # model surgery to decrease the block size if necessary
         # e.g. we may load the GPT2 pretrained model checkpoint (block size 1024)
         # but want to use a smaller block size for some smaller, simpler model
@@ -184,6 +193,7 @@ class GPT(GenericModel):
 
     @classmethod
     def from_pretrained(cls, model, model_type):
+        raise NotImplementedError("from_pretrained was not updated for a while")
         assert model_type in {'gpt2', 'gpt2-medium', 'gpt2-large', 'gpt2-xl'}
 
         from transformers import GPT2LMHeadModel
@@ -290,7 +300,7 @@ class GPT(GenericModel):
         return mfu
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=1.0, top_k=None):
+    def generate(self, idx, max_new_tokens, temperature=5.0, top_k=None, stop_id=None):
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
@@ -313,5 +323,5 @@ class GPT(GenericModel):
             idx_next = torch.multinomial(probs, num_samples=1)
             # append sampled index to the running sequence and continue
             idx = torch.cat((idx, idx_next), dim=1)
-
+    
         return idx

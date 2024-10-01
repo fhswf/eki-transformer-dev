@@ -19,11 +19,11 @@ from qtransform import device_singleton
 from qtransform.utils.helper import load_state_dict_proxy
 from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpointQTRModelWrapper
 from qtransform import ConfigSingleton
+from torch.profiler import profile, record_function, ProfilerActivity
+from functools import lru_cache
 
 log = logging.getLogger(__name__)
-from torch.profiler import profile, record_function, ProfilerActivity
 
-from functools import lru_cache
 
 # Keep track of 10 different messages and then warn again
 @lru_cache(1)
@@ -52,6 +52,7 @@ def run(cfg: DictConfig):
         with open_dict(cfg.dataset.dataloader):
             cfg.dataset.dataloader.update(cuda_kwargs)
     torch.manual_seed(cfg.seed)    
+    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     #TODO: move quant_config as subconfig into model_cfg to perform quantization within modelwrapper
@@ -72,8 +73,8 @@ def run(cfg: DictConfig):
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
     model_wrapper.to(device=device)
-    log.debug(model_wrapper.model)
-
+    if hasattr(log,"trace"): log.trace(model_wrapper.model)
+    
     if model_wrapper.epochs >= 1:
         cfg.run.epochs = model_wrapper.epochs + cfg.run.epochs
         #TODO: construct absolute filepath for checkpoint
@@ -91,12 +92,15 @@ def run(cfg: DictConfig):
     #    model = GPT.from_pretrained(model=model, model_type=cfg.run.from_pretrained)
     #    epochs_to_run = range(1, cfg.run.epochs + 1)
 
+    # for now. This just prevent the error msg, maybe in the future we find a way of using the hf-tok-parallelism feature
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
     tokenizer_singleton.tokenizer = cfg.tokenizer
     from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
     train_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
-
+    
     from qtransform.optim import get_optim, get_scheduler
     log.debug(f"optim config: {cfg.optim}")
     #optimizer = optim.Adadelta(model.parameters(), lr=cfg.optim.learning_rate)
@@ -133,7 +137,7 @@ def run(cfg: DictConfig):
         export_cfg = compose(config_name="config", overrides=["run=export"])
         with open_dict(cfg):
             cfg.run = export_cfg.run
-        OmegaConf.update(cfg, "model.from_file.filename", last_checkpoint, force_add=True)
+        OmegaConf.update(cfg, "model.from_file.filename", last_checkpoint+".onnx", force_add=True)
         OmegaConf.update(cfg, "model.from_file.model_dir", None, force_add=True)
         OmegaConf.update(cfg, "run.running_model", True, force_add=True)
         if model_wrapper.quantized:
@@ -177,10 +181,10 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
                 row_limit = 10
             with profile(activities=activities, **cfg.run.profile.args) as prof:
                 with record_function(f'TRAIN EPOCH {epoch}'):
-                    metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
+                    metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
             log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
         else:
-            metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run)
+            metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
 
         if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
             losses, mean = eval_model(cfg, device, model, eval_data_loader)
@@ -198,10 +202,11 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
                 epoch=epoch, 
                 metrics=metrics)
         # advance learning rate
-        if scheduler is not None:
-            scheduler.step()
-            new_lr = scheduler.get_last_lr()[0]
-            log.debug(f'New learning rate: {new_lr}')
+        if cfg.run.scheduler_step_type == 'epoch':
+            if scheduler is not None:
+                scheduler.step()
+                new_lr = scheduler.get_last_lr()[0]
+                log.info(f'New learning rate: {new_lr}')
     return last_checkpoint
 
 def train_one_epoch(cfg: DictConfig, 
@@ -209,7 +214,12 @@ def train_one_epoch(cfg: DictConfig,
         model: nn.Module, 
         train_data: Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter],
         optimizer: optim.Optimizer, 
-        mini_run: bool=False) -> Any:
+        mini_run: bool=False, 
+        eval_data_loader:Union[torch_data.DataLoader,torch_data.dataloader._MultiProcessingDataLoaderIter] = None,
+        epoch: int = -1,
+        timestamp = None,
+        scheduler = None,
+        ) -> Any:
     """ training loop over steps/batches """
     model.train() #if it was quantized, it could have been set to eval
     last_loss = 0
@@ -300,6 +310,37 @@ def train_one_epoch(cfg: DictConfig,
             ## TODO tensorboard logging and other types of reporting
         if mini_run and i>=200: # run for more than one data point
             break
+        
+        # eval for long epochs aka dataset with a LOT of data
+        if i % cfg.run.eval_steps_interval == 0 and eval_data_loader is not None:
+            losses, mean = eval_model(cfg, device, model, eval_data_loader)
+            model.train()
+            log.info(f'AVERAGE EVAL LOSS FOR BATCHES {i}/{run_len}: {mean.item()}')
+
+        if i % cfg.run.save_steps_interval == cfg.run.save_steps_interval - 1:
+            ## interval or end of training, epochs is also 1 for mini_run
+            # last_checkpoint is the absolute filepath of the saved checkpoint
+            last_checkpoint: str = save_checkpoint(
+                #cfg=cfg, 
+                model=model, 
+                optimizer=optimizer, 
+                #dataset=cfg.dataset.name,
+                timestamp=timestamp, 
+                epoch=epoch, 
+                metrics=loss, 
+                #model_cfg=cfg.model, 
+                #tokenizer_cfg=cfg.tokenizer,
+                #quant_cfg = cfg.get('quantization', None),
+                #steps=i,
+                )
+            
+        # advance learning rate
+        if cfg.run.scheduler_step_type == 'steps':
+            _s = cfg.run.get('scheduler_steps_interval')
+            if _s is not None and _s > 0 and i % cfg.run.scheduler_steps_interval == (_s-1) and scheduler is not None:
+                scheduler.step()
+                new_lr = scheduler.get_last_lr()[0]
+                log.info(f'New learning rate: {new_lr}')
 
     return last_loss 
 
@@ -330,7 +371,7 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
         log.info(f"eval_data len is {max_len}, max_iters set to {None}. Running eval for {run_len}")
 
     vlosses = torch.zeros(run_len+1)
-    #while i < cfg.run.eval_iters:
+    # TODO use cfg.run.eval_iters for eval iter limits when we need it
     for i, vdata in enumerate(eval_data):
         if i > run_len:
             break
@@ -349,10 +390,15 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
 
         vinputs = vinputs.to(device=device_singleton.device)
         vlabels = vlabels.to(device=device_singleton.device)
+        #print(i, vinputs.size(), vlabels.size())
+        #print(vinputs, vlabels)
         if cfg.model.calc_loss_in_model:
             voutputs, vloss = model(vinputs, vlabels)
-            #print(f"voutputs, vloss {vloss}")
+            #print(voutputs)
+            #print(f" loss {vloss}")
+         #   log.debug(f" loss {vloss}")
         else:
+            # this is wrong!
             voutputs, _ = model(vinputs)
             voutputs_softmax = torch.nn.functional.log_softmax(voutputs, dim=2)
             vloss = torch.nn.functional.nll_loss(voutputs_softmax.view(-1, voutputs_softmax.size(-1)),vlabels.view(-1), ignore_index=-1)
