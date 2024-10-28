@@ -30,6 +30,8 @@ class BrevitasQuantizer(Quantizer):
     """
     def get_quantized_model(quant_cfg: ModelQuantConfig, inplace=False, suppress_logs = False) -> Tuple[Module, Union[ModelQuantConfig, None]]:
         log.info(f'Quantizing model')
+        #print(quant_cfg)
+        #raise Exception
         if quant_cfg is None:
             log.error(f'Quantization needs to have both config and model')
             raise KeyError
