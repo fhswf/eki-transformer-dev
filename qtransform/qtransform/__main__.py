@@ -14,7 +14,9 @@ import brevitas
 from importlib import import_module
 from typing import Dict
 import sys
+import wandb
 from qtransform.utils import ID
+from qtransform.wandb import wandb_init
 
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 log = logging.getLogger(__name__)
@@ -43,17 +45,20 @@ def main():
     
     logging.captureWarnings(True)
     root_log = logging.getLogger("root")
-    log = logging.getLogger(f"{__package__}.{__name__}")   
+    log = logging.getLogger(f"{__package__}.{__name__}")
     if "trace" in cfg and cfg.trace:
         root_log.setLevel(logging.TRACE)
         log.warning("TRACE ENABLED")
     elif "debug" in cfg and cfg.debug:
         root_log.setLevel(logging.DEBUG)
         log.debug("DEBUG ENABLED")
+    if cfg.wandb.enabled:
+        wandb_init(cfg)    
     import json
     if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
     log.info(f"Launch command: {sys.argv}")
     log.debug(f'LAUNCHED WITH CONFIG: {cfg}')
+        
     if "command" not in cfg.run:
         log.error("No run command found in run config, run config was: " + str(cfg.run))
         raise KeyError
@@ -65,6 +70,7 @@ def main():
     #make sure that callbacks are still called after exceptions
     #this is an issue with our implementation of callbacks currently
     exit_code=0
+    
     try:
         # TODO we cloud make this dynamic by importing by module name via a string 
         match cfg.run.command: 
@@ -98,9 +104,13 @@ def main():
     except Exception as e:
         exit_code = 1 # generic error
         log.critical("Script execution failed. Reason: ", exc_info=True)
+        
         # OutOfMemoryError does not exsist in static python torch package...
         if e.__class__.__name__ == "OutOfMemoryError":
             exit_code = 2
+    
+    # make sure wandb is closed (gets checked internally wether wandb.run is activ) 
+    wandb.finish(exit_code=exit_code)
     #unsure if config should be pickled if errors occured
     cfg = ConfigSingleton().config
     callbacks.call_on_run_end(cfg)

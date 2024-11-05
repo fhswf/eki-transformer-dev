@@ -4,7 +4,7 @@ formatters:
     format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
   color:
     (): colorlog.ColoredFormatter
-    format: '[ %(cyan)s%(asctime)s %(reset)s][%(thin_white)s%(name)s%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
+    format: '[ %(cyan)s%(asctime)s %(reset)s][%(white)s%(name)s%(reset)s][%(log_color)s%(levelname)s%(reset)s] - %(message_log_color)s%(message)s%(reset)s'
     reset: True
     log_colors:
       TRACE:    'purple'
