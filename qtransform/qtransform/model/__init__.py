@@ -10,8 +10,7 @@ from torch import nn, Tensor, from_numpy
 from torch import compile as torch_compile
 from torch import __version__ as torch_version
 import logging
-from qonnx.core.onnx_exec import execute_onnx as qonnx_execute_onnx
-from finn.core.onnx_exec import execute_onnx as finn_execute_onnx
+
 from dataclasses import dataclass, fields
 from qonnx.core.onnx_exec import execute_onnx
 from qonnx.core.modelwrapper import ModelWrapper
@@ -470,11 +469,14 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
         device = idx_cond.device
         # defaults:
         input_name =  "input"
-        run_fn = qonnx_execute_onnx
+        run_fn = None
         # determine if finn onnx or qonnx
         _a = re.findall(r"\.finn", str(self.model_cfg.from_file))
         if len(_a) == 1 and _a[0] == ".finn":  # check if model name contains "finn flag" 
             input_name =  "global_in"
+            
+            # late import for compatibilty iussues on pc2
+            from finn.core.onnx_exec import execute_onnx as finn_execute_onnx
             run_fn = finn_execute_onnx
         # elif self.model_cfg.get("runtime") is not None:
         #     if self.model_cfg.get("runtime") == "finn":
@@ -488,6 +490,7 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
         #         run_fn = qonnx_execute_onnx
         else: # defaults
             input_name =  "input"
+            from qonnx.core.onnx_exec import execute_onnx as qonnx_execute_onnx
             run_fn = qonnx_execute_onnx
 
         #log.info(f"input_name for onnx graph run {input_name},  using function {run_fn.__name__}")

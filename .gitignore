@@ -1,3 +1,4 @@
+slurm-*.out
 *.bin
 */data/*/input.txt
 **/data/MNIST/**

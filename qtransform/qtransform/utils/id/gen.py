@@ -9,7 +9,7 @@ import logging
 import glob
 
 log = logging.getLogger(__name__)
-random.seed(datetime.datetime.now())
+random.seed(str(datetime.datetime.now()))
 
 @singleton()
 class ID(object):

@@ -2,6 +2,7 @@ colorlog
 tzdata
 datasets==2.14.*
 torch 
+tk
 hydra-core
 setuptools>=62.4
 setuptools_rust
@@ -15,6 +16,7 @@ onnxruntime-gpu #make onnx models run on CUDA
 python-dateutil
 aiohttp
 pyyaml
+pyverilator
 protobuf==3.20.3 #importerror: cannot import builder from google.protobuf.internal, reinstall works. why?
 huggingface-hub<1.0,>=0.19.3
 transformers>=4.36
@@ -23,6 +25,6 @@ sentencepiece
 tabulate
 fsspec[http]<=2023.10.0,>=2023.1.0 #for datasets package
 git+https://github.com/fhswf/brevitas.git@fhswf-dev
-git+https://github.com/iksnagreb/brevitas.git@34c350afde0a69b7a39b13eb4748b979bdae1eff
+#git+https://github.com/iksnagreb/brevitas.git@34c350afde0a69b7a39b13eb4748b979bdae1eff
 git+https://github.com/iksnagreb/qonnx.git@finn/pull/901
 git+https://github.com/iksnagreb/finn.git@v0.10/merge/attention
