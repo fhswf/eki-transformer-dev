@@ -156,7 +156,8 @@ def save_checkpoint(model: nn.Module,
     optimizer,
     timestamp:datetime, 
     metrics:Dict, 
-    epoch:int, 
+    epoch:int,
+    steps: int,
     **kwargs) -> str:
     """save torch model checkpoint from training, returns path to saved file."""
     
@@ -192,6 +193,7 @@ def save_checkpoint(model: nn.Module,
             "model_cfg": model_cfg,
             "tokenizer_cfg": tokenizer_cfg, 
             "metrics": metrics,
+            "steps": steps,
             "quant_cfg": quant_cfg, 
             "quantized": True if quant_cfg.get("quantize", False) is True else False
             }, f=checkpoint_path)

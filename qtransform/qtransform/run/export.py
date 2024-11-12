@@ -60,8 +60,7 @@ def run(cfg: DictConfig, **kwargs):
     max_token_id = model.config.vocab_size
     #max_token_id = checkpoint['model_cfg']['args']['vocab_size']
     sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
-
-
+    print(sample_tensor)
     # now we need a dataset to calibrate missing quantizers before export 
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -71,7 +70,14 @@ def run(cfg: DictConfig, **kwargs):
     from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
-
+     
+    _data = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
+    for i, d in enumerate(_data):
+        jjj = d
+        break
+    print("==========")
+    print(jjj["input_ids"][0][None,:])
+    sample_tensor = jjj["input_ids"][0][None,:]
 
     """
     export function maps to torch onnx export:
@@ -169,23 +175,31 @@ def run(cfg: DictConfig, **kwargs):
     o2 = o2.detach().cpu()
 
     torch.set_printoptions(precision=10)
-    print(o1)
-    print(o2)
-
+    print(torch.squeeze(o1,0))
+    print(torch.squeeze(o2,0))
+    
+    
+    
     if not torch.equal(o1, o2):
         log.warning(f"sample tensor after export does not equal model output before export")
     if not torch.allclose(o1, o2,atol=1e-3):
         log.error(f"sample tensor after export is not close to model output before export")
         import matplotlib.pyplot as plt
-        plt.show(torch.squeeze(0, sample_tensor).detach().numpy(),interpolation='none')
-        plt.savefig('input.png')
+        #plt.show(torch.squeeze(0, sample_tensor).detach().numpy(),interpolation='none')
+        #plt.savefig('input.png')
         plt.imshow(torch.squeeze(o1,0), interpolation='none')
         plt.savefig('model.png')
         plt.imshow(torch.squeeze(o2,0), interpolation='none')
         plt.savefig('onnx.png')
         mask = torch.isclose(o1, o2,atol=1e-3)
+        
         plt.imshow(torch.squeeze(mask,0), interpolation='none')
         plt.savefig('mask.png')
+        oof = (mask == False).nonzero(as_tuple=False)
+        print(oof)
+        print(sample_tensor[0, oof[1]])
+        print(o1[0, oof[1], oof[2]])
+        print(o2[0, oof[1], oof[2]])
 
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None

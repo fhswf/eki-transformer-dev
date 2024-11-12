@@ -25,3 +25,5 @@ todos.md
 #logs
 **/*logs*.toml
 **/*.npy
+#wandb
+**/*.wandb*

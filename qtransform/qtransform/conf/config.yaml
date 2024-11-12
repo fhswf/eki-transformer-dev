@@ -16,6 +16,7 @@ defaults:
   - dataset/untokenized: default
   - dataset/dataloader: default
   #default config from the lines above are overwritten with specified config
+  - wandb: default
   - dataset:
   - tokenizer: transformers
   - optim: default
@@ -87,3 +88,12 @@ callbacks:
     #init params of the respective callback class
     args: 
       to_pipe: ${pipe} #write config file path into pipe. stops execution until pipe is consumed, therefore move callback to last
+
+wandb:
+  enabled: True # weather to use wandb or not
+  api_key:   # not sure what the best way to do this would be, read from env is prob the best way, leave empty to assume alreay logged in
+  log_hydra_conf: True # if true copies hydra conf and logs it in wandb
+  init: # params override for wandb init function
+    project: "eki transformers test"
+    entity: "eki-fhswf"
+  
