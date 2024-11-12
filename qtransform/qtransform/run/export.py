@@ -175,9 +175,11 @@ def run(cfg: DictConfig, **kwargs):
     o2 = o2.detach().cpu()
 
     torch.set_printoptions(precision=10)
-    print(o1)
-    print(o2)
-
+    print(torch.squeeze(o1,0))
+    print(torch.squeeze(o2,0))
+    
+    
+    
     if not torch.equal(o1, o2):
         log.warning(f"sample tensor after export does not equal model output before export")
     if not torch.allclose(o1, o2,atol=1e-3):

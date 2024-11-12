@@ -12,7 +12,6 @@ from datetime import datetime
 import torch.nn.functional as F
 from pprint import PrettyPrinter
 from time import time
-
 from qtransform.utils import save_checkpoint
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
@@ -21,9 +20,9 @@ from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpoi
 from qtransform import ConfigSingleton
 from torch.profiler import profile, record_function, ProfilerActivity
 from functools import lru_cache
+from qtransform.wandb import wandb_watch, wandb_log
 
 log = logging.getLogger(__name__)
-
 
 # Keep track of 10 different messages and then warn again
 @lru_cache(1)
@@ -161,6 +160,11 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
     
     epochs_to_run = range(model_wrapper.epochs + 1, cfg.run.epochs + 1)
     model = model_wrapper.model
+    
+    # watch model parameters
+    wandb_watch(models = model, log='all', log_freq=50, log_graph=True)
+    wandb_log_metrics = {}
+    
     if eval_data_loader is None:
         warn_once(log, f"Not running eval. Eval Dataloader is None")
 
@@ -181,17 +185,24 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
                 row_limit = 10
             with profile(activities=activities, **cfg.run.profile.args) as prof:
                 with record_function(f'TRAIN EPOCH {epoch}'):
-                    metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
+                    last_loss, train_steps = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
             log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
         else:
-            metrics = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
+            last_loss, train_steps = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
 
-        if epoch % cfg.run.eval_epoch_interval == 0 and eval_data_loader is not None:
+        if epoch % cfg.run.eval_epoch_interval == cfg.run.eval_epoch_interval-1 and eval_data_loader is not None:
             losses, mean = eval_model(cfg, device, model, eval_data_loader)
             log.info(f'AVERAGE EVAL LOSS FOR EPOCH {epoch}/{cfg.run.epochs}: {mean.item()}')
         
-        log.info(f"last train loss was {str(metrics)}")
-
+        # log for console
+        log.info(f"last train loss was {str(last_loss)}")
+        
+        # logs for wandb
+        wandb_log_metrics["validate/loss"] = mean.item()
+        wandb_log_metrics["train/loss"] = last_loss
+        wandb_log_metrics["train/step"] = train_steps
+        wandb_log(wandb_log_metrics)
+        
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
             ## interval or end of training, epochs is also 1 for mini_run
             # last_checkpoint is the absolute filepath of the saved checkpoint
@@ -200,7 +211,8 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
                 optimizer=optimizer, 
                 timestamp=timestamp, 
                 epoch=epoch, 
-                metrics=metrics)
+                metrics=last_loss, 
+                steps=train_steps)
         # advance learning rate
         if cfg.run.scheduler_step_type == 'epoch':
             if scheduler is not None:
@@ -305,6 +317,9 @@ def train_one_epoch(cfg: DictConfig,
         if i % cfg.run.log_steps_interval == cfg.run.log_steps_interval-1:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
             log.info(f'  batch {i} loss: {last_loss}. time: {(time() - train_batch_time)*1000:.2f}ms')
+            
+            # wandb log only for train loss
+            wandb_log({"train/loss": last_loss, "train/step": i}) 
             train_batch_time = time()
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
@@ -316,6 +331,12 @@ def train_one_epoch(cfg: DictConfig,
             losses, mean = eval_model(cfg, device, model, eval_data_loader)
             model.train()
             log.info(f'AVERAGE EVAL LOSS FOR BATCHES {i}/{run_len}: {mean.item()}')
+            # log for wandb
+            wandb_log_metrics = {}
+            wandb_log_metrics["validate/loss"] = mean.item()
+            # wandb_log_metrics["train_loss"] = last_loss
+            wandb_log_metrics["train/step"] = i
+            wandb_log(wandb_log_metrics)
 
         if i % cfg.run.save_steps_interval == cfg.run.save_steps_interval - 1:
             ## interval or end of training, epochs is also 1 for mini_run
@@ -342,7 +363,7 @@ def train_one_epoch(cfg: DictConfig,
                 new_lr = scheduler.get_last_lr()[0]
                 log.info(f'New learning rate: {new_lr}')
 
-    return last_loss 
+    return last_loss, i
 
 @torch.no_grad()
 def eval_model(cfg: DictConfig, device, model: nn.Module, 

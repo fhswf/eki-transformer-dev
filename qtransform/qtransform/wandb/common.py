@@ -52,7 +52,7 @@ def wandb_init(cfg, config=None):
         name = ID
     if config is None:
         config = omegaconf.OmegaConf.to_container(cfg, resolve=True)
-    print(config)
+
     wandb.init(
         name=name,
         entity=cfg.wandb.init.entity, 
