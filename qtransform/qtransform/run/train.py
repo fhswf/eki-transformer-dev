@@ -352,7 +352,7 @@ def train_one_epoch(cfg: DictConfig,
                 #model_cfg=cfg.model, 
                 #tokenizer_cfg=cfg.tokenizer,
                 #quant_cfg = cfg.get('quantization', None),
-                #steps=i,
+                steps=i,
                 )
             
         # advance learning rate

@@ -53,32 +53,46 @@ def run(cfg: DictConfig, **kwargs):
         model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     model: GenericModel = model_wrapper.model
     assert isinstance(model, GenericModel), f'model is not of type GenericModel'
-    #log.debug(f"Model structure: {model}")
-    #log.debug(f"Model config from checkpoint: {checkpoint['model_cfg']}")
-    input_dim = (1, model.config.block_size)
-    #input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
-    max_token_id = model.config.vocab_size
-    #max_token_id = checkpoint['model_cfg']['args']['vocab_size']
-    sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
-    print(sample_tensor)
+    # fix model? TODO validate this step
+    patch_non_affine_norms(model)
+    
     # now we need a dataset to calibrate missing quantizers before export 
-
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
     from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
     tokenizer_singleton.tokenizer = cfg.tokenizer
     from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
      
-    _data = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
-    for i, d in enumerate(_data):
-        jjj = d
-        break
-    print("==========")
-    print(jjj["input_ids"][0][None,:])
-    sample_tensor = jjj["input_ids"][0][None,:]
-
+    sample_data = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
+    for i, data_point in enumerate(sample_data):
+        # its a good idea to run some data through the model
+        # TODO make calibration run configurable
+        if i == 10:
+            break
+        model(data_point)
+    sample_tensor = data_point
+    sample_tensor.cpu()
+    
+    # TODO cleanup this block
+    #prepare_and_transform_for_export(cfg, model)
+    #by default, save onnx models into current directory
+    root_path = cfg.run.get('root_path', os.path.abspath('.'))
+    filename = cfg.model.from_file.filename
+    if os.path.isabs(filename):
+        _, filename = os.path.split(filename)
+    model_name = f"{str(cfg.run.export_fn)}_" + filename
+    from qtransform.utils.introspection import concat_paths
+    model_path = concat_paths([root_path, model_name])
+    
+    # start export
+    log.info("exporting... " + model_name)
+    # export params and logs 
+    ERROR_LOGS = {
+        "qonnx": f'{export_qonnx.__module__}.{export_qonnx.__name__}',
+        "qcdq": f'{export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__}',
+        "onnx": f'{export.__module__}.{export.__name__}'
+    }
     """
     export function maps to torch onnx export:
     # Export the model
@@ -102,48 +116,6 @@ def run(cfg: DictConfig, **kwargs):
         "export_params": True,  
         "do_constant_folding": True
     }
-    #prepare_and_transform_for_export(cfg, model)
-    #by default, save onnx models into current directory
-    root_path = cfg.run.get('root_path', os.path.abspath('.'))
-    #TODO: makedirs in ~/.qtransform directory deletes datasets 
-    #if not os.path.exists(root_path):
-    #    log.debug(f'Creating directory: "{root_path}')
-    #    os.makedirs(root_path.replace('~', os.path.expanduser('~')), exist_ok = True)
-    #elif not os.path.isdir(root_path):
-    #    log.error(f'root_path {root_path} is not a directory.')
-    #    raise ValueError()
-    filename = cfg.model.from_file.filename
-    if os.path.isabs(filename):
-        _, filename = os.path.split(filename)
-    model_name = f"{str(cfg.run.export_fn)}_" + filename
-    from qtransform.utils.introspection import concat_paths
-    model_path = concat_paths([root_path, model_name])
-
-    log.info("exporting... " + model_name)
-    ERROR_LOGS = {
-        "qonnx": f'{export_qonnx.__module__}.{export_qonnx.__name__}',
-        "qcdq": f'{export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__}',
-        "onnx": f'{export.__module__}.{export.__name__}'
-    }
-
-    # model.to(device=device)
-    model.cpu()
-    sample_tensor.cpu()
-    patch_non_affine_norms(model)
-    # re_init_quantizers(model, eval_dataloader)
-    model.eval()
-    o1 = model(sample_tensor)
-    
-    # Save the input and output data for verification purposes later
-    in_tensor  = sample_tensor.cpu()
-    out_tensor = o1[0].cpu()
-    np.save(model_name + ".inp.npy", in_tensor.detach().numpy())
-    np.save(model_name + ".out.npy", out_tensor.detach().numpy())
-
-    # TODO 
-    # verfiy tensor output before and after qonnx conversion
-
-    #only write something into pipe if no errors occur
     try:
         shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
         match cfg.run.export_fn:
@@ -161,45 +133,20 @@ def run(cfg: DictConfig, **kwargs):
         log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)
         raise RuntimeError()
     
+    
     # these step sare to verify model outpus matches onnx export
+    # TODO switch onnx execute function when model gets converted by fin before export 
     from qonnx.core.onnx_exec import execute_onnx
     from qonnx.core.modelwrapper import ModelWrapper as QModelWrapper
     onnx_model = QModelWrapper(model_path)
+    # run infer shapes on graph just in case?
     from onnx.shape_inference import infer_shapes
     onnx_model = infer_shapes(onnx_model._model_proto)
+    # reasign necessary?
     onnx_model = QModelWrapper(onnx_model)
-    o2 =  execute_onnx(onnx_model, {"input": sample_tensor.cpu().numpy()})
-    o2 = torch.from_numpy(o2["output"])
-    o1 = o1[0]
-    o1 = o1.detach().cpu()
-    o2 = o2.detach().cpu()
-
-    torch.set_printoptions(precision=10)
-    print(torch.squeeze(o1,0))
-    print(torch.squeeze(o2,0))
-    
-    
-    
-    if not torch.equal(o1, o2):
-        log.warning(f"sample tensor after export does not equal model output before export")
-    if not torch.allclose(o1, o2,atol=1e-3):
-        log.error(f"sample tensor after export is not close to model output before export")
-        import matplotlib.pyplot as plt
-        #plt.show(torch.squeeze(0, sample_tensor).detach().numpy(),interpolation='none')
-        #plt.savefig('input.png')
-        plt.imshow(torch.squeeze(o1,0), interpolation='none')
-        plt.savefig('model.png')
-        plt.imshow(torch.squeeze(o2,0), interpolation='none')
-        plt.savefig('onnx.png')
-        mask = torch.isclose(o1, o2,atol=1e-3)
-        
-        plt.imshow(torch.squeeze(mask,0), interpolation='none')
-        plt.savefig('mask.png')
-        oof = (mask == False).nonzero(as_tuple=False)
-        print(oof)
-        print(sample_tensor[0, oof[1]])
-        print(o1[0, oof[1], oof[2]])
-        print(o2[0, oof[1], oof[2]])
+    # run comparson
+    multi_compare_model(model, onnx_model, execute_onnx, sample_data)
+   
 
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None
@@ -345,3 +292,78 @@ def patch_non_affine_norms(model: torch.nn.Module):
                     )
     # Return the patched model container
     return model
+
+
+def compare_model_outputs(torch_model, onnx_model, onnx_run_function, input_tensor):
+    """
+    Compares the output of model with input_tensor as a sample. Generates diff tensor.
+    """ 
+    # model.to(device=device) always run validation on cpu?
+    torch_model.cpu()
+    input_tensor.cpu()
+    torch_model.eval()
+    
+    o1 = model(sample_tensor)
+    
+    # Save the input and output data for verification purposes later
+    in_tensor  = sample_tensor.cpu()
+    out_tensor = o1[0].cpu()
+    np.save(model_name + ".inp.npy", in_tensor.detach().numpy())
+    np.save(model_name + ".out.npy", out_tensor.detach().numpy())
+    
+    o2 =  onnx_run_function(onnx_model, {"input": input_tensor.cpu().numpy()})
+    o2 = torch.from_numpy(o2["output"])
+    o1 = o1[0]
+    o1 = o1.detach().cpu()
+    o2 = o2.detach().cpu()
+    
+    torch.set_printoptions(precision=10)
+    print(torch.squeeze(o1,0))
+    print(torch.squeeze(o2,0))
+    
+    if not torch.equal(o1, o2):
+        log.warning(f"sample tensor after export does not equal model output before export")
+    if not torch.allclose(o1, o2,atol=1e-3):
+        log.error(f"sample tensor after export is not close to model output before export")
+        import matplotlib.pyplot as plt
+        #plt.show(torch.squeeze(0, sample_tensor).detach().numpy(),interpolation='none')
+        #plt.savefig('input.png')
+        plt.imshow(torch.squeeze(o1,0), interpolation='none')
+        plt.savefig('model.png')
+        plt.imshow(torch.squeeze(o2,0), interpolation='none')
+        plt.savefig('onnx.png')
+        mask = torch.isclose(o1, o2,atol=1e-3)
+        
+        plt.imshow(torch.squeeze(mask,0), interpolation='none')
+        plt.savefig('mask.png')
+        oof = (mask == False).nonzero(as_tuple=False)
+        print(oof)
+        print(sample_tensor[0, oof[1]])
+        print(o1[0, oof[1], oof[2]])
+        print(o2[0, oof[1], oof[2]])
+       
+    pass
+
+def multi_compare_model(torch_model_wrapper: GenericModel, onnx_model, onnx_run_function, sample_data):
+    """
+    Runs multiple comparisons of torch_model and onnx_model to validate the correct model output.
+    compares multiple random input tensors and muliple data_points from the evaluation data_loader.
+    Logs results to wandb.
+    """
+    assert isinstance(torch_model_wrapper, GenericModel), f'model is not of type GenericModel (qtransform specific)'
+    
+    raise NotImplementedError
+    
+    for i, data_point in enumerate(_data):
+        jjj = data_point
+        break
+    print("==========")
+    print(jjj["input_ids"][0][None,:])
+    sample_tensor = jjj["input_ids"][0][None,:]
+    
+    input_dim = (1, model.config.block_size)
+    #input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
+    max_token_id = model.config.vocab_size
+    #max_token_id = checkpoint['model_cfg']['args']['vocab_size']
+    random_sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
+    pass

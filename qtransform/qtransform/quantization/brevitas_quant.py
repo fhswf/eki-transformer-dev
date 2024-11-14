@@ -141,6 +141,7 @@ class BrevitasQuantizer(Quantizer):
 
         #filter every class which contains name of layer to be quantized
         # -> MultiheadAttention: QuantMultiheadAttention, BatchNorm1d: BatchNorm1dQuantToScaleBias
+        log.debug(QUANTIZED_CLASSES)
         quantized_class_name = list(filter(lambda x: re.search(layer_type, x), QUANTIZED_CLASSES.keys()))
         if len(quantized_class_name) != 1:
             log.error(f'Found quantizer classes with layer_type "{layer_type}": {quantized_class_name}. Exactly one entry needs\

@@ -3,31 +3,50 @@
 # ram disk: /dev/shm/
 
 # Setup the python environment for model training and evaluation and export
-	
-module load lang/Python/3.11.5-GCCcore-13.2.0
-module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
-module load lang/Tkinter/3.11.5-GCCcore-13.2.0
 
-export SB_PRF_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
-export PYTHONUSERBASE="$SB_PRF_HOME/.local"
-mkdir -p $PYTHONUSERBASE
+# check if this script is running in slurm
 
-python3 -m venv $SB_PRF_HOME/venv/
-source $SB_PRF_HOME/venv/bin/activate
+if [ -z "$SLURM_JOB_ID" ]; then
+  echo "Vanilla Node execution"
+else
+  echo "This script is running inside a SLURM job with SLURM_JOB_ID=$SLURM_JOB_ID"
+  # if system is pc2: 
+  if [ -z "$PC2SYSNAME" ]; then
+    echo "Slurm execution on somthing other then pc2 not supported yet"
+  else
+    # load modules
+    module load lang/Python/3.11.5-GCCcore-13.2.0
+    module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
+    module load lang/Tkinter/3.11.5-GCCcore-13.2.0
+    # set env to be compatible with pc2
+    export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
+    export PYTHONUSERBASE="$SB_PRF_HOME/.local"
+    mkdir -p $PYTHONUSERBASE
+    export HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache"
+    mkdir -p $HF_HOME
+    # does not work atm:
+    #export OMP_NUM_THREADS=1
+    #export ORT_SINGLE_THREAD=1
+  fi
+fi
+
+python3 -m venv $WORK_HOME/venv/
+source $WORK_HOME/venv/bin/activate
 # cd $SBHOME/git && git clone https://github.com/fhswf/eki-transformer-dev
 
 pip install --upgrade pip
 # pip install git+https://github.com/fhswf/eki-transformer-dev.git@main#subdirectory=qtransform 
 pip install -e $HOME/git/eki-transformer-dev/qtransform
 
-data="dataset=tsV2 dataset.dataloader.batch_size=32 dataset.root_path=$SB_PRF_HOME/.qtransform/datasets tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048"
-run="run=train run.epochs=1 +model.type=CHECKPOINT  run.export=True +trace=True"
-quant="quantization=qat quantization/model=NEW_BENCH2b"
-models=( BENCH_gpt2_ReBNT_tiny BENCH_gpt2_ReBNT_small BENCH_gpt2_ReBNT_smaller )
+pip list
+
+data="dataset=tsV2 dataset.dataloader.batch_size=32 dataset.root_path=$WORK_HOME/.qtransform/datasets tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048"
+run="run=train run.epochs=1 +model.type=CHECKPOINT  run.export=True debug=True +trace=True"
+quant="quantization=qat quantization/model=SLURM_BENCH"
 # models=( BENCH_gpt2_ReBNT_tiny BENCH_gpt2_ReBNT_small BENCH_gpt2_ReBNT_smaller )
 models=( NEW_BENCH2 ) 
 for model in ${models[@]}
 do
-    echo qtransform $run model=$model $data $quant +run.max_iters=500
-    HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache" qtransform $run model=$model $data $quant +run.max_iters=500
+    echo qtransform $run model=$model $data $quant +run.max_iters=50
+    qtransform $run model=$model $data $quant +run.max_iters=50
 done

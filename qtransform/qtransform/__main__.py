@@ -38,6 +38,12 @@ def module_wrapper(cfg: DictConfig):
     main()
 
 def main():
+    # # check if execution is inside slurm
+    # if 'SLURM_JOB_ID' not in os.environ:
+    #     print("This script is not running inside a SLURM job.")
+    # else:
+    #     print(f"This script is running inside a SLURM job with SLURM_JOB_ID={os.environ['SLURM_JOB_ID']}")
+        
     cfg = ConfigSingleton().config
     #remember which yaml files for each config group were chosen
     #useful to distinguish model outputs

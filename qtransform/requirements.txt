@@ -12,6 +12,7 @@ torchvision
 typing_inspect
 numpy>=1.24.1
 onnxoptimizer
+matplotlib
 onnxruntime-gpu #make onnx models run on CUDA
 python-dateutil
 aiohttp
@@ -23,6 +24,7 @@ transformers>=4.36
 tokenizers>=0.13.3,<0.19 
 sentencepiece
 tabulate
+wandb
 fsspec[http]<=2023.10.0,>=2023.1.0 #for datasets package
 git+https://github.com/fhswf/brevitas.git@fhswf-dev
 #git+https://github.com/iksnagreb/brevitas.git@34c350afde0a69b7a39b13eb4748b979bdae1eff
