@@ -2,5 +2,5 @@ enabled: True # weather to use wandb or not
 api_key:   # not sure what the best way to do this would be, read from env is prob the best way, leave empty to assume alreay logged in
 log_hydra_conf: True # if true copies hydra conf and logs it in wandb
 init: # params override for wandb init function
-  project: "qtransform"
+  project: "qtransform-dev"
   entity: "eki-fhswf"
