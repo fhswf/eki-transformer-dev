@@ -1,11 +1,36 @@
 #!/bin/bash
+
+#######################
+### SLURM JOB CONFIG ##
+#######################
+#SBATCH -t 1:0:0
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem 64G
+#SBATCH -J "qtransformtest"
+# default is the normal partition, see Node Types and Partitions for PC2 options are "normal" "gpu" and  "dgx" "fpga"
+#SBATCH -p gpu
+#SBATCH -A hpc-prf-ekiapp
+#SBATCH --mail-type FAIL
+#SBATCH --mail-user kuhmichel.max@fh-swf.de
+#SBATCH --gres=gpu:a100:1
+
+# launch script with :
+# sbatch name_of_this_file.sh
+
+# monitor job with squeue or squeue_pretty or spredict
+# cancle job with scancel JOBID or all jobs with scancel -u USERNAME
+
 # mounted storage is a bit too slow for compliation, hence cpy everything to ramdisk
 # ram disk: /dev/shm/
 
+##########################
+### actual app/programm ##
+##########################
+
 # Setup the python environment for model training and evaluation and export
-
 # check if this script is running in slurm
-
 if [ -z "$SLURM_JOB_ID" ]; then
   echo "Vanilla Node execution"
 else
@@ -40,21 +65,12 @@ pip install -e $HOME/git/eki-transformer-dev/qtransform
 
 pip list
 
+# maybe do this to run soe stuff via env? maybe better to do this in the actual app
+# if [ -z "$QTRANSFORM_RUN_XYZ" ]; then
+#   echo "QTRANSFORM_RUN_XYZ not set"
+# else
+#   echo "QTRANSFORM_RUN_XYZ set"
+# fi
 
-if [ -z "$QTRANSFORM_RUN_XYZ" ]; then
-  echo "QTRANSFORM_RUN_XYZ not set"
-else
-  echo "QTRANSFORM_RUN_XYZ set"
-fi
-
-
-data="dataset=tsV2 dataset.dataloader.batch_size=32 dataset.root_path=$WORK_HOME/.qtransform/datasets tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048"
-run="run=train run.epochs=1 +model.type=CHECKPOINT  run.export=True debug=True +trace=True"
-quant="quantization=qat quantization/model=SLURM_BENCH"
-# models=( BENCH_gpt2_ReBNT_tiny BENCH_gpt2_ReBNT_small BENCH_gpt2_ReBNT_smaller )
-models=( NEW_BENCH2 ) 
-for model in ${models[@]}
-do
-    echo qtransform $run model=$model $data $quant +run.max_iters=50
-    qtransform $run model=$model $data $quant +run.max_iters=50
-done
+echo qtransform $* dataset.root_path=$WORK_HOME/.qtransform/datasets
+qtransform $* dataset.root_path=$WORK_HOME/.qtransform/datasets
