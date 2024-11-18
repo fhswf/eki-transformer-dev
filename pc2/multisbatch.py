@@ -36,8 +36,8 @@ for args in argument_combinations:
         + ["--export=WANDB_API_KEY="+os.environ["wandbkey"]] \
         + [ os.path.join(os.path.dirname(os.path.abspath(__file__)), "apps/generic_run.sh")] \
         + split_args \
-        + static_args \
-        + work_env
+        + static_args
+        #+ work_env
     result = subprocess.run(call_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     
     print("call: " + str(call_args))
