@@ -4,7 +4,11 @@ import os
 from itertools import product
 import pathlib
 
-static_args = ["run=train run.epochs=1 +model.type=CHECKPOINT quantization=qat run.export=True debug=True +trace=True +run.max_iters=50000"]
+static_args = ["run=train run.epochs=1 +model.type=CHECKPOINT quantization=qat run.export=True \
+    debug=True +trace=True +run.max_iters=3000 \
+    wandb.init.project=qtransform \
+    " 
+]
 
 # done in slurm specific batch script
 # work_env = ["dataset.root_path=$WORK_HOME/.qtransform/datasets"]
@@ -14,18 +18,53 @@ datasets = [
 ]
 
 hyperparam_combinations =  [
-    "dataset.dataloader.batch_size=32"
+    "dataset.dataloader.batch_size=32", "dataset.dataloader.batch_size=8"
 ]
 
 models = [
     "model=NEW_BENCH2",    
 ]
 
-quant = [
-    "quantization=qat quantization/model=SLURM_BENCH",
+model_args_n_layer=[
+    "1", "2", "3"
+]
+model_args_n_head=[
+    "2", "4", "8"
+]
+model_args_n_embd=[
+    "256"
+]
+model_args_block_size=[
+    "256"
+]
+model_args_dropout=[
+    "0.0", "0.1", "0.2"
+]
+model_args_norm_layer=[
+    "BatchNormTranspose", "LayerNorm", "BatchNormIdPure"
+]
+model_args_pos_layer=[
+    "learned"
 ]
 
-argument_combinations = list(product(datasets, hyperparam_combinations, models, quant))
+optim = [
+    "optim.args.weight_decay=0.0",
+    "optim.args.weight_decay=0.1",
+    "optim.args.weight_decay=0.2",    
+]
+
+quant = [
+    "quantization=qat quantization/model=SLURM_BENCH2",
+    #"quantization=qat quantization/model=SLURM_BENCH3",
+    "quantization=qat quantization/model=SLURM_BENCH4",
+    #"quantization=qat quantization/model=SLURM_BENCH5",
+    "quantization=qat quantization/model=SLURM_BENCH6",
+    #"quantization=qat quantization/model=SLURM_BENCH7",
+    #"quantization=qat quantization/model=SLURM_BENCH8"
+    "",
+]
+
+argument_combinations = list(product(datasets, hyperparam_combinations, models, optim, quant))
 for args in argument_combinations:
     split_args = []
     for group in args:
