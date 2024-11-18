@@ -24,25 +24,18 @@ hyperparam_combinations =  [
 models = [
     "model=NEW_BENCH2",    
 ]
+model_config = [
+    "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256"
+]
 
-model_args_n_layer=[
-    "1", "2", "3"
-]
-model_args_n_head=[
-    "2", "4", "8"
-]
-model_args_n_embd=[
-    "256"
-]
-model_args_block_size=[
-    "256"
-]
 model_args_dropout=[
     "0.0", "0.1", "0.2"
 ]
+
 model_args_norm_layer=[
     "BatchNormTranspose", "LayerNorm", "BatchNormIdPure"
 ]
+
 model_args_pos_layer=[
     "learned"
 ]
@@ -64,7 +57,7 @@ quant = [
     "",
 ]
 
-argument_combinations = list(product(datasets, hyperparam_combinations, models, optim, quant))
+argument_combinations = list(product(datasets, hyperparam_combinations, models, model_config, model_args_dropout, model_args_pos_layer, model_args_norm_layer, optim, quant))
 for args in argument_combinations:
     split_args = []
     for group in args:
