@@ -29,15 +29,15 @@ model_config = [
 ]
 
 model_args_dropout=[
-    "0.0", "0.1", "0.2"
+    "model.args.dropout=0.0", "model.args.dropout=0.1", "model.args.dropout=0.2"
 ]
 
 model_args_norm_layer=[
-    "BatchNormTranspose", "LayerNorm", "BatchNormIdPure"
+    "model.args.norm_layer=BatchNormTranspose", "model.args.norm_layer=LayerNorm", "model.args.norm_layer=BatchNormIdPure"
 ]
 
 model_args_pos_layer=[
-    "learned"
+    "model.args.pos_layer=learned"
 ]
 
 optim = [
