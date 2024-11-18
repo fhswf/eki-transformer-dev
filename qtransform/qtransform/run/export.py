@@ -70,8 +70,8 @@ def run(cfg: DictConfig, **kwargs):
         # TODO make calibration run configurable
         if i == 10:
             break
-        model(data_point)
-    sample_tensor = data_point
+        model(data_point['input_ids'])
+    sample_tensor = data_point['input_ids']
     sample_tensor.cpu()
     
     # TODO cleanup this block
@@ -145,7 +145,7 @@ def run(cfg: DictConfig, **kwargs):
     # reasign necessary?
     onnx_model = QModelWrapper(onnx_model)
     # run comparson
-    multi_compare_model(model, onnx_model, execute_onnx, sample_data)
+    # multi_compare_model(model, onnx_model, execute_onnx, sample_data)
    
 
 def search_for_weight(model, module: nn.Module)->(bool, str):

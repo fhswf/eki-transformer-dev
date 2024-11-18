@@ -200,7 +200,8 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
         # logs for wandb
         wandb_log_metrics["validate/loss"] = mean.item()
         wandb_log_metrics["train/loss"] = last_loss
-        wandb_log_metrics["train/step"] = train_steps
+        wandb_log_metrics["train/batch"] = train_steps
+        wandb_log_metrics["train/num_samples"] = train_steps * cfg.dataset.dataloader.batch_size
         wandb_log(wandb_log_metrics)
         
         if epoch % cfg.run.save_epoch_interval == 0 or epoch % cfg.run.epochs == 0: 
@@ -212,7 +213,7 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
                 timestamp=timestamp, 
                 epoch=epoch, 
                 metrics=last_loss, 
-                steps=train_steps)
+                steps=train_steps * cfg.dataset.dataloader.batch_size)
         # advance learning rate
         if cfg.run.scheduler_step_type == 'epoch':
             if scheduler is not None:
@@ -316,10 +317,10 @@ def train_one_epoch(cfg: DictConfig,
         #log loss
         if i % cfg.run.log_steps_interval == cfg.run.log_steps_interval-1:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
-            log.info(f'  batch {i} loss: {last_loss}. time: {(time() - train_batch_time)*1000:.2f}ms')
+            log.info(f'  batch {i} step {i * cfg.dataset.dataloader.batch_size} loss: {last_loss}. time: {(time() - train_batch_time)*1000:.2f}ms')
             
             # wandb log only for train loss
-            wandb_log({"train/loss": last_loss, "train/step": i}) 
+            wandb_log({"train/loss": last_loss, "train/batch": i, "train/num_samples": i * cfg.dataset.dataloader.batch_size}) 
             train_batch_time = time()
             running_loss = 0
             ## TODO tensorboard logging and other types of reporting
@@ -335,7 +336,8 @@ def train_one_epoch(cfg: DictConfig,
             wandb_log_metrics = {}
             wandb_log_metrics["validate/loss"] = mean.item()
             # wandb_log_metrics["train_loss"] = last_loss
-            wandb_log_metrics["train/step"] = i
+            wandb_log_metrics["train/batch"] = i
+            wandb_log_metrics["train/num_samples"] = i * cfg.dataset.dataloader.batch_size
             wandb_log(wandb_log_metrics)
 
         if i % cfg.run.save_steps_interval == cfg.run.save_steps_interval - 1:
@@ -352,7 +354,7 @@ def train_one_epoch(cfg: DictConfig,
                 #model_cfg=cfg.model, 
                 #tokenizer_cfg=cfg.tokenizer,
                 #quant_cfg = cfg.get('quantization', None),
-                steps=i,
+                steps=i * cfg.dataset.dataloader.batch_size,
                 )
             
         # advance learning rate
