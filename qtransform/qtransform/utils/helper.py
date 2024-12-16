@@ -144,13 +144,13 @@ def load_checkpoint(from_file: Union[Dict, DictConfig, FromFile]) -> Tuple[int, 
         from_epoch = checkpoint['epoch']
     else:
         raise NotImplementedError("epoch needs to be in checkpoint for now")
-        try:
-            i = str(filepath).index("epoch:")
-            import re
-            p = re.compile("[0-9]+")
-            from_epoch = int(p.search(str(cfg.run.from_checkpoint)[i:]).group(0))
-        except ValueError or AttributeError:
-            log.warn("Modelcheckpint does not contain epoch information")
+        # try:
+        #     i = str(filepath).index("epoch:")
+        #     import re
+        #     p = re.compile("[0-9]+")
+        #     from_epoch = int(p.search(str(cfg.run.from_checkpoint)[i:]).group(0))
+        # except ValueError or AttributeError:
+        #     log.warn("Modelcheckpint does not contain epoch information")
     return from_epoch,checkpoint
 
 def load_state_dict_proxy(model, checkpoint, **kwargs):
