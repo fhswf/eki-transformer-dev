@@ -97,15 +97,6 @@ def concat_paths(paths: list) -> str:
         main_path = join(main_path, path)
     return main_path
 
-def get_dtype(dtype_alias: str) -> np_dtype:
-    dtype = None
-    try:
-        dtype = np_dtype(dtype_alias)
-    except:
-        log.critical(f'Datatype {dtype_alias} not found within numpy datatype scope')
-        raise KeyError()
-    return dtype
-
 from typing import Union, get_origin, get_args, List, Dict
 def get_optional_type(_type):
     """
@@ -123,8 +114,3 @@ def get_optional_type(_type):
         origin_type =  field_origin
     return origin_type
 
-def concat_strings(strings: List[str]) -> str:
-    """
-        Concats a list of immutable strings by joining them together. 
-    """
-    return ''.join(strings)
