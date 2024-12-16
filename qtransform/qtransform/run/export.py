@@ -1,18 +1,14 @@
 
 from copy import deepcopy
 import logging
-from typing import Any
 import numpy as np
 from omegaconf import DictConfig, open_dict
-import hydra
 import os
 from qtransform import device_singleton
-from qtransform.utils.helper import load_checkpoint
-from qtransform.model import ModelArgs, GenericModel, get_model_wrapper, DynamicCheckpointQTRModelWrapper
+from qtransform.model import GenericModel, get_model_wrapper, DynamicCheckpointQTRModelWrapper
 import torch
 from torch import nn
-from brevitas.export import export_onnx_qcdq, export_qonnx, export_brevitas_onnx
-from brevitas import nn as qnn
+from brevitas.export import export_onnx_qcdq, export_qonnx
 from torch.onnx import export
 from datetime import datetime
 
@@ -299,49 +295,50 @@ def compare_model_outputs(torch_model, onnx_model, onnx_run_function, input_tens
     Compares the output of model with input_tensor as a sample. Generates diff tensor.
     """ 
     # model.to(device=device) always run validation on cpu?
-    torch_model.cpu()
-    input_tensor.cpu()
-    torch_model.eval()
-    
-    o1 = model(sample_tensor)
-    
-    # Save the input and output data for verification purposes later
-    in_tensor  = sample_tensor.cpu()
-    out_tensor = o1[0].cpu()
-    np.save(model_name + ".inp.npy", in_tensor.detach().numpy())
-    np.save(model_name + ".out.npy", out_tensor.detach().numpy())
-    
-    o2 =  onnx_run_function(onnx_model, {"input": input_tensor.cpu().numpy()})
-    o2 = torch.from_numpy(o2["output"])
-    o1 = o1[0]
-    o1 = o1.detach().cpu()
-    o2 = o2.detach().cpu()
-    
-    torch.set_printoptions(precision=10)
-    print(torch.squeeze(o1,0))
-    print(torch.squeeze(o2,0))
-    
-    if not torch.equal(o1, o2):
-        log.warning(f"sample tensor after export does not equal model output before export")
-    if not torch.allclose(o1, o2,atol=1e-3):
-        log.error(f"sample tensor after export is not close to model output before export")
-        import matplotlib.pyplot as plt
-        #plt.show(torch.squeeze(0, sample_tensor).detach().numpy(),interpolation='none')
-        #plt.savefig('input.png')
-        plt.imshow(torch.squeeze(o1,0), interpolation='none')
-        plt.savefig('model.png')
-        plt.imshow(torch.squeeze(o2,0), interpolation='none')
-        plt.savefig('onnx.png')
-        mask = torch.isclose(o1, o2,atol=1e-3)
-        
-        plt.imshow(torch.squeeze(mask,0), interpolation='none')
-        plt.savefig('mask.png')
-        oof = (mask == False).nonzero(as_tuple=False)
-        print(oof)
-        print(sample_tensor[0, oof[1]])
-        print(o1[0, oof[1], oof[2]])
-        print(o2[0, oof[1], oof[2]])
-       
+    raise NotImplementedError
+    # torch_model.cpu()
+    # input_tensor.cpu()
+    # torch_model.eval()
+    # 
+    # o1 = model(sample_tensor)
+    # 
+    # # Save the input and output data for verification purposes later
+    # in_tensor  = sample_tensor.cpu()
+    # out_tensor = o1[0].cpu()
+    # np.save(model_name + ".inp.npy", in_tensor.detach().numpy())
+    # np.save(model_name + ".out.npy", out_tensor.detach().numpy())
+    # 
+    # o2 =  onnx_run_function(onnx_model, {"input": input_tensor.cpu().numpy()})
+    # o2 = torch.from_numpy(o2["output"])
+    # o1 = o1[0]
+    # o1 = o1.detach().cpu()
+    # o2 = o2.detach().cpu()
+    # 
+    # torch.set_printoptions(precision=10)
+    # print(torch.squeeze(o1,0))
+    # print(torch.squeeze(o2,0))
+    # 
+    # if not torch.equal(o1, o2):
+    #     log.warning(f"sample tensor after export does not equal model output before export")
+    # if not torch.allclose(o1, o2,atol=1e-3):
+    #     log.error(f"sample tensor after export is not close to model output before export")
+    #     import matplotlib.pyplot as plt
+    #     #plt.show(torch.squeeze(0, sample_tensor).detach().numpy(),interpolation='none')
+    #     #plt.savefig('input.png')
+    #     plt.imshow(torch.squeeze(o1,0), interpolation='none')
+    #     plt.savefig('model.png')
+    #     plt.imshow(torch.squeeze(o2,0), interpolation='none')
+    #     plt.savefig('onnx.png')
+    #     mask = torch.isclose(o1, o2,atol=1e-3)
+    #     
+    #     plt.imshow(torch.squeeze(mask,0), interpolation='none')
+    #     plt.savefig('mask.png')
+    #     oof = (mask == False).nonzero(as_tuple=False)
+    #     print(oof)
+    #     print(sample_tensor[0, oof[1]])
+    #     print(o1[0, oof[1], oof[2]])
+    #     print(o2[0, oof[1], oof[2]])
+    #    
     pass
 
 def multi_compare_model(torch_model_wrapper: GenericModel, onnx_model, onnx_run_function, sample_data):
@@ -353,17 +350,17 @@ def multi_compare_model(torch_model_wrapper: GenericModel, onnx_model, onnx_run_
     assert isinstance(torch_model_wrapper, GenericModel), f'model is not of type GenericModel (qtransform specific)'
     
     raise NotImplementedError
-    
-    for i, data_point in enumerate(_data):
-        jjj = data_point
-        break
-    print("==========")
-    print(jjj["input_ids"][0][None,:])
-    sample_tensor = jjj["input_ids"][0][None,:]
-    
-    input_dim = (1, model.config.block_size)
-    #input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
-    max_token_id = model.config.vocab_size
-    #max_token_id = checkpoint['model_cfg']['args']['vocab_size']
-    random_sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
-    pass
+    # 
+    # for i, data_point in enumerate(_data):
+    #     jjj = data_point
+    #     break
+    # print("==========")
+    # print(jjj["input_ids"][0][None,:])
+    # sample_tensor = jjj["input_ids"][0][None,:]
+    # 
+    # input_dim = (1, model.config.block_size)
+    # #input_dim = (1, checkpoint['model_cfg']['args']['block_size'])
+    # max_token_id = model.config.vocab_size
+    # #max_token_id = checkpoint['model_cfg']['args']['vocab_size']
+    # random_sample_tensor = torch.randint(0, max_token_id, input_dim, dtype=int).to(device=device)
+    # pass

@@ -11,11 +11,10 @@ from hydra.core.global_hydra import GlobalHydra
 from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict, fields
 from pprint import PrettyPrinter
 from qtransform import ConfigSingleton
 from inspect import isclass,isfunction
-
 log = logging.getLogger(__name__)
 
 class _SingletonWrapper:
@@ -46,6 +45,42 @@ def singleton(*args, **kwargs):
     
     return _singleton
 
+def dataclass_from_dict(klass, d):
+    try:
+        fieldtypes = {f.name:f.type for f in fields(klass)}
+        return klass(**{f:dataclass_from_dict(fieldtypes[f],d[f]) for f in d})
+    except:  # noqa: E722
+        return d # Not a dataclass field
+
+@dataclass
+class CheckpointConfig():
+    """class abstraction for this stuff: obj={
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "epoch": epoch,
+            "model_cfg": model_cfg,
+            "tokenizer_cfg": tokenizer_cfg, 
+            "metrics": metrics,
+            "steps": steps,
+            "quant_cfg": quant_cfg, 
+            "quantized": True if quant_cfg.get("quantize", False) is True else False
+            }, f=checkpoint_path """
+        
+    model_state_dict: dict # torch
+    optimizer_state_dict: dict # torch
+    model_cfg: Any # hydra
+    tokenizer_cfg: Any # hydra
+    quant_cfg: Any # hydra
+    quantized: bool # True if quant_cfg.get("quantize", False) is True else False
+    metrics: dict
+    steps: int
+    epoch: int
+    
+    def dict(self):
+        return {k: str(v) for k, v in asdict(self).items()}
+    
+
+
 def get_default_chkpt_folder() -> str:
     """
         Returns the default directory where model checkpoints are stored if the path was not configured
@@ -74,6 +109,9 @@ def get_output_chkpt_dir() -> str:
 
 def get_output_exports_dir() -> str:
     return os.path.join(get_output_dir(), "exports")
+
+def get_output_analysis_dir() -> str:
+    return os.path.join(get_output_dir(), "analysis")
 
 #idea: generic fromfile for dataset and models
 @dataclass

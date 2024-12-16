@@ -1,21 +1,14 @@
 from dataclasses import dataclass
-
-from copy import deepcopy
-from typing import Any
 import numpy as np
-from omegaconf import DictConfig, open_dict
-import hydra
+from omegaconf import DictConfig
 import os
 from qtransform import device_singleton
-from qtransform.utils.helper import get_output_dir, load_checkpoint
-from qtransform.model import ModelArgs, GenericModel, get_model_wrapper, DynamicCheckpointQTRModelWrapper
+from qtransform.model import GenericModel, get_model_wrapper, DynamicCheckpointQTRModelWrapper
 from qtransform.utils.id import ID
+from qtransform.utils.helper import get_output_analysis_dir
 import torch
 from torch import nn
-from brevitas.export import export_onnx_qcdq, export_qonnx, export_brevitas_onnx
-from brevitas import nn as qnn
-from torch.onnx import export
-from datetime import datetime
+
 import matplotlib.pyplot as plt
 
 
@@ -91,7 +84,7 @@ def find_outliers(cfg, model: nn.Module):
                     #plt.plot(_diff)
                 else:
                     plt.imshow(_diff, interpolation='none')
-                os.makedirs(os.path.join(get_output_dir(), "analysis") , exist_ok=True)
-                plt.savefig(os.path.join(get_output_dir(), "analysis", f'{ID}-{name}.png'))
+                os.makedirs(get_output_analysis_dir(), exist_ok=True)
+                plt.savefig(os.path.join(get_output_analysis_dir(), f'{ID}-{name}.png'))
                 #print("===============")
     pass
