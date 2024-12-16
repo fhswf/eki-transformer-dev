@@ -53,6 +53,8 @@ def get_default_chkpt_folder() -> str:
     """
     return os.path.join(os.getenv("HOME"), *__package__.split("."), "checkpoint_dir")
 
+
+# dont use cache here as pwd from hydra could change (even though it should not)
 def get_cwd() -> str:
     cwd:str
     if GlobalHydra().is_initialized():
@@ -64,8 +66,14 @@ def get_cwd() -> str:
 def get_output_dir() -> str:
     return os.path.join(get_cwd(), "outputs")
 
-def get_debug_dir() -> str:
-    return os.path.join(get_cwd(), "debug")
+def get_output_debug_dir() -> str:
+    return os.path.join(get_output_dir(), "debug")
+
+def get_output_chkpt_dir() -> str:
+    return os.path.join(get_output_dir(), "chkpts")
+
+def get_output_exports_dir() -> str:
+    return os.path.join(get_output_dir(), "exports")
 
 #idea: generic fromfile for dataset and models
 @dataclass

@@ -20,7 +20,7 @@ class ID(object):
     #     if cls._instance is None:
     #         cls._instance = super(ID, cls)(*args, **kwargs) # get instance and call init on class
     #     return cls._instance
-    _max_gen_tries:int = 10
+    _max_gen_tries:int = 25
     
     def __init__(self) -> None:
         self.timestamp = datetime.datetime.now().strftime('%y%m%d-%H:%M:%S')
@@ -60,7 +60,7 @@ def generate_free_name() -> str:
         name = generate_name()
         # just use a name, ids are unique anyway due to timestamps
         if tries >= ID._max_gen_tries:
-            break
+            raise Exception("could not generate a new unqiue job id within 25 tries, consider cleaning the output dir")
 
     return name
 

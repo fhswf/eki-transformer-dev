@@ -106,6 +106,7 @@ class GPT(GenericModel):
 
         # report number of parameters
         log.info("number of parameters: %.2fM" % (self.get_num_params()/1e6,))
+        log.debug(self)
 
     def get_num_params(self, non_embedding=True):
         """
