@@ -43,24 +43,25 @@ def wandb_log(*args, **kwargs):
 
 def wandb_init(cfg, config=None):
     # prep for wandb usage
-    wandb_ensure_envs(cfg)
-    global _qtransform_wandb_conf
-    _qtransform_wandb_conf = cfg 
-    if "wandb_name" in cfg.keys():
-        name = cfg["wandb_name"]
-    else:
-        name = ID
-    if config is None:
-        config = omegaconf.OmegaConf.to_container(cfg, resolve=True)
+    if cfg.wandb.enabled:
+        wandb_ensure_envs(cfg)
+        global _qtransform_wandb_conf
+        _qtransform_wandb_conf = cfg 
+        if "wandb_name" in cfg.keys():
+            name = cfg["wandb_name"]
+        else:
+            name = ID
+        if config is None:
+            config = omegaconf.OmegaConf.to_container(cfg, resolve=True)
 
-    wandb.init(
-        name=name,
-        entity=cfg.wandb.init.entity, 
-        project=cfg.wandb.init.project,
-        settings=wandb.Settings(start_method="thread", symlink=False),
-        dir=hydra.core.hydra_config.HydraConfig.get().runtime.output_dir,
-        config=config 
-    )
+        wandb.init(
+            name=name,
+            entity=cfg.wandb.init.entity, 
+            project=cfg.wandb.init.project,
+            settings=wandb.Settings(start_method="thread", symlink=False),
+            dir=hydra.core.hydra_config.HydraConfig.get().runtime.output_dir,
+            config=config 
+        )
     pass
 
 def wandb_finish():

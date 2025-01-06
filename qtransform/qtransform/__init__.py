@@ -50,8 +50,9 @@ class ConfigSingleton(metaclass=SingletonMeta):
         if not isinstance(value, DictConfig):
             try:
                 value = DictConfig(value)
-            except:
+            except Exception as e:
                 log.error(f'Config value invalid: "{value}"', exc_info=True)
+                raise e
         self._config = value
 
 def get_module_config_path():

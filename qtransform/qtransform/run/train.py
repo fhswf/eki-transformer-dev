@@ -7,17 +7,13 @@ from torch import nn
 from torch import optim
 from torch.optim import lr_scheduler
 from torch.utils import data as torch_data #prevent naming conflict with data from dataloaders
-from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 import torch.nn.functional as F
-from pprint import PrettyPrinter
 from time import time
 from qtransform.utils import save_checkpoint
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
-from qtransform.utils.helper import load_state_dict_proxy
 from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpointQTRModelWrapper
-from qtransform import ConfigSingleton
 from torch.profiler import profile, record_function, ProfilerActivity
 from functools import lru_cache
 from qtransform.wandb import wandb_watch, wandb_log
