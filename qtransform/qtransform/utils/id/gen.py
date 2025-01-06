@@ -23,7 +23,7 @@ class ID(object):
     _max_gen_tries:int = 25
     
     def __init__(self) -> None:
-        self.timestamp = datetime.datetime.now().strftime('%y%m%d-%H:%M:%S')
+        self.timestamp = datetime.datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
         self.name = generate_free_name()
         self.id = str(self.timestamp) + "-" + str(self.name)
         pass
