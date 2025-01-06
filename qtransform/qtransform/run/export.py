@@ -2,16 +2,17 @@
 from copy import deepcopy
 import logging
 import numpy as np
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig, open_dict, errors
 import os
 from qtransform import device_singleton
+from qtransform.utils.helper import get_output_exports_dir
 from qtransform.model import GenericModel, get_model_wrapper, DynamicCheckpointQTRModelWrapper
 import torch
 from torch import nn
 from brevitas.export import export_onnx_qcdq, export_qonnx
 from torch.onnx import export
 from datetime import datetime
-
+    
 log = logging.getLogger(__name__)
 
 def run(cfg: DictConfig, **kwargs):
@@ -25,15 +26,7 @@ def run(cfg: DictConfig, **kwargs):
     model = None
     torch.set_printoptions(precision=10)
     device_singleton.device = cfg.device
-    device = device_singleton.device
-
-    if device.type == 'cuda':
-        cuda_kwargs = {'pin_memory': True,}
-        if "dataset" in cfg and cfg.dataset is not None:
-            with open_dict(cfg.dataset.dataloader):
-                cfg.dataset.dataloader.update(cuda_kwargs)
-
-    from omegaconf import DictConfig, OmegaConf, errors
+    
     try: ## this is so dirty, but for some reason OmegaConf does not work here...
         _run = cfg.run.running_model
     except errors.ConfigAttributeError:
@@ -52,7 +45,8 @@ def run(cfg: DictConfig, **kwargs):
     # fix model? TODO validate this step
     patch_non_affine_norms(model)
     
-    # now we need a dataset to calibrate missing quantizers before export 
+    # now we need a dataset to calibrate missing quantizers before export
+    # we also need a input and output tensor as numpy .npy files for FINN
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
     tokenizer_singleton.tokenizer = cfg.tokenizer
@@ -60,31 +54,40 @@ def run(cfg: DictConfig, **kwargs):
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
      
-    sample_data = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
-    for i, data_point in enumerate(sample_data):
-        # its a good idea to run some data through the model
-        # TODO make calibration run configurable
+     # its a good idea to run some data through the model
+    for i, data_point in enumerate(eval_dataloader):
+        # TODO make calibration run configurable?
         if i == 10:
             break
         model(data_point['input_ids'])
+    # take a (random) sample and get raw model output
+    sample_out = model(data_point['input_ids'])
     sample_tensor = data_point['input_ids']
     sample_tensor.cpu()
+    # needs to be on the cpu to export it
+    in_tensor  = sample_tensor.cpu()
+    out_tensor = sample_out[0].cpu()
     
     # TODO cleanup this block
     #prepare_and_transform_for_export(cfg, model)
     #by default, save onnx models into current directory
-    root_path = cfg.run.get('root_path', os.path.abspath('.'))
     filename = cfg.model.from_file.filename
     if os.path.isabs(filename):
         _, filename = os.path.split(filename)
-    model_name = f"{str(cfg.run.export_fn)}_" + filename
-    from qtransform.utils.introspection import concat_paths
-    model_path = concat_paths([root_path, model_name])
+        
+    export_model_name = f"{str(cfg.run.export_fn)}_" + filename
+    model_path = os.path.join(get_output_exports_dir(), filename)
+    
+    np.save(os.path.join(get_output_exports_dir(), export_model_name + ".inp.npy"), in_tensor.detach().numpy())
+    np.save(os.path.join(get_output_exports_dir(), export_model_name + ".out.npy"), out_tensor.detach().numpy())
+    
+    # create informative description
+    
     
     # start export
-    log.info("exporting... " + model_name)
+    log.info("exporting... " + export_model_name)
     # export params and logs 
-    ERROR_LOGS = {
+    export_function_name = {
         "qonnx": f'{export_qonnx.__module__}.{export_qonnx.__name__}',
         "qcdq": f'{export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__}',
         "onnx": f'{export.__module__}.{export.__name__}'
@@ -123,10 +126,10 @@ def run(cfg: DictConfig, **kwargs):
             case "onnx":
                 export(model, shape, model_path, **kwargs)
             case _:
-                log.error(f'Supported export functions: {ERROR_LOGS.keys()}')
+                log.error(f'Supported export functions: {export_function_name.keys()}')
                 raise ValueError()
     except Exception:
-        log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)
+        log.error(f"Export via {export_function_name[cfg.run.export_fn]} failed, reason", exc_info=True)
         raise RuntimeError()
     
     
@@ -249,7 +252,7 @@ def patch_non_affine_norms(model: torch.nn.Module):
     """    
     Fixes export issues of normalization layers with disabled affine parameters.
     Somehow the export to ONNX trips when it encounters the weight and bias tensor
-    to be 'None'.
+    to be 'None'. Has no impact on the functional compute graph.
     """
     # Check whether a layer is a normalization layer of some supported type
     def is_norm_layer(module):

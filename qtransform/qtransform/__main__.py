@@ -1,20 +1,17 @@
 import os
 import hydra
 from hydra.core.hydra_config import HydraConfig
-from omegaconf import DictConfig, OmegaConf, open_dict
+from omegaconf import DictConfig, OmegaConf
 import logging
 import qtransform
 from qtransform.utils import addLoggingHandler, addLoggingLevel
 from qtransform import ConfigSingleton
-from qtransform.utils.callbacks import Callbacks
-from qtransform.utils.helper import get_output_dir, write_to_pipe
+from qtransform.utils.helper import get_output_log_dir
 import sys
 import json
 import wandb
 from qtransform.utils import ID
 from qtransform.wandb import wandb_init
-import importlib
-
 
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 log = logging.getLogger(__name__)
@@ -26,13 +23,13 @@ def cli_wrapper(cfg: DictConfig):
     note that additional configs can be loaded via --config-dir https://github.com/facebookresearch/hydra/issues/874
     """
     ConfigSingleton().config = cfg
-    addLoggingHandler(os.path.join(get_output_dir(), ID + ".log"))
+    addLoggingHandler(os.path.join(get_output_log_dir() , ID + ".log"))
     main()
 
 @hydra.main(version_base=None, config_path="conf", config_name="config.yaml")
 def module_wrapper(cfg: DictConfig):
     ConfigSingleton().config = cfg
-    addLoggingHandler(os.path.join(get_output_dir(), ID + ".log"))
+    addLoggingHandler(os.path.join(get_output_log_dir() , ID + ".log"))
     main()
 
 def main():

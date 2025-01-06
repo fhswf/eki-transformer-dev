@@ -13,7 +13,7 @@ from time import time
 from qtransform.utils import save_checkpoint
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
-from qtransform.model import QTRModelWrapper, get_model_wrapper, DynamicCheckpointQTRModelWrapper
+from qtransform.model import get_model_wrapper, DynamicCheckpointQTRModelWrapper
 from torch.profiler import profile, record_function, ProfilerActivity
 from functools import lru_cache
 from qtransform.wandb import wandb_watch, wandb_log
@@ -41,11 +41,6 @@ def run(cfg: DictConfig):
         log.error(f"dataloder not specified for dataset: {cfg.dataset.name}. Use dataset=huggingface to get one automaticly.")
     device_singleton.device = cfg.device
     device = device_singleton.device
-    if device.type == 'cuda':
-        cuda_kwargs = {'pin_memory': True,}
-        #struct flag of dictconf prevents additional keys to be added (https://omegaconf.readthedocs.io/en/latest/usage.html#struct-flag)
-        with open_dict(cfg.dataset.dataloader):
-            cfg.dataset.dataloader.update(cuda_kwargs)
     torch.manual_seed(cfg.seed)    
     
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")

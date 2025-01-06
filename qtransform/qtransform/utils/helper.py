@@ -79,6 +79,16 @@ class CheckpointConfig():
     def dict(self):
         return {k: str(v) for k, v in asdict(self).items()}
     
+# def ensure_folder():  if we need params here, create anopther wrapp
+
+def ensure_folder(f):
+    """ decorator to make sure that for functions that return a writable path, 
+    the path actually exsists. """
+    def wrapper(*args, **kwargs):
+        path = f(*args, **kwargs)
+        os.makedirs(path, exist_ok=True)
+        return path
+    return wrapper
 
 
 def get_default_chkpt_folder() -> str:
@@ -98,20 +108,30 @@ def get_cwd() -> str:
         cwd = str(os.getcwd())
     return cwd
 
+@ensure_folder
 def get_output_dir() -> str:
     return os.path.join(get_cwd(), "outputs")
 
+@ensure_folder
 def get_output_debug_dir() -> str:
     return os.path.join(get_output_dir(), "debug")
 
+@ensure_folder
 def get_output_chkpt_dir() -> str:
     return os.path.join(get_output_dir(), "chkpts")
 
+@ensure_folder
 def get_output_exports_dir() -> str:
     return os.path.join(get_output_dir(), "exports")
 
+@ensure_folder
 def get_output_analysis_dir() -> str:
     return os.path.join(get_output_dir(), "analysis")
+
+@ensure_folder
+def get_output_log_dir() -> str:
+    return os.path.join(get_output_dir(), "logs")
+
 
 #idea: generic fromfile for dataset and models
 @dataclass
