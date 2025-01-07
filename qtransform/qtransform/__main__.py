@@ -12,6 +12,7 @@ import json
 import wandb
 from qtransform.utils import ID
 from qtransform.wandb import wandb_init
+from qtransform.utils.checkpoint import load_checkpoint
 
 addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 log = logging.getLogger(__name__)
@@ -53,8 +54,11 @@ def main():
         log.debug("DEBUG ENABLED")
     
     # before we start wandb we need to read out the checkpoint if we continue training
-    
-    load_checkpoint()
+    checkpoint_location = cfg.get('model.checkpoint')
+    if checkpoint_location is not None:
+        log.info(f"checkpoint {checkpoint_location} was given, loading meta data to continue from")
+        checkpoint = load_checkpoint(checkpoint_location)
+        
     
     wandb_init(cfg)  
           

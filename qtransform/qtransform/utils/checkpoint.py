@@ -1,38 +1,62 @@
 import datetime
 import os
-from typing import Any, Dict, Tuple, Union
-from omegaconf import DictConfig
+from typing import Any, Dict, Tuple, Union, TypedDict
 import torch
 import logging
+from dataclasses import dataclass, fields, is_dataclass, field
 from torch import nn
+from torch.optim import Optimizer
 from pprint import PrettyPrinter
 from qtransform import ConfigSingleton
 from qtransform.utils import ID
 from qtransform.utils.helper import get_output_chkpt_dir
+from qtransform import device_singleton
 log = logging.getLogger(__name__)
 
-def load_checkpoint(from_file: Union[Dict, DictConfig]) -> Tuple[int, Union[Any, Dict]]:
+def get_from_config_f(param: str): 
+    def get_from_config_inner():
+        from hydra.core.hydra_config import HydraConfig
+        return HydraConfig.get(param)
+    return get_from_config_inner
+
+@dataclass
+class QtransChkptMetaData():
+    """ torch checkpoint meta data, also a key mapping for omegaconf"""
+    # epoch: int
+    # steps: int
+    # metrics: Any
+    # run_id: str
+    # timestamp: datetime
+    # qtrans_model_config: Any
+    # qtrans_dataset_config: Any
+    # qtrans_quantization_config: Any
+    # qtrans_tokenizer_config: Any
+    
+    member1: int = field(default_factory=get_from_config_f("test"))
+    member2: str = field(default="Standardwert")
+    member3: float = field(default=1.0)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'QtransChkptMetaData':
+        return cls(**{k: data.get(k, field.default) for k, field in cls.__dataclass_fields__.items()})
+        
+def validate_checkpoint(checkpoint: Dict):
+    """ checks if all necessary meta data is present in checkpoint
+    and return False if that is not the case.
+    """
+
+
+    return True
+
+
+def load_checkpoint(checkpoint_path: str):
     """ load torch model checkpoint and return the epoch count"""
-    checkpoint_path = from_file.get_filepath()
     if not os.path.exists(checkpoint_path):
         log.error(f'Checkpoint {checkpoint_path} does not exist')
         raise FileNotFoundError()
-    log.info(f"Loading checkpoint from {checkpoint_path}")
-    from_epoch = 0    
-    from qtransform import device_singleton
+    log.info(f"Loading checkpoint from {checkpoint_path}")   
     checkpoint = torch.load(checkpoint_path, map_location=device_singleton.device)
-    if 'epoch' in checkpoint:
-        from_epoch = checkpoint['epoch']
-    else:
-        raise NotImplementedError("epoch needs to be in checkpoint for now")
-        # try:
-        #     i = str(filepath).index("epoch:")
-        #     import re
-        #     p = re.compile("[0-9]+")
-        #     from_epoch = int(p.search(str(cfg.run.from_checkpoint)[i:]).group(0))
-        # except ValueError or AttributeError:
-        #     log.warn("Modelcheckpint does not contain epoch information")
-    return from_epoch,checkpoint
+    return checkpoint
 
 def load_state_dict_proxy(model, checkpoint, **kwargs):
     """same as torch load state dict, however this check env for extra params. """
@@ -42,11 +66,8 @@ def load_state_dict_proxy(model, checkpoint, **kwargs):
     return model.load_state_dict(checkpoint, **kwargs)
 
 def save_checkpoint(model: nn.Module, 
-    optimizer,
-    timestamp:datetime, 
-    metrics:Dict, 
-    epoch:int,
-    steps: int,
+    optimizer: Optimizer,
+    metadata: QtransChkptMetaData = None,
     **kwargs) -> str:
     """save torch model checkpoint from training, returns path to saved file."""
     
@@ -58,23 +79,16 @@ def save_checkpoint(model: nn.Module,
     quant_cfg = cfg.get('quantization', None)
     # get name for encoding, if present in config
     if cfg.model.get("model_name", None) is not None:
-        filename = f"{cfg.model.get('model_name')}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
+        filename = f"{cfg.model.get('model_name')}_{dataset_name.replace('/', '__')}_{metadata.timestamp}__epoch:{metadata.epoch}"
     else:
-        filename = f"{cfg.runtime.choices.model}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
+        filename = f"{cfg.runtime.choices.model}_{dataset_name.replace('/', '__')}_{metadata.timestamp}__epoch:{metadata.epoch}"
 
     checkpoint_path = os.path.join(get_output_chkpt_dir(), filename)
     log.info(f"Model checkpoint saving to {checkpoint_path}")
     torch.save(obj={
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
-            "epoch": epoch,
-            "model_cfg": model_cfg,
-            "tokenizer_cfg": tokenizer_cfg, 
-            "metrics": metrics,
-            "steps": steps,
-            "quant_cfg": quant_cfg, 
-            "quantized": True if quant_cfg.get("quantize", False) is True else False,
-            "qtranform_runid": ID,
+            "qtrans_metadata": metadata
             
         }, f=checkpoint_path)
     log.info(f"Model checkpoint saved to {checkpoint_path}")
