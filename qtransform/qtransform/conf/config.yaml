@@ -58,15 +58,6 @@ seed: 1234567890
 # DDP settings
 #backend : 'nccl' # 'nccl', 'gloo', etc.
 
-model: 
-  type: ??? #checkpoint, onnx model, pretrained huggingface model ...
-  #TODO: seperation of path with model_dir and filename is kind of redundant
-  from_file:
-    model_dir: models #if absolute: append model_dir to filepath. if relative: use dir "outputs" of working directory
-    filename: #filename of onnx model/ checkpoint. if absolute: ignore model_dir. otherwise, prepend model_dir to filename 
-
-  calc_loss_in_model: False
-
 quantization:
   quantize: False
 
@@ -87,3 +78,6 @@ callbacks:
     #init params of the respective callback class
     args: 
       to_pipe: ${pipe} #write config file path into pipe. stops execution until pipe is consumed, therefore move callback to last
+
+model: 
+  checkpoint:

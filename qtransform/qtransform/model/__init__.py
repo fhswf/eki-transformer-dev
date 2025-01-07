@@ -17,7 +17,7 @@ from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
 from enum import IntEnum
-from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy, FromFile
+from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy
 from typing import Union, Tuple
 from abc import ABC, abstractmethod
 import transformers
@@ -96,7 +96,6 @@ class ModelConfig():
     cls: str
     calc_loss_in_model: bool
     args: ModelArgs
-    from_file: FromFile = None #torch checkpoint or ONNX model path
     model_name: str = "Missing-Model-Name" # used to name the saved checkpoints
     cstr: str = None # infer model args from a config string: Mgpt2-s256-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned
 
@@ -172,12 +171,6 @@ class QTRModelWrapper(ABC):
     def load_model(self, model_cfg: Union[ModelConfig, DictConfig]):
         pass
 
-    @abstractmethod
-    #TODO: inference needs model cfg even though it only needs pathname to model
-    #      ONNX models need model property to get config though
-    def from_file(self, from_file: FromFile):
-        raise NotImplementedError
-
     def __call__(self, idx_cond: Tensor, labels = None):
         return self.forward(idx_cond, labels)
     
@@ -219,25 +212,26 @@ class DynamicCheckpointQTRModelWrapper(QTRModelWrapper):
         self.epochs = 0
         self.metrics = {}
 
-        from_file: FromFile = model_cfg.get("from_file", None)
-        if from_file.filename is not None:
-            self.from_file(from_file)
-            #block size might not be specified, necessary for dataset retrieval
-            #TODO: put this in run __init__
-            OmegaConf.update(model_cfg, 'cls', self.model_cfg.cls, force_add=True)
-            for field in fields(self.model_cfg.args):
-                OmegaConf.update(model_cfg.args,field.name, getattr(self.model_cfg.args, field.name), force_add=True)
-            log.info(f'Updated model config with checkpoint parameters')
-        else:
-            #not that clean, problem is that checkpoint needs to be loaded in order to have model_cfg
-            self.load_model(model_cfg)
+        # TODO RM
+        # from_file: FromFile = model_cfg.get("from_file", None)
+        # if from_file.filename is not None:
+        #     self.from_file(from_file)
+        #     #block size might not be specified, necessary for dataset retrieval
+        #     #TODO: put this in run __init__
+        #     OmegaConf.update(model_cfg, 'cls', self.model_cfg.cls, force_add=True)
+        #     for field in fields(self.model_cfg.args):
+        #         OmegaConf.update(model_cfg.args,field.name, getattr(self.model_cfg.args, field.name), force_add=True)
+        #     log.info(f'Updated model config with checkpoint parameters')
+        # else:
+        #not that clean, problem is that checkpoint needs to be loaded in order to have model_cfg
+        self.load_model(model_cfg)
 
-    def from_file(self, from_file: FromFile):
+    def from_file(self, file):
         """
         Instantiates a torch module, initializes its state dict from a checkpoint and performs quantization
         if the checkpoint was quantized.
         """
-        self.epochs, checkpoint = load_checkpoint(from_file)
+        self.epochs, checkpoint = load_checkpoint(file)
         if 'model_state_dict' not in checkpoint:
             log.error("Can not load checkpoint with no model_state_dict")
             raise KeyError
@@ -427,9 +421,8 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
         #model.graph.input[0].type.tensor_type.shape.dim[-1]
         self.model_cfg = model_cfg
 
-    def from_file(self, from_file: FromFile):
-        path = from_file.get_filepath()
-        self.model = load_onnx_model(path)
+    def from_file(self, file):
+        self.model = load_onnx_model(file)
 
     def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
         device = idx_cond.device
@@ -437,6 +430,7 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
         input_name =  "input"
         run_fn = None
         # determine if finn onnx or qonnx
+        # TODO fix me
         _a = re.findall(r"\.finn", str(self.model_cfg.from_file))
         if len(_a) == 1 and _a[0] == ".finn":  # check if model name contains "finn flag" 
             input_name =  "global_in"

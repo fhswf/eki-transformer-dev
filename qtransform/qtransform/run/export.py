@@ -20,30 +20,27 @@ def run(cfg: DictConfig, **kwargs):
     log.info("================")
     log.info("Exporting Model")
     log.info("================")
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S') # if we continue we should import timestamp, also for ID?
     log.info(f"time is: {timestamp}")
     log.debug(f'Run config: {cfg.run}')
-    model = None
-    torch.set_printoptions(precision=10)
+    #if cfg.debug:
+    #    torch.set_printoptions(precision=10)
     device_singleton.device = cfg.device
-    
-    try: ## this is so dirty, but for some reason OmegaConf does not work here...
-        _run = cfg.run.running_model
-    except errors.ConfigAttributeError:
-        _run = False
+
     #export script could have been called directly or from training script
     #the model passed from the training script should be configured completely
     #the model does not exist yet when calling the export script directly
-    if  _run:
-        log.info("Getting model config from model_wrapper kwargs")
-        model_wrapper: DynamicCheckpointQTRModelWrapper = kwargs["model_wrapper"]
-    else:
+    try:  ## this is so dirty, but for some reason OmegaConf does not work here...
+        if cfg.run.next ==  "export":
+            log.info("Getting model config from model_wrapper kwargs")
+            model_wrapper: DynamicCheckpointQTRModelWrapper = kwargs["model_wrapper"]
+        else:
+            raise RuntimeError("run.next has to be export!")
+    except errors.ConfigAttributeError:
         log.info("Getting model config from hydra config")
         model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     model: GenericModel = model_wrapper.model
-    assert isinstance(model, GenericModel), f'model is not of type GenericModel'
-    # fix model? TODO validate this step
-    patch_non_affine_norms(model)
+    patch_non_affine_norms(model) # fix model? validate this step
     
     # now we need a dataset to calibrate missing quantizers before export
     # we also need a input and output tensor as numpy .npy files for FINN
@@ -68,21 +65,14 @@ def run(cfg: DictConfig, **kwargs):
     in_tensor  = sample_tensor.cpu()
     out_tensor = sample_out[0].cpu()
     
-    # TODO cleanup this block
-    #prepare_and_transform_for_export(cfg, model)
-    #by default, save onnx models into current directory
-    filename = cfg.model.from_file.filename
-    if os.path.isabs(filename):
-        _, filename = os.path.split(filename)
-        
-    export_model_name = f"{str(cfg.run.export_fn)}_" + filename
-    model_path = os.path.join(get_output_exports_dir(), filename)
+    export_model_name = f"{str(cfg.run.export_fn)}_" + cfg.model.modelname + ".onnx"
+    model_path = os.path.join(get_output_exports_dir(), export_model_name)
     
     np.save(os.path.join(get_output_exports_dir(), export_model_name + ".inp.npy"), in_tensor.detach().numpy())
     np.save(os.path.join(get_output_exports_dir(), export_model_name + ".out.npy"), out_tensor.detach().numpy())
     
     # create informative description
-    
+    # TODO
     
     # start export
     log.info("exporting... " + export_model_name)
@@ -132,7 +122,7 @@ def run(cfg: DictConfig, **kwargs):
         log.error(f"Export via {export_function_name[cfg.run.export_fn]} failed, reason", exc_info=True)
         raise RuntimeError()
     
-    
+    """
     # these step sare to verify model outpus matches onnx export
     # TODO switch onnx execute function when model gets converted by fin before export 
     from qonnx.core.onnx_exec import execute_onnx
@@ -145,7 +135,7 @@ def run(cfg: DictConfig, **kwargs):
     onnx_model = QModelWrapper(onnx_model)
     # run comparson
     # multi_compare_model(model, onnx_model, execute_onnx, sample_data)
-   
+   """
 
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None
@@ -155,7 +145,7 @@ def search_for_weight(model, module: nn.Module)->(bool, str):
             has_standart_weight = True
             paramname = n
     return has_standart_weight, paramname
-        
+
 from qtransform.quantization.quant_bn import replace_bn, CustomBatchNorm1d, QuantBatchnorm1d
 def auto_merge_layers(cfg, model: torch.nn.Module, inplace=False, qat=True):
     """

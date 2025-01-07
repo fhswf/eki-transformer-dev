@@ -4,7 +4,6 @@ from qtransform.utils import ID
 import hydra
 import omegaconf
 import logging
-import sys
 
 _qtransform_wandb_conf = None
 

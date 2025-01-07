@@ -133,63 +133,8 @@ def get_output_log_dir() -> str:
     return os.path.join(get_output_dir(), "logs")
 
 
-#idea: generic fromfile for dataset and models
-@dataclass
-class FromFile():
-    """
-    Keep args for composing checkpoint/ onnx model path inside of dataclass to avoid dict checks in multiple
-    places.
-    """
-    filename: str
-    model_dir: str
-    _filename: str = field(init=False, repr = False)
-    _model_dir: str = field(init=False, repr = False, default=get_default_chkpt_folder())
-
-    def __init__(self, filename: str, model_dir: str):
-        self.model_dir = model_dir
-        self.filename = filename
-    
-    @property
-    def filename(self):
-        return self._filename
-    
-    @filename.setter
-    def filename(self, filename: str):
-        assert isinstance(filename, str), f'{filename} (type: {type(filename)}) is  not a valid filename string.'
-        #make sure that model_dir is never none and filename always is a filename, not an absolute path
-        model_dir, filename = os.path.split(filename)
-        if len(model_dir) > 0:
-            if isinstance(self.model_dir, str) and len(self.model_dir) > 0:
-                log.warning(f'Overwriting model_dir with path from filename')
-            self.model_dir = model_dir
-        self._filename = filename
-
-    @property
-    def model_dir(self):
-        return self._model_dir
-
-    @model_dir.setter
-    def model_dir(self, model_dir: str):
-        if not isinstance(model_dir, str):
-            model_dir = get_default_chkpt_folder()
-            log.warning(f'invalid type for model_dir, assuming default checkpoint {self.model_dir}')
-        elif not os.path.isabs(model_dir):
-            #outputs are stored in <current directory>/outputs/<checkpoint_dir>
-            try:
-                model_dir =  os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", model_dir) #os.path.join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, "outputs", model_dir)
-            except Exception as e:
-                log.debug(f'Could not get cwd from hydra. Reason: {e.__class__.__name__}', exc_info=True)
-                log.debug(f'Using {os.getcwd()=}')
-                model_dir = os.getcwd()
-        self._model_dir = model_dir
-
-    def get_filepath(self) -> str:
-        return os.path.join(self.model_dir, self.filename)
-
-def load_checkpoint(from_file: Union[Dict, DictConfig, FromFile]) -> Tuple[int, Union[Any, Dict]]:
+def load_checkpoint(from_file: Union[Dict, DictConfig]) -> Tuple[int, Union[Any, Dict]]:
     """ load torch model checkpoint and return the epoch count"""
-    if not isinstance(from_file, FromFile):
-        from_file = FromFile(**from_file)
     checkpoint_path = from_file.get_filepath()
     if not os.path.exists(checkpoint_path):
         log.error(f'Checkpoint {checkpoint_path} does not exist')
@@ -229,28 +174,17 @@ def save_checkpoint(model: nn.Module,
     
     cfg = ConfigSingleton().config
     dataset_name = cfg.dataset.name
-    from_file = cfg.model.from_file
     model_cfg=cfg.model
     log.debug(f'model_cfg when saving checkpoint: {PrettyPrinter(indent=1).pformat(model_cfg)}')
     tokenizer_cfg=cfg.tokenizer
     quant_cfg = cfg.get('quantization', None)
-    #TODO: redo FromFile class. model_dir should be a globaly defined path (prob should not change per runtime)
-    #TODO: redo FromFile filename prob does not need to be encapsulated by a class
+    # get name for encoding, if present in config
     if cfg.model.get("model_name", None) is not None:
         filename = f"{cfg.model.get('model_name')}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
     else:
         filename = f"{cfg.runtime.choices.model}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
 
-    if not isinstance(from_file, FromFile) and isinstance(from_file, Union[Dict, DictConfig]):
-        from_file["filename"] = filename
-        from_file = FromFile(**from_file)
-    else:
-        log.error(f'Cannot compose model_path with from_file: {from_file}')
-        raise TypeError()
-    from_file.filename = filename
-    checkpoint_path = from_file.get_filepath()
-    chkpt_folder, _ = os.path.split(checkpoint_path)
-    os.makedirs(chkpt_folder, exist_ok=True)
+    checkpoint_path = os.path.join(get_output_chkpt_dir(), filename)
     log.info(f"Model checkpoint saving to {checkpoint_path}")
     torch.save(obj={
             "model_state_dict": model.state_dict(),
@@ -261,8 +195,8 @@ def save_checkpoint(model: nn.Module,
             "metrics": metrics,
             "steps": steps,
             "quant_cfg": quant_cfg, 
-            "quantized": True if quant_cfg.get("quantize", False) is True else False
-            }, f=checkpoint_path)
+            "quantized": True if quant_cfg.get("quantize", False) is True else False,
+        }, f=checkpoint_path)
     log.info(f"Model checkpoint saved to {checkpoint_path}")
     return checkpoint_path
 

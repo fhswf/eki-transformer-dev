@@ -54,6 +54,8 @@ def main():
     
     # before we start wandb we need to read out the checkpoint if we continue training
     
+    load_checkpoint()
+    
     wandb_init(cfg)  
           
     if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
@@ -76,7 +78,7 @@ def main():
         # OutOfMemoryError does not exsist in static python torch package...
         if e.__class__.__name__ == "OutOfMemoryError":
             exit_code = 2
-    
+
     # make sure wandb is closed (gets checked internally wether wandb.run is activ) 
     wandb.finish(exit_code=exit_code)
 

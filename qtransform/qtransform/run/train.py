@@ -68,7 +68,7 @@ def run(cfg: DictConfig):
     if model_wrapper.epochs >= 1:
         cfg.run.epochs = model_wrapper.epochs + cfg.run.epochs
         #TODO: construct absolute filepath for checkpoint
-        log.info(f"Resuming training from: {cfg.model.from_file}")
+        log.info(f"Resuming training from: TODO")
         log.info(f"Epoch is {model_wrapper.epochs}, running for {cfg.run.epochs}")
     else:
         log.info(f"Starting new training")
@@ -100,7 +100,7 @@ def run(cfg: DictConfig):
     log.debug(f'Scheduler: {scheduler}')
     last_checkpoint = None
     # lets go
-    last_checkpoint = train(
+    last_checkpoint, epoch, train_steps = train(
         cfg=cfg, 
         device=device, 
         model_wrapper=model_wrapper,
@@ -114,10 +114,10 @@ def run(cfg: DictConfig):
     # when this paradigm comes up more frequently we have to make this a thing ....
     log.debug("Finished training model")
     #update from_file for next run
-    with open_dict(cfg):
-        log.info(f'Updating from_file for rerun')
-        cfg.model.from_file.filename = last_checkpoint
-        cfg.model.from_file.model_dir = None
+    # TODO
+    # cfg.model.from_file.filename = last_checkpoint
+
+    # TODO put this in some util function
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
         from hydra import compose
@@ -127,14 +127,13 @@ def run(cfg: DictConfig):
         export_cfg = compose(config_name="config", overrides=["run=export"])
         with open_dict(cfg):
             cfg.run = export_cfg.run
-        OmegaConf.update(cfg, "model.from_file.filename", last_checkpoint+".onnx", force_add=True)
-        OmegaConf.update(cfg, "model.from_file.model_dir", None, force_add=True)
-        OmegaConf.update(cfg, "run.running_model", True, force_add=True)
-        if model_wrapper.quantized:
+        OmegaConf.update(cfg, "model.modelname",  f"{cfg.model.get('model_name')}_{cfg.dataset.name.replace('/', '__')}_{timestamp}__epoch:{epoch}", force_add=True)
+        OmegaConf.update(cfg, "run.next", "export", force_add=True)
+        if model_wrapper.quantized: # TODO this should be determined by export function, infos should be present in the checkpoint
             OmegaConf.update(cfg, "run.export_fn", "qonnx", force_add=True)
         else:
             OmegaConf.update(cfg, "run.export_fn", "onnx", force_add=True)
-        kwargs = {"model_wrapper": model_wrapper}
+        kwargs = {"model_wrapper": model_wrapper} # TODO dont pass model wrapper, load checkpoint!
         export.run(cfg, **kwargs)
 
 def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
@@ -211,7 +210,7 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
                 scheduler.step()
                 new_lr = scheduler.get_last_lr()[0]
                 log.info(f'New learning rate: {new_lr}')
-    return last_checkpoint
+    return last_checkpoint, epoch, train_steps * cfg.dataset.dataloader.batch_size
 
 def train_one_epoch(cfg: DictConfig, 
         device, 
