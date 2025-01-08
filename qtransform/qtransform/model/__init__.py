@@ -2,7 +2,7 @@ import os
 import re
 import time
 import numpy as np
-from typing import Any
+from typing import Any, Optional
 import omegaconf
 from omegaconf import DictConfig, open_dict, OmegaConf
 from qtransform.classloader import get_data
@@ -17,7 +17,8 @@ from qonnx.core.modelwrapper import ModelWrapper
 # maybe only do this when it is required, for this howiever is always the case
 from onnx.shape_inference import infer_shapes
 from enum import IntEnum
-from qtransform.utils.helper import load_checkpoint, save_checkpoint, load_onnx_model, load_state_dict_proxy
+from qtransform.utils.helper import load_onnx_model
+from qtransform.utils.checkpoint import load_checkpoint, save_checkpoint,load_state_dict_proxy
 from typing import Union, Tuple
 from abc import ABC, abstractmethod
 import transformers
@@ -96,6 +97,7 @@ class ModelConfig():
     cls: str
     calc_loss_in_model: bool
     args: ModelArgs
+    checkpoint: Optional[str]
     model_name: str = "Missing-Model-Name" # used to name the saved checkpoints
     cstr: str = None # infer model args from a config string: Mgpt2-s256-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned
 
@@ -150,6 +152,7 @@ class QTRModelWrapper(ABC):
 
     @model_cfg.setter
     def model_cfg(self, value: Union[ModelConfig, DictConfig]):
+        print(value)
         if isinstance(value, ModelConfig):
             self._model_cfg = value
         else:

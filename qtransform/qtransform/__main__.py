@@ -10,7 +10,7 @@ from qtransform.utils.helper import get_output_log_dir
 import sys
 import json
 import wandb
-from qtransform.utils import ID
+from qtransform.utils.id import ID
 from qtransform.wandb import wandb_init
 from qtransform.utils.checkpoint import load_checkpoint
 

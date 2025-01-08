@@ -10,7 +10,7 @@ from torch.utils import data as torch_data #prevent naming conflict with data fr
 from datetime import datetime
 import torch.nn.functional as F
 from time import time
-from qtransform.utils import save_checkpoint
+from qtransform.utils.checkpoint import save_checkpoint
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
 from qtransform.model import get_model_wrapper, DynamicCheckpointQTRModelWrapper
@@ -200,7 +200,6 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
             last_checkpoint: str = save_checkpoint(
                 model=model, 
                 optimizer=optimizer, 
-                timestamp=timestamp, 
                 epoch=epoch, 
                 metrics=last_loss, 
                 steps=train_steps * cfg.dataset.dataloader.batch_size)
@@ -333,17 +332,11 @@ def train_one_epoch(cfg: DictConfig,
         if i % cfg.run.save_steps_interval == cfg.run.save_steps_interval - 1:
             ## interval or end of training, epochs is also 1 for mini_run
             # last_checkpoint is the absolute filepath of the saved checkpoint
-            last_checkpoint: str = save_checkpoint(
-                #cfg=cfg, 
+            last_checkpoint: str = save_checkpoint( 
                 model=model, 
                 optimizer=optimizer, 
-                #dataset=cfg.dataset.name,
-                timestamp=timestamp, 
                 epoch=epoch, 
                 metrics=loss, 
-                #model_cfg=cfg.model, 
-                #tokenizer_cfg=cfg.tokenizer,
-                #quant_cfg = cfg.get('quantization', None),
                 steps=i * cfg.dataset.dataloader.batch_size,
                 )
             

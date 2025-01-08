@@ -1,6 +1,6 @@
 import wandb
 import os
-from qtransform.utils import ID
+from qtransform.utils.id import ID
 import hydra
 import omegaconf
 import logging
