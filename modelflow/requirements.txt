@@ -1,0 +1,15 @@
+hydra-core
+setuptools>=62.4
+setuptools_rust
+tensorboard
+typing_inspect
+numpy>=1.24.1
+onnxoptimizer
+matplotlib
+python-dateutil
+aiohttp
+pyyaml
+huggingface-hub<1.0,>=0.19.3
+transformers>=4.36
+tabulate
+wandb

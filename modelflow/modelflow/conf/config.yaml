@@ -1,0 +1,19 @@
+hydra:
+  run:
+    dir: modelflow/${now:%Y-%m-%d_%H\:%M\:%S}
+  sweep:
+    dir: modelflow/${now:%Y-%m-%d_%H\:%M\:%S}
+    subdir: ${hydra.job.num}
+  #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
+  searchpath:
+    - pkg://qtransform
+defaults:
+  - _self_
+  - flow: default
+  - quantization: default
+  - override hydra/job_logging: perlevel
+  - override hydra/help: main
+  #- override hydra/job_logging: colorlog
+  #- override hydra/hydra_logging: colorlog
+
+debug: False

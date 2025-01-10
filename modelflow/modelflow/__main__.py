@@ -1,0 +1,76 @@
+import os
+import hydra
+from hydra.core.hydra_config import HydraConfig
+from omegaconf import DictConfig, OmegaConf
+import logging
+import modelflow
+from modelflow.utils import addLoggingHandler, addLoggingLevel
+from modelflow.utils.helper import get_cwd
+from modelflow.utils.id import ID
+import sys
+import json
+# this has to happen before the logger get initialised
+addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
+log = logging.getLogger(__name__)
+
+def launch_main(cfg: DictConfig):
+    addLoggingHandler(os.path.join(get_cwd() , ID + ".log"))
+    OmegaConf.update(cfg, "runtime.choices", HydraConfig().instance().get().runtime.choices, force_add=True)
+    logging.captureWarnings(True)
+    root_log = logging.getLogger("root")
+    log = logging.getLogger(f"{__package__}.{__name__}")
+    if "trace" in cfg and cfg.trace:
+        root_log.setLevel(logging.TRACE)
+        log.warning("TRACE ENABLED")
+    elif "debug" in cfg and cfg.debug:
+        root_log.setLevel(logging.DEBUG)
+        log.debug("DEBUG ENABLED")
+    main(cfg)
+
+@hydra.main(version_base=None, config_path=modelflow.get_module_config_path(), config_name="config.yaml")
+def cli_wrapper(cfg: DictConfig):
+    """ 
+    this function exsists so that one can call qtransform from cli with prepending "python -m ".
+    note that additional configs can be loaded via --config-dir https://github.com/facebookresearch/hydra/issues/874
+    """
+    launch_main(cfg)
+
+@hydra.main(version_base=None, config_path="conf", config_name="config.yaml")
+def module_wrapper(cfg: DictConfig):
+    launch_main(cfg)
+    
+
+def main(cfg):
+    if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
+    log.info(f"Launch command: {sys.argv}")
+    log.debug(f'LAUNCHED WITH CONFIG: {cfg}')
+    
+    # TODO check execution evironment
+    # get modelflow ID and make flow dir for ID
+    # launch qtransform commands
+    
+    
+    
+    exit_code=0
+    if "command" not in cfg.run:
+        log.error("No run command found in run config, run config was: " + str(cfg.run))
+        raise KeyError
+    try:
+        # dynamicly import run module from qtransform.run
+        module = __import__("qtransform.run", fromlist=[cfg.run.command])
+        cmd = getattr(module, cfg.run.command)
+        cmd.run(cfg)
+    except Exception as e:
+        exit_code = 1 # generic error
+        log.critical(f"Script execution failed. Reason: {e}", exc_info=True)
+
+    if exit_code is not None and exit_code > 0:
+        log.error(f"Exited with Status Code: {str(exit_code)}")
+        exit(exit_code)
+    log.info(f"Exited with Status Code: {str(exit_code)}")
+
+    
+    pass
+
+if __name__ == "__main__":
+    module_wrapper()
