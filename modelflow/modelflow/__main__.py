@@ -49,8 +49,6 @@ def main(cfg):
     # get modelflow ID and make flow dir for ID
     # launch qtransform commands
     
-    
-    
     exit_code=0
     if "command" not in cfg.run:
         log.error("No run command found in run config, run config was: " + str(cfg.run))
