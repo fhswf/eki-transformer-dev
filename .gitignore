@@ -1,5 +1,6 @@
 slurm-*.out
 *.bin
+**/tmp/*
 */data/*/input.txt
 **/data/MNIST/**
 **/.ipynb*/**
