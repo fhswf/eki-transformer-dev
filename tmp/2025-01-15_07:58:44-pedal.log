@@ -1,0 +1,3 @@
+[2025-01-15 07:58:44,602][modelflow.modelflow.__main__][DEBUG] - DEBUG ENABLED
+[2025-01-15 07:58:44,602][modelflow.__main__][INFO] - Launch command: ['/home/kuhmichel/anaconda3/envs/eki/bin/modelflow', 'flow=default', 'debug=True']
+[2025-01-15 07:58:44,602][modelflow.__main__][DEBUG] - LAUNCHED WITH CONFIG: {'debug': True, 'flow': {'task': '???'}, 'quantization': {'quantize': False}, 'runtime': {'choices': {'quantization': 'default', 'flow': 'default', 'hydra/env': 'default', 'hydra/callbacks': None, 'hydra/job_logging': 'perlevel', 'hydra/hydra_logging': 'default', 'hydra/hydra_help': 'default', 'hydra/help': 'main', 'hydra/sweeper': 'basic', 'hydra/launcher': 'basic', 'hydra/output': 'default'}}}

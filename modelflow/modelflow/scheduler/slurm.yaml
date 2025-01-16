@@ -1,0 +1,4 @@
+# hydro config for slurm scheduler:
+_target_: modelflow.scheduler.SlurmScheduler
+algo: SGD
+lr: 0.01

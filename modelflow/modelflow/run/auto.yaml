@@ -1,0 +1,7 @@
+# hydra config for class same as file name:
+_target_: modelflow.run.Auto
+tasks: # tasks are all in sequence
+  - _target_: modelflow.run.LayerExchange
+    cmd_args: "run=train dataset=tsV2 dataset.dataloader.batch_size=2 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048 run.epochs=1 tokenizer=hf_gptneo +model.type=CHECKPOINT  model=NEW_BENCH2 quantization=qat quantization/model=NEW_BENCH2b run.export=True"
+    source_layer: ""
+    targer_layer: ""

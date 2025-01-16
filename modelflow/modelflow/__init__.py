@@ -1,6 +1,8 @@
 import logging
 import os
 from contextlib import contextmanager
+from modelflow.utils.helper import singleton
+from omegaconf import DictConfig
 log = logging.getLogger(__name__)
 
 def get_module_config_path():
@@ -58,3 +60,24 @@ def with_config(arg, loglevel):
                 return func(cfg, *args, **kwargs)
         return wrapped_func
     return wrapper_decorator
+
+
+    
+@singleton()
+class CFG(object):
+    """Stores Config from Hydra compose"""
+    def __init__(self, cfg:DictConfig) -> None:
+        self.cfg = cfg
+        pass
+    
+    def get_cfg(self):
+        return self.cfg
+    
+    def __call__(self):
+        return self.get_cfg()
+    
+    def __repr__(self) -> str:
+        return self.get_cfg()
+    
+    def __str__(self) -> str:
+        return self.get_cfg()

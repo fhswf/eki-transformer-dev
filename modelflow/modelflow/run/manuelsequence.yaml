@@ -1,0 +1,19 @@
+# hydra config for class same as file name:
+_target_: modelflow.run.ManuelSequence
+# dict or list of commands to run, currently not nested ?
+tasks: # tasks are all in sequence
+  - _target_: modelflow.run.Sequence
+    common_cmd_args: "run=train dataset=tsV2 dataset.dataloader.batch_size=2 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048 run.epochs=1 tokenizer=hf_gptneo +model.type=CHECKPOINT  model=NEW_BENCH2 quantization=qat quantization/model=NEW_BENCH2b run.export=True"
+    tasks:
+      - cmd_args: "" # some arbitrary sting or run command, to be interpreted by command class, common_args get appended here as well
+        _target_: modelflow.command.QTransformCommand # command class identifier, with command as super class, similar to _target_
+        store:
+          _target_: extract_from_stdout
+          regex: ""
+          id: 
+          
+  - _target_: modelflow.run.Sequence
+    common_cmd_args: "run=train"
+    tasks:
+      - cmd_args: "model.checkpoint={{}}" # template expansion
+        type: modelflow.command.QTransformCommand 

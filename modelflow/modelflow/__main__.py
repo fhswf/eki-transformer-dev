@@ -2,11 +2,13 @@ import os
 import hydra
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
+from hydra.utils import instantiate
 import logging
 import modelflow
 from modelflow.utils import addLoggingHandler, addLoggingLevel
 from modelflow.utils.helper import get_cwd
 from modelflow.utils.id import ID
+from modelflow import CFG
 import sys
 import json
 # this has to happen before the logger get initialised
@@ -43,21 +45,17 @@ def module_wrapper(cfg: DictConfig):
 def main(cfg):
     if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
     log.info(f"Launch command: {sys.argv}")
-    log.debug(f'LAUNCHED WITH CONFIG: {cfg}')
-    
+    log.info("Storing run config in global...")
+    CFG(cfg)
+    log.debug("config:")
+    log.debug(CFG())
     # TODO check execution evironment
     # get modelflow ID and make flow dir for ID
     # launch qtransform commands
-    
     exit_code=0
-    if "command" not in cfg.run:
-        log.error("No run command found in run config, run config was: " + str(cfg.run))
-        raise KeyError
     try:
-        # dynamicly import run module from qtransform.run
-        module = __import__("qtransform.run", fromlist=[cfg.run.command])
-        cmd = getattr(module, cfg.run.command)
-        cmd.run(cfg)
+        app = instantiate(cfg.run)
+        app.run()
     except Exception as e:
         exit_code = 1 # generic error
         log.critical(f"Script execution failed. Reason: {e}", exc_info=True)
@@ -67,7 +65,6 @@ def main(cfg):
         exit(exit_code)
     log.info(f"Exited with Status Code: {str(exit_code)}")
 
-    
     pass
 
 if __name__ == "__main__":

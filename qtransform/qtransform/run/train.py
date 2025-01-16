@@ -186,7 +186,7 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
         
         # log for console
         log.info(f"last train loss was {str(last_loss)}")
-        
+
         # logs for wandb
         wandb_log_metrics["validate/loss"] = mean.item()
         wandb_log_metrics["train/loss"] = last_loss

@@ -1,6 +1,5 @@
 
 import logging
-import logging.handlers
 
 def addLoggingLevel(levelName, levelNum, methodName=None):
     """

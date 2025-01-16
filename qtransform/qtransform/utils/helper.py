@@ -83,7 +83,7 @@ def get_cwd() -> str:
 
 @ensure_folder
 def get_output_dir() -> str:
-    return os.path.join(get_cwd(), "outputs")
+    return os.path.join(get_cwd(), "qtransform")
 
 @ensure_folder
 def get_output_debug_dir() -> str:
