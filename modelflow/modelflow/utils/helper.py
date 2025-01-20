@@ -23,7 +23,7 @@ class _SingletonWrapper:
     def __call__(self, *args, **kwargs):
         """Returns a single instance of decorated class"""
         if self._instance is None:
-            self._instance = self.__wrapped__(*args, **kwargs)()
+            self._instance = self.__wrapped__(*args, **kwargs)
         return self._instance
 
     

@@ -1,23 +1,91 @@
 import abc
 import os
 import subprocess
+from string import Template
 import logging
-from dataclasses import dataclass
-from typing import Optional, TypeVar
+import re
+from dataclasses import dataclass, field
+from typing import Optional, Union, List, Set, List, TypeVar, Any, Dict
 from modelflow.utils.helper import singleton
-from modelflow.command.extract import Extractor
+import threading
+from hydra.utils import instantiate
+from functools import wraps
+import inspect
+from modelflow import CFG
 log = logging.getLogger(__name__)
 
-E = TypeVar("E", bound=Extractor)
+class StringTemplate(Template):
+    delimiter = '{{'
+    pattern = r'''
+    \{\{(?:
+        (?P<escaped>\{\{)|
+        (?P<named>[^\{\}\s]+)\}\}|
+        (?P<braced>[^\{\}\s]+)\}\}|
+        (?P<invalid>)
+    )
+    '''
+    
+def find_missing_variables(template_str: Union[List[str], str]) -> Set[str]:
+    def _find_missing_variables(template_s:str):
+        template = StringTemplate(template_s)
+        expected_vars = set(re.findall(template.pattern, template_s))
+        # Flatten the set of tuples and filter out non-variable patterns (like escaped '{{')
+        expected_vars = {match[1] or match[2] for match in expected_vars if match[1] or match[2]}
+        return expected_vars
+    r = set()
+    if isinstance(template_str, list):
+       for s in template_str:
+          r.union(_find_missing_variables(s))
+    else:
+        r.union(_find_missing_variables(s))
+    return r
+
+def expand_variables(template_str, **variables):
+    template = StringTemplate(template_str)
+    return template.safe_substitute(**variables)
+
+def expand_parameters(datastore):
+    def decorator(method):
+        @wraps(method)
+        def wrapper(self, *args, **kwargs):
+            # Retrieve the method's signature
+            sig = inspect.signature(method)
+            bound_args = sig.bind(self, *args, **kwargs)
+            bound_args.apply_defaults()
+            
+            new_args = list(args)
+            # Update args and kwargs with expanded variables from the datastore
+            for index, (name, value) in enumerate(bound_args.arguments.items()):
+                if name == 'self':
+                    continue
+                if isinstance(value, str):  # Only expand if value is a string
+                    if name in datastore:
+                        # If the parameter is positional
+                        if index-1 < len(args):
+                            new_args[index-1] = expand_variables(value, **datastore)
+                        # If the parameter is keyword
+                        else:
+                            kwargs[name] = expand_variables(value, **datastore)
+                    else:
+                        # Expand with available datastore variables even if not explicitly in datastore
+                        if index-1 < len(args):
+                            new_args[index-1] = expand_variables(value, **datastore)
+                        else:
+                            kwargs[name] = expand_variables(value, **datastore)
+
+            return method(self, *new_args, **kwargs)
+        return wrapper
+    return decorator
+
 @dataclass
 class Command(abc.ABC):
     cmd_args: str
-    extractor: Optional[E]
     @abc.abstractmethod
     def run(self, *args, **kwargs):
         raise NotImplementedError
-        pass
-
+    def __call__(self,  *args, **kwargs):
+        return self.run(args, kwargs)
+    
 @dataclass
 class SystemCommand(Command):
     cmd_bin: str
@@ -38,7 +106,7 @@ class SystemCommand(Command):
 class CommandCounter():
     """count executed commands and store command ids in a dict"""
     counter:int = 0
-    command_dict:dict = {}
+    command_dict:dict = field(default_factory= lambda: { })
 
     def inc(self, cmd=None):
         if cmd is None:
@@ -51,3 +119,206 @@ class CommandCounter():
     
     def get_command_dict(self):
         return self.command_dict
+    
+
+class VariableMeta(abc.ABC):
+    @abc.abstractmethod
+    def get_depended_vars(self)-> Set[str]:
+        """returns variables that this Class depends on. Always return a Set for API confirmaty"""
+        raise NotImplementedError
+
+@dataclass
+class Goal(VariableMeta):
+    @abc.abstractmethod
+    def run(self, *args, **kwargs):
+        pass   
+    def __call__(self,  *args, **kwargs):
+        return self.run(args, kwargs)
+class Source(VariableMeta):
+    """Source for whatever the saver tries to save inot a store or to a file"""
+    value: str # could be a variable or file path, meaning depends on impl-
+    def get_depended_vars(self):
+        """returns variables that this Class depends on"""
+        # return {v for set_of_v in self.values for v in find_missing_variables(set_of_v)}
+        return find_missing_variables(self.value)
+    
+    def get_value(self):
+        """return precess output based on value and the type of comannd"""
+        return self.value
+       
+    @abc.abstractmethod
+    def run(self, *args, **kwargs):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        return self.run(*args, **kwargs)
+    
+class OutputTimeoutException(Exception):
+    """Exception raised when an Output's timeout is reached without an update."""
+    def __init__(self, message):
+        super().__init__(message)
+        
+Sou = TypeVar("Sou", bound=Source)
+Goa = TypeVar("Goa", bound=Goal)
+Com = TypeVar("Com", bound=Command)
+@dataclass
+class Output():
+    """Outputs handle the command outputs and potentially saves some data to files or inside a variable"""
+    source: Sou
+    goals: Goa
+    command: Com
+    timeout: int = 60  # Timeout in seconds after command execution has ended and there is no update
+    _timer_thread = None
+    completed = False
+    
+    def __post_init__(self):
+        print(self.command)
+    
+    def update(self, *args, **kwargs) -> Any:
+        """logic to call an update, either after some dependen variable was updated in the VariableStore or after a Trigger event"""
+        if not self.completed:
+            self.completed = True
+            return self.updateOutput(*args, *kwargs)
+        else:
+            return None
+
+    def updateOutput(self, key) -> Any:
+        """
+        Called when the output key is updated. This should finish the output and write whatever output to the OutputManager.
+        Override this method in subclasses if necessary, otherwise standard logic just calls 
+        """
+        pass
+    
+    def start_timeout(self):
+        """
+        Start the timeout after the command is done.
+        """
+        # After the command finishes, reset the timer
+        if self._timer_thread is not None:
+            self._timer_thread.cancel()
+        self._timer_thread = threading.Timer(self.timeout, self.on_timeout)
+        self._timer_thread.start()
+    
+    def on_timeout(self):
+        """ So far: If a Output does not find an output the pipeline breaks """
+        raise OutputTimeoutException(f"Timeout reached without update for Observer {self} on command {self.command}")
+    
+    def __call__(self, *args, **kwargs):
+        return self.update(*args, **kwargs)
+
+class Store(abc.ABC):
+    """Base class for a variable Store. Holds inputs and outputs of commands and pipeline steps."""
+    # Holds any data, accessable by str keys, should always stay this way 
+    # _data: Dict[str, Any] = field(default_factory= lambda: {} ) 
+    def __init__(self):
+        self._data: Dict[str, Any] = {}
+        
+    def update_value(self, key, value):
+        self._data[key] = value
+        self._notify_outputs(key, value)
+
+    def read_value(self, key):
+        return self._data.get(key)
+
+    def _notify_outputs(self, key, value):
+        if key in self._outputs:
+            for output in self._outputs[key]:
+                output.update(key, value)
+    
+    def register_output(self, key, output):
+        if key not in self._outputs:
+            self._outputs[key] = []
+        self._outputs[key].append(output)
+
+    def unregister_output(self, key, output):
+        if key in self._outputs:
+            output.cancel_timeout()  # Cancel any running timeout timer
+            self._outputs[key].remove(output)
+            if not self._outputs[key]:  # If the list is empty, remove the key
+                del self._outputs[key]
+
+Sto = TypeVar("Sto", bound=Store)
+    
+# every type has to be callable 
+Tas = TypeVar('Tas', bound='Task')
+Com = TypeVar('Com', bound='Command')
+@dataclass
+class Task(abc.ABC):
+    outputs: Optional[List[Output]]
+    @abc.abstractmethod
+    def run(self, *args, **kwargs):
+        pass
+    def __call__(self,  *args, **kwargs):
+        return self.run(args, kwargs)
+@dataclass
+class MetaTaskList(Task):
+    common_cmd_args: str
+    tasks: List[Union[Tas, Com]]
+    
+@dataclass
+class Sequence(MetaTaskList):
+    
+    def run(self, *args, **kwargs):
+        for cmd in self.tasks:
+            cmd.run(*args, **kwargs)
+
+@dataclass
+class Parrallel(MetaTaskList):
+
+    def run(self, *args, **kwargs):
+        raise NotImplementedError
+    def __call__(self,  *args, **kwargs):
+        return self.run(args, kwargs)
+############## Impl ###################
+
+@dataclass
+class StdoutSource(Source):
+    re: str # regex to extract from string
+    
+    def run(self):
+        self.value = expand_variables(self.path, ) # variable interpolation!
+
+@dataclass
+class FilePathSource(Source):
+    path: str
+    def get_depended_vars(self)-> Set[str]:
+        raise NotImplementedError
+    
+    def run(self):
+        self.value = expand_variables(self.path, ) # variable interpolation!
+
+@dataclass
+class StoreVariableGoal(Goal):
+    key: str
+    value: Any = None
+    store: Sto = None
+    # def __post__init(self):
+    #     if self.store is None:
+    #         self.store = CFG()
+    
+    def get_depended_vars(self)-> Set[str]:
+        raise NotImplementedError
+    
+    def run(self, *args, **kwargs):
+        value = self.value
+        if value is None:
+            # dangerous but i think we will only ever have one output from a source called value
+            # we could also do this by kwargs then...
+            value = kwargs["value"] 
+        if self.store is None:
+            self.store = OutputManager() # singleton is also global, so we can just use this here (dirty but works i guess)
+        self.store.update_value(self.key, value)
+    
+@dataclass
+class FileCopyGoal(Goal):
+    pass
+
+@singleton()
+class OutputManager(Store):
+    """
+    Holds Information about Command Outputs and notifies outputs to subscribed keys in dict when a new value gets written to the output.
+    """
+    def __init__(self):
+        super().__init__()
+        log.info("creating output store")
+        pass

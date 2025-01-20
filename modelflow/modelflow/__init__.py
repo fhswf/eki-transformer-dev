@@ -3,6 +3,7 @@ import os
 from contextlib import contextmanager
 from modelflow.utils.helper import singleton
 from omegaconf import DictConfig
+from typing import KeysView, Any, ItemsView, Iterator
 log = logging.getLogger(__name__)
 
 def get_module_config_path():
@@ -62,7 +63,6 @@ def with_config(arg, loglevel):
     return wrapper_decorator
 
 
-    
 @singleton()
 class CFG(object):
     """Stores Config from Hydra compose"""
@@ -70,14 +70,59 @@ class CFG(object):
         self.cfg = cfg
         pass
     
-    def get_cfg(self):
+    def get_dict_cfg(self):
         return self.cfg
     
     def __call__(self):
-        return self.get_cfg()
+        return self.get_dict_cfg()
     
     def __repr__(self) -> str:
-        return self.get_cfg()
+        return str(self.get_dict_cfg())
     
     def __str__(self) -> str:
-        return self.get_cfg()
+        return str(self.get_dict_cfg())
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        return self.cfg.__setitem__(key, value)
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        if 'cfg' in self.__dict__.keys():
+            return self.__dict__['cfg'].__setattr__(key, value)
+        else:
+            return self.__dict__.update({key: value})
+
+    def __getattr__(self, key: str) -> Any:
+        if 'cfg' in self.__dict__.keys():
+            return self.__dict__['cfg'].__getattr__(key)
+        else:
+            return self.__dict__[key]
+
+    def __getitem__(self, key: Any) -> Any:
+        return self.cfg.__getitem__(key)
+
+    def __delattr__(self, key: str) -> None:
+        return self.cfg.__delattr__(key)
+
+    def __delitem__(self, key: Any) -> None:
+        return self.cfg.__delitem__(key)
+
+    def get(self, key: Any, default_value: Any = None) -> Any:
+        return self.cfg.get(key, default_value=default_value)
+
+    def keys(self) -> KeysView[Any]:
+        return self.cfg.keys()
+
+    def __contains__(self, key: object) -> bool:
+        return self.cfg.__contains__(key)
+
+    def __iter__(self) -> Iterator[Any]:
+        return self.cfg.__iter__()
+
+    def items(self) -> ItemsView[Any, Any]:
+        return self.cfg.items()
+
+    def __eq__(self, other: Any) -> bool:
+        return self.cfg.__eq__(other=other)
+
+    def __ne__(self, other: Any) -> bool:
+        return self.cfg.__ne__(other=other)

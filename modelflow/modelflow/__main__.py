@@ -5,6 +5,7 @@ from omegaconf import DictConfig, OmegaConf
 from hydra.utils import instantiate
 import logging
 import modelflow
+from modelflow.command.common import OutputManager
 from modelflow.utils import addLoggingHandler, addLoggingLevel
 from modelflow.utils.helper import get_cwd
 from modelflow.utils.id import ID
@@ -49,13 +50,17 @@ def main(cfg):
     CFG(cfg)
     log.debug("config:")
     log.debug(CFG())
+    
     # TODO check execution evironment
     # get modelflow ID and make flow dir for ID
     # launch qtransform commands
     exit_code=0
     try:
-        app = instantiate(cfg.run)
-        app.run()
+        # OutputManager is a global singelton accessed by OutputManager(), config gets upplied via global as well
+        OutputManager()
+        scheduler = instantiate(cfg.scheduler)
+        run_config = instantiate(cfg.run)
+        scheduler.run(run_config)
     except Exception as e:
         exit_code = 1 # generic error
         log.critical(f"Script execution failed. Reason: {e}", exc_info=True)
