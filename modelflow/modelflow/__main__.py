@@ -46,18 +46,18 @@ def module_wrapper(cfg: DictConfig):
 def main(cfg):
     if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
     log.info(f"Launch command: {sys.argv}")
+    log.info(f"modelflow ID: {ID}")
     log.info("Storing run config in global...")
     CFG(cfg)
     log.debug("config:")
     log.debug(CFG())
     
     # TODO check execution evironment
-    # get modelflow ID and make flow dir for ID
-    # launch qtransform commands
+    
     exit_code=0
     try:
         # OutputManager is a global singelton accessed by OutputManager(), config gets upplied via global as well
-        OutputManager()
+        store = OutputManager()  # noqa: F841
         scheduler = instantiate(cfg.scheduler)
         run_config = instantiate(cfg.run)
         scheduler.run(run_config)

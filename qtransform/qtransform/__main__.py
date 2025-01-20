@@ -39,7 +39,7 @@ def main():
     #     print("This script is not running inside a SLURM job.")
     # else:
     #     print(f"This script is running inside a SLURM job with SLURM_JOB_ID={os.environ['SLURM_JOB_ID']}")
-
+    
     cfg = ConfigSingleton().config
     OmegaConf.update(cfg, "runtime.choices", HydraConfig().instance().get().runtime.choices, force_add=True)
     logging.captureWarnings(True)
@@ -64,6 +64,8 @@ def main():
           
     if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
     log.info(f"Launch command: {sys.argv}")
+    log.info(f"qtransform ID: {ID}")
+
     log.debug(f'LAUNCHED WITH CONFIG: {cfg}')
     
     exit_code=0

@@ -5,7 +5,7 @@ from string import Template
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional, Union, List, Set, List, TypeVar, Any, Dict
+from typing import Optional, Union, List, Set, TypeVar, Any, Dict, KeysView, ItemsView
 from modelflow.utils.helper import singleton
 import threading
 from hydra.utils import instantiate
@@ -13,6 +13,10 @@ from functools import wraps
 import inspect
 from modelflow import CFG
 log = logging.getLogger(__name__)
+
+Sto = TypeVar("Sto", bound="Store")
+Tas = TypeVar('Tas', bound='Task') # has to be callable 
+Com = TypeVar('Com', bound='Command') # has to be callable 
 
 class StringTemplate(Template):
     delimiter = '{{'
@@ -44,7 +48,7 @@ def expand_variables(template_str, **variables):
     template = StringTemplate(template_str)
     return template.safe_substitute(**variables)
 
-def expand_parameters(datastore):
+def expand_parameters(datastore:Sto):
     def decorator(method):
         @wraps(method)
         def wrapper(self, *args, **kwargs):
@@ -58,7 +62,9 @@ def expand_parameters(datastore):
             for index, (name, value) in enumerate(bound_args.arguments.items()):
                 if name == 'self':
                     continue
+                
                 if isinstance(value, str):  # Only expand if value is a string
+                    
                     if name in datastore:
                         # If the parameter is positional
                         if index-1 < len(args):
@@ -207,41 +213,46 @@ class Output():
         return self.update(*args, **kwargs)
 
 class Store(abc.ABC):
-    """Base class for a variable Store. Holds inputs and outputs of commands and pipeline steps."""
-    # Holds any data, accessable by str keys, should always stay this way 
-    # _data: Dict[str, Any] = field(default_factory= lambda: {} ) 
+    """
+    Base class for a variable Store. Holds inputs and outputs of commands and pipeline steps.
+    Observers can be registered to listen to key updates. Not a dataclass so we can put multiple decorators around subclasses.
+    """
     def __init__(self):
+        # Holds any data, accessable by str keys, should always stay this way 
         self._data: Dict[str, Any] = {}
+        self._observer: Dict[str, Any] = {}
         
-    def update_value(self, key, value):
+    def update(self, key, value):
         self._data[key] = value
-        self._notify_outputs(key, value)
+        self._notify(key, value)
 
-    def read_value(self, key):
-        return self._data.get(key)
-
-    def _notify_outputs(self, key, value):
-        if key in self._outputs:
-            for output in self._outputs[key]:
-                output.update(key, value)
+    def keys(self) -> KeysView[Any]:
+        return self._data.keys()
     
-    def register_output(self, key, output):
-        if key not in self._outputs:
-            self._outputs[key] = []
-        self._outputs[key].append(output)
-
-    def unregister_output(self, key, output):
-        if key in self._outputs:
-            output.cancel_timeout()  # Cancel any running timeout timer
-            self._outputs[key].remove(output)
-            if not self._outputs[key]:  # If the list is empty, remove the key
-                del self._outputs[key]
-
-Sto = TypeVar("Sto", bound=Store)
+    def items(self) -> ItemsView[Any, Any]:
+        return self._data.items()
     
-# every type has to be callable 
-Tas = TypeVar('Tas', bound='Task')
-Com = TypeVar('Com', bound='Command')
+    def __contains__(self, value) -> bool:
+        return self.__dict__.keys().__contains__(value)
+    
+    def get(self, key, default) -> Any:
+        return self._data.get(key, default=default)
+    
+    def _notify(self, key, value):
+        if key in self._observers:
+            for observer in self._observers[key]:
+                observer.update(key, value)
+    
+    def register_observer(self, key, observer):
+        if key not in self._observers:
+            self._observers[key] = []
+        self._observers[key].append(observer)
+
+    def unregister_observer(self, key, observer):
+        if key in self._observers:
+            self._observers[key].remove(observer)
+            if not self._observers[key]:
+                del self._observers[key]
 @dataclass
 class Task(abc.ABC):
     outputs: Optional[List[Output]]
