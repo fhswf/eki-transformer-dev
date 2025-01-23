@@ -58,8 +58,11 @@ def main(cfg):
     try:
         # OutputManager is a global singelton accessed by OutputManager(), config gets upplied via global as well
         store = OutputManager()  # noqa: F841
+        log.info("creating scheduler")
         scheduler = instantiate(cfg.scheduler)
+        log.info("creating runc config")
         run_config = instantiate(cfg.run)
+        log.info("starting scheduler")
         scheduler.run(run_config)
     except Exception as e:
         exit_code = 1 # generic error

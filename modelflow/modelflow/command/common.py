@@ -1,5 +1,8 @@
 import abc
 import os
+from os import PathLike
+import time
+import datetime
 import subprocess
 from string import Template
 import logging
@@ -12,11 +15,53 @@ from hydra.utils import instantiate
 from functools import wraps
 import inspect
 from modelflow import CFG
+
 log = logging.getLogger(__name__)
 
 Sto = TypeVar("Sto", bound="Store")
 Tas = TypeVar('Tas', bound='Task') # has to be callable 
 Com = TypeVar('Com', bound='Command') # has to be callable 
+
+
+class CallerClassNotFoundException(Exception):
+    """Exception for when the caller class gets not found."""
+    def __init__(self, message):
+        super().__init__(message)
+
+    
+class OutputTimeoutException(Exception):
+    """Exception raised when an Output's timeout is reached without an update."""
+    def __init__(self, message):
+        super().__init__(message)
+        
+
+class RegexStringNotFoundException(Exception):
+    def __init__(self, message):
+        super().__init__(message)
+
+def find_caller_class(*target_class, raise_if_notfound=True):
+    """
+    Searches the call stack for an instance of the specified class.
+
+    Parameters:
+    - target_class: The class to search for in the call stack.
+
+    Returns:
+    A message indicating whether the class was found and in which function.
+    """
+    for frame_info in inspect.stack():
+        # Check if 'self' exists in the current frame's local variables
+        if 'self' in frame_info.frame.f_locals:
+            # Get the instance (self) from the frame
+            instance = frame_info.frame.f_locals['self']
+            # Check if instance is of target_class
+            if isinstance(instance, target_class):
+                log.debug(f"Found Target Caller in frame {instance.__name__}")
+                return instance
+    if raise_if_notfound:
+        log.warning(f"{target_class} not found in any frame.")
+    else:
+        raise CallerClassNotFoundException(f"Class {target_class} not found in call stack")
 
 class StringTemplate(Template):
     delimiter = '{{'
@@ -84,17 +129,37 @@ def expand_parameters(datastore:Sto):
     return decorator
 
 @dataclass
-class Command(abc.ABC):
-    cmd_args: str
+class Task(abc.ABC):
+    outputs: Optional[List['Output']]
+    task_ouput: Any = None # holds arbitrary data from task, can be ephemeral
+    def __post_init__(self):
+        self.started_at = None
+        self.completed_at = None
+        self.success = None
+        
+    def run_outputs(self):
+        for output in self.outputs:
+            output()
+        pass
+    
+    def complete(self, success):
+        self.completed_at = datetime.datetime.now()
+        self.success = success
+    
     @abc.abstractmethod
     def run(self, *args, **kwargs):
-        raise NotImplementedError
+        pass
+    
     def __call__(self,  *args, **kwargs):
         return self.run(args, kwargs)
+
+@dataclass
+class Command(Task):
+    cmd_args: str = None
     
 @dataclass
 class SystemCommand(Command):
-    cmd_bin: str
+    cmd_bin: str = None
     
     def subprocess_run(self, shell=bool):
         result = None
@@ -106,27 +171,7 @@ class SystemCommand(Command):
 
     def run(self):
         return self.subprocess_run(True)
-
-@singleton
-@dataclass
-class CommandCounter():
-    """count executed commands and store command ids in a dict"""
-    counter:int = 0
-    command_dict:dict = field(default_factory= lambda: { })
-
-    def inc(self, cmd=None):
-        if cmd is None:
-            self.command_dict.update({self.counter: cmd})
-        self.counter = self.counter + 1
-        return self.counter
     
-    def get_counter(self):
-        return self.counter
-    
-    def get_command_dict(self):
-        return self.command_dict
-    
-
 class VariableMeta(abc.ABC):
     @abc.abstractmethod
     def get_depended_vars(self)-> Set[str]:
@@ -135,14 +180,22 @@ class VariableMeta(abc.ABC):
 
 @dataclass
 class Goal(VariableMeta):
+    def get_depended_vars(self):
+        raise NotImplementedError
+    
     @abc.abstractmethod
     def run(self, *args, **kwargs):
         pass   
     def __call__(self,  *args, **kwargs):
         return self.run(args, kwargs)
+
+@dataclass
 class Source(VariableMeta):
     """Source for whatever the saver tries to save inot a store or to a file"""
-    value: str # could be a variable or file path, meaning depends on impl-
+    # value: str = None # could be a variable or file path, meaning depends on impl-
+    def __post_init__(self):
+        self.value = None
+    
     def get_depended_vars(self):
         """returns variables that this Class depends on"""
         # return {v for set_of_v in self.values for v in find_missing_variables(set_of_v)}
@@ -158,28 +211,23 @@ class Source(VariableMeta):
 
     def __call__(self, *args, **kwargs):
         return self.run(*args, **kwargs)
-    
-class OutputTimeoutException(Exception):
-    """Exception raised when an Output's timeout is reached without an update."""
-    def __init__(self, message):
-        super().__init__(message)
-        
+
 Sou = TypeVar("Sou", bound=Source)
 Goa = TypeVar("Goa", bound=Goal)
 Com = TypeVar("Com", bound=Command)
+#Out = TypeVar("Out", bound=Output)
 @dataclass
 class Output():
     """Outputs handle the command outputs and potentially saves some data to files or inside a variable"""
-    source: Sou
-    goals: Goa
-    command: Com
+    source: Any = None
+    goals: Any = None
     timeout: int = 60  # Timeout in seconds after command execution has ended and there is no update
     _timer_thread = None
     completed = False
     
-    def __post_init__(self):
-        print(self.command)
-    
+    def reset_completion(self):
+        self.completed = False
+        
     def update(self, *args, **kwargs) -> Any:
         """logic to call an update, either after some dependen variable was updated in the VariableStore or after a Trigger event"""
         if not self.completed:
@@ -253,18 +301,11 @@ class Store(abc.ABC):
             self._observers[key].remove(observer)
             if not self._observers[key]:
                 del self._observers[key]
-@dataclass
-class Task(abc.ABC):
-    outputs: Optional[List[Output]]
-    @abc.abstractmethod
-    def run(self, *args, **kwargs):
-        pass
-    def __call__(self,  *args, **kwargs):
-        return self.run(args, kwargs)
+
 @dataclass
 class MetaTaskList(Task):
-    common_cmd_args: str
-    tasks: List[Union[Tas, Com]]
+    common_cmd_args: str = None
+    tasks: List[Union[Tas, Com]] = field(default_factory=lambda: [])
     
 @dataclass
 class Sequence(MetaTaskList):
@@ -284,11 +325,30 @@ class Parrallel(MetaTaskList):
 
 @dataclass
 class StdoutSource(Source):
-    re: str # regex to extract from string
+    regex: str # regex to extract from string
+    def __post_init__(self):
+        super().__post_init__()
+        self.pattern = re.compile(self.regex)
+        
+    def get_task_output(self, *classes):
+        relevant_caller = find_caller_class(*classes)
+        return relevant_caller.task_output
     
     def run(self):
-        self.value = expand_variables(self.path, ) # variable interpolation!
-
+        # expand_variables(self.path, ) # variable interpolation might break regex?
+        task_ouput = self.get_task_output(Command, Task)
+        match = self.pattern.match(task_ouput)
+        extracted_string = None
+        if match:
+            extracted_string = match.group(1)
+            log.info(f"{extracted_string} extracted from task output")
+        else:
+            raise RegexStringNotFoundException(f"Could not extract {self.regex} from task output")
+            
+        self.value = extracted_string
+        #maybe we could do var expansion here? prob not necessary, if so this has to be a parameter
+        return self.value
+        
 @dataclass
 class FilePathSource(Source):
     path: str
@@ -300,15 +360,12 @@ class FilePathSource(Source):
 
 @dataclass
 class StoreVariableGoal(Goal):
-    key: str
+    key: str = None
     value: Any = None
-    store: Sto = None
+    store: Any = None
     # def __post__init(self):
     #     if self.store is None:
     #         self.store = CFG()
-    
-    def get_depended_vars(self)-> Set[str]:
-        raise NotImplementedError
     
     def run(self, *args, **kwargs):
         value = self.value
@@ -322,7 +379,23 @@ class StoreVariableGoal(Goal):
     
 @dataclass
 class FileCopyGoal(Goal):
-    pass
+    to: Any = None
+    def __post_init__(self):
+        to = self.to
+        to = os.path.expandvars(path=to)
+        to = os.path.expanduser(path=to)
+        os.makedirs(to, exist_ok=True)
+        self.to = to
+    
+    def run(self, *args, **kwargs):
+        value = None # comes from source object, Goal should get called with a source object or Command as ref 
+        if "value" in kwargs.keys():
+            # dangerous but i think we will only ever have one output from a source called value
+            # we could also do this by kwargs then...
+            value = kwargs["value"] 
+        if self.store is None:
+            self.store = OutputManager() # singleton is also global, so we can just use this here (dirty but works i guess)
+        self.store.update_value(self.key, value)
 
 @singleton()
 class OutputManager(Store):
