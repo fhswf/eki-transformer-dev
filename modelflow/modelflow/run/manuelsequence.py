@@ -1,4 +1,4 @@
-from modelflow.command.common import MetaTaskList
+from modelflow.command.common import TaskInterator
 from dataclasses import dataclass
 from hydra.core.hydra_config import HydraConfig
 from omegaconf import DictConfig, OmegaConf
@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 S = TypeVar("S", bound="Scheduler")
 
 @dataclass
-class ManuelSequence(MetaTaskList):
+class ManuelSequence(TaskInterator):
     scheduler: Scheduler = instantiate(CFG().scheduler)
     def __post_init__(self):
         # self.scheduler = instantiate(CFG().scheduler)

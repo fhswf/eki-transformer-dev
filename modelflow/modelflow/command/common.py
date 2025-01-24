@@ -136,6 +136,7 @@ class Task(abc.ABC):
         self.started_at = None
         self.completed_at = None
         self.success = None
+        self.name = None
         
     def run_outputs(self):
         for output in self.outputs:
@@ -146,6 +147,9 @@ class Task(abc.ABC):
         self.completed_at = datetime.datetime.now()
         self.success = success
     
+    def is_completed(self):
+        return self.success is not None
+    
     @abc.abstractmethod
     def run(self, *args, **kwargs):
         pass
@@ -153,6 +157,12 @@ class Task(abc.ABC):
     def __call__(self,  *args, **kwargs):
         return self.run(args, kwargs)
 
+    def __repr__(self):
+        return f"{self.__class__}:{self.name}"
+
+    def __str__(self):
+        return f"{self.__class__}:{self.name}"
+    
 @dataclass
 class Command(Task):
     cmd_args: str = None
@@ -303,19 +313,31 @@ class Store(abc.ABC):
                 del self._observers[key]
 
 @dataclass
-class MetaTaskList(Task):
+class TaskInterator(Task):
+    """"""
     common_cmd_args: str = None
-    tasks: List[Union[Tas, Com]] = field(default_factory=lambda: [])
+    tasks: List[Task] = field(default_factory=lambda: [])
+    
+    def is_completed(self):
+        return len(self.tasks) <= 0 or any([not t.is_completed() for t in self.tasks])
+    
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> Task: # Python 2: def next(self)
+        # first Task in list is always the one to run by default, you may want to change this in a subclass
+        return next(t for t in self.tasks if not t.is_completed())
+
     
 @dataclass
-class Sequence(MetaTaskList):
+class Sequence(TaskInterator):
     
     def run(self, *args, **kwargs):
         for cmd in self.tasks:
             cmd.run(*args, **kwargs)
 
 @dataclass
-class Parrallel(MetaTaskList):
+class Parrallel(TaskInterator):
 
     def run(self, *args, **kwargs):
         raise NotImplementedError

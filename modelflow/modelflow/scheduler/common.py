@@ -1,13 +1,29 @@
 import abc
-from typing import Callable, List, Union
+from typing import Callable, List, Union, Any, Type
 import time
 import logging
+import datetime
 from dataclasses import dataclass
 import pickle
-from modelflow.command.common import Task
+from modelflow.command.common import Task, TaskInterator
 
 log = logging.getLogger(__name__)
 
+class JobExecutionException(Exception):
+    """Exception raised when an Job failed"""
+    def __init__(self, message):
+        super().__init__(message)
+
+
+class JobExecutionTimeoutException(Exception):
+    """Exception raised when an Job timeout (forcefully)"""
+    def __init__(self, message):
+        super().__init__(message)
+        
+class JobConversionException(Exception):
+    """Exception raised when an Job failed"""
+    def __init__(self, message):
+        super().__init__(message)
 
 class Serializable(abc.ABC):
     @abc.abstractmethod
@@ -36,44 +52,86 @@ class Serializable(abc.ABC):
         pass
     
     
-class Scheduler(Serializable):
-    """Abstract Base class for a shuduler that launches commands. Enables save state loading."""
+
+@dataclass
+class Job(abc.ABC):
+    task: Task = None
+    breaking_timeout = None # maximum timeout for a job in seconds
+    started_at = None
+    finished_at = None
+    
+    def __post_init__(self):
+        if self.convert_task_to_job(self.task):
+            log.info("job conversion completed")
+        else: 
+            raise JobConversionException()
+        pass
     
     @abc.abstractmethod
-    def run(self, run_config:Task, *args, **kwargs):
-        """launches sheduler"""
-        raise NotImplementedError
-        pass
-    
-@dataclass
-class Job():
-    start: Callable
-    cancel: Callable
-    check: Callable
-
     def start(self, *args, **kwargs):
-        self.status = self.start(*args, **kwargs)
-        pass
-
-    def cancel(self):
-        self.cancel(self.status)
-        pass
+        raise NotImplementedError
     
-    def check(self):
-        self.check(self.status)
-        pass
+    def run(self, *args, **kwargs):
+        ret = self.start(*args, **kwargs)
+        return ret 
+            
+    def __call__(self, *args, **kwargs):
+        return self.run(*args, **kwargs)
+
+    @abc.abstractmethod
+    def cancel(self, *args, **kwargs):
+        raise NotImplementedError
     
-    @property
-    def status(self):
-        return self.status
+    @abc.abstractmethod 
+    def is_completed(self, *args, **kwargs):
+        raise NotImplementedError
+    
+    @abc.abstractmethod 
+    def convert_task_to_job(self) -> bool:
+        """supposed to fill class attributes with information to acutally run the task"""
+        raise NotImplementedError
+    
+    def wait_for_completion(self, timeout:int=None, polling_secs:int=10):
+        """blocking loop that waits for is_completed to return True"""
+        if timeout is None:
+            if self.breaking_timeout is not None:
+                timeout = self.breaking_timeout
+            else:
+                log.warning(f"waiting for job completion for job {self} without timeout")
+        while not self.is_completed():
+            time.sleep(polling_secs)
+            if timeout is not None:
+                if  (datetime.now() - self.started_at).total_seconds() > timeout:
+                    self.cancel()
+                    raise JobExecutionTimeoutException(f"job {self} canceled due to timeout")
+        return True
+            
+@dataclass
+class Scheduler(Serializable):
+    """Abstract Base class for a shuduler that launches commands. Enables save state loading."""
+    policy: Any  = None
+    jobClazz: Type[Job] = None
 
-    @status.setter
-    def status(self, value):
-        self.status = value
-
-
+    def run(self, taskInterator: TaskInterator, *args, **kwargs):
+        """launches sheduler"""
+        if self.policy is not None:
+            self.policy.run(taskInterator, self.jobClazz)
+        else:
+            for task in taskInterator:
+                job = self.jobClazz(task)
+                log.info(f"{self.__class__} Running: {job}")
+                job() # runs job.start()
+                job.started_at = datetime.now()
+                job.wait_for_completion()
+                job.finished_at = datetime.now()
+                log.info(f"{self.__class__} Completed: {job}")
+            
+    def __call__(self, taskInterator: TaskInterator, *args, **kwargs):
+        return self.run(taskInterator, *args, **kwargs)
+    
+"""
 class Policy(abc.ABC):
-    """Runs commands based on the policy. Launch and wait commands can not have arguments atm."""
+    # Runs commands based on the policy. Launch and wait commands can not have arguments atm.
     @abc.abstractmethod
     def execute(self, launch_commands: List[Job], completion_condition: Callable):
         pass
@@ -95,10 +153,6 @@ class SequentialPolicy(Policy):
             log.info(f"Job {log} completed")
 
 
-
-    
-    
-"""
 class ParallelPolicy(Policy):
     def execute(self, commands, submit_command, is_job_complete):
         job_ids = [submit_command(cmd) for cmd in commands]
@@ -108,35 +162,4 @@ class ParallelPolicy(Policy):
                     print(f"Job {job_id} completed")
                     job_ids.remove(job_id)
             time.sleep(10)  # Check every 10 seconds
-
-# Scheduler for UNIX processes
-class UnixScheduler(Scheduler):
-    def run_all(self):
-        for task in self.tasks:
-            print(f"Running: {task.command}")
-            task.started_at = time.time()
-            result = subprocess.run(task.command, shell=True, capture_output=True, text=True)  # Note: security implications
-            task.completed_at = time.time()
-            task.success = (result.returncode == 0)
-            if task.success:
-                print(f"Output: {result.stdout}")
-            else:
-                print(f"Error: {result.stderr}")
-
-# Scheduler for Slurm tasks
-class SlurmScheduler(Scheduler):
-    def run_all(self):
-        for task in self.tasks:
-            # Command modification for Slurm can be handled here, or within the Task itself
-            print(f"Submitting to Slurm: {task.command}")
-            task.started_at = time.time()
-            # In a real scenario, replace the echo command with sbatch submission
-            result = subprocess.run(f"echo 'sbatch {task.command}'", shell=True, capture_output=True, text=True)  # Placeholder for actual sbatch command
-            task.completed_at = time.time()
-            task.success = (result.returncode == 0)
-            if task.success:
-                print(f"Slurm job submitted, fake output: {result.stdout}")
-            else:
-                print(f"Slurm submission error: {result.stderr}")
-                
 """
