@@ -112,20 +112,29 @@ class Scheduler(Serializable):
     policy: Any  = None
     jobClazz: Type[Job] = None
 
-    def run(self, taskInterator: TaskInterator, *args, **kwargs):
+    def run(self, maybeTaskInterator: Union[TaskInterator,Task] , *args, **kwargs):
         """launches sheduler"""
-        if self.policy is not None:
-            self.policy.run(taskInterator, self.jobClazz)
-        else:
-            for task in taskInterator:
-                job = self.jobClazz(task)
-                log.info(f"{self.__class__} Running: {job}")
-                job() # runs job.start()
-                job.started_at = datetime.now()
-                job.wait_for_completion()
-                job.finished_at = datetime.now()
-                log.info(f"{self.__class__} Completed: {job}")
+        def _run(task):
+            job = self.jobClazz(task)
+            log.info(f"{self.__class__} Running: {job}")
+            job() # runs job.start()
+            job.started_at = datetime.now()
+            job.wait_for_completion()
+            job.finished_at = datetime.now()
+            log.info(f"{self.__class__} Completed: {job}")
             
+        if self.policy is not None:
+            self.policy.run(maybeTaskInterator, self.jobClazz)
+        else:
+            if isinstance(maybeTaskInterator, TaskInterator):
+                for task in maybeTaskInterator:
+                    _run(task)
+            elif isinstance(maybeTaskInterator,Task):
+                _run(maybeTaskInterator)
+    
+    def get_save_attributes(self):
+        return ["policy", "jobClazz"]
+       
     def __call__(self, taskInterator: TaskInterator, *args, **kwargs):
         return self.run(taskInterator, *args, **kwargs)
     

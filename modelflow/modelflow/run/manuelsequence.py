@@ -13,10 +13,10 @@ S = TypeVar("S", bound="Scheduler")
 
 @dataclass
 class ManuelSequence(TaskInterator):
-    scheduler: Scheduler = instantiate(CFG().scheduler)
+    # scheduler: Scheduler = instantiate(CFG().scheduler)
     def __post_init__(self):
         # self.scheduler = instantiate(CFG().scheduler)
         pass
     
-    def run(self):
+    def run(self, scheduler: Scheduler):
         pass

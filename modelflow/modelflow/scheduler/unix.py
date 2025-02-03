@@ -59,4 +59,10 @@ class UnixJob(Job):
 
 class UnixScheduler(Scheduler):
     """convenience class for local unix execution"""
-    jobClazz: Type[UnixJob] = UnixJob
+    
+    def __post_init__(self):
+        print(self.get_save_attributes())
+        pass
+    
+    def get_save_attributes(self):
+        return super().get_save_attributes()

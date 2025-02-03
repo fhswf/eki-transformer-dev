@@ -8,17 +8,17 @@ from string import Template
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Optional, Union, List, Set, TypeVar, Any, Dict, KeysView, ItemsView
+from typing import Optional, Union, List, Set, TypeVar, Any, Dict, KeysView, ItemsView, ClassVar
 from modelflow.utils.helper import singleton
 import threading
 from hydra.utils import instantiate
 from functools import wraps
 import inspect
 from modelflow import CFG
+from modelflow.store.store import OutputManager
 
 log = logging.getLogger(__name__)
 
-Sto = TypeVar("Sto", bound="Store")
 Tas = TypeVar('Tas', bound='Task') # has to be callable 
 Com = TypeVar('Com', bound='Command') # has to be callable 
 
@@ -84,16 +84,17 @@ def find_missing_variables(template_str: Union[List[str], str]) -> Set[str]:
     r = set()
     if isinstance(template_str, list):
        for s in template_str:
-          r.union(_find_missing_variables(s))
+          r = r.union(_find_missing_variables(s))
     else:
-        r.union(_find_missing_variables(s))
+        r = r.union(_find_missing_variables(s))
     return r
 
 def expand_variables(template_str, **variables):
     template = StringTemplate(template_str)
     return template.safe_substitute(**variables)
 
-def expand_parameters(datastore:Sto):
+def expand_parameters(filter=[]):
+    datastore = OutputManager()
     def decorator(method):
         @wraps(method)
         def wrapper(self, *args, **kwargs):
@@ -105,6 +106,9 @@ def expand_parameters(datastore:Sto):
             new_args = list(args)
             # Update args and kwargs with expanded variables from the datastore
             for index, (name, value) in enumerate(bound_args.arguments.items()):
+                if len(filter) > 0 and name not in filter:
+                    continue
+                
                 if name == 'self':
                     continue
                 
@@ -128,15 +132,37 @@ def expand_parameters(datastore:Sto):
         return wrapper
     return decorator
 
+def expand_class_attributes(filter=[]):
+    datastore = OutputManager()
+    def decorator(method):
+        @wraps(method)
+        def wrapper(self, *args, **kwargs):
+            # First, expand the class attributes using the given datastore
+            for attr_name, attr_value in vars(self).items():
+                if len(filter) > 0 and attr_name not in filter:
+                    continue
+                
+                if isinstance(attr_value, str):
+                    setattr(self, attr_name, expand_variables(attr_value, **datastore))
+            
+            # Now call the original method
+            return method(self, *args, **kwargs)
+        return wrapper
+    return decorator
+
 @dataclass
 class Task(abc.ABC):
-    outputs: Optional[List['Output']]
-    task_ouput: Any = None # holds arbitrary data from task, can be ephemeral
+    outputs: Optional[List['Output']] = None
+    name: Union[str, None] = None
+    _task_Counter: ClassVar[list[int]] = 0
+    # task_ouput: Any = None # holds arbitrary data from task, can be ephemeral
     def __post_init__(self):
         self.started_at = None
         self.completed_at = None
         self.success = None
-        self.name = None
+        if self.name is None:
+            self.name = f"{self.__class__}{self.__class__._task_Counter}"
+            self.__class__._task_Counter = self.__class__._task_Counter + 1
         
     def run_outputs(self):
         for output in self.outputs:
@@ -150,9 +176,11 @@ class Task(abc.ABC):
     def is_completed(self):
         return self.success is not None
     
-    @abc.abstractmethod
-    def run(self, *args, **kwargs):
-        pass
+    def get_success(self):
+        return self.success
+    
+    def run(self, scheduler, *args, **kwargs):
+        return scheduler.run(*args, **kwargs) 
     
     def __call__(self,  *args, **kwargs):
         return self.run(args, kwargs)
@@ -251,7 +279,7 @@ class Output():
         Called when the output key is updated. This should finish the output and write whatever output to the OutputManager.
         Override this method in subclasses if necessary, otherwise standard logic just calls 
         """
-        pass
+        log.info(f"Output {self} updated with key {key}")
     
     def start_timeout(self):
         """
@@ -268,66 +296,50 @@ class Output():
         raise OutputTimeoutException(f"Timeout reached without update for Observer {self} on command {self.command}")
     
     def __call__(self, *args, **kwargs):
+        log.info(f"Running output {self}")
         return self.update(*args, **kwargs)
-
-class Store(abc.ABC):
-    """
-    Base class for a variable Store. Holds inputs and outputs of commands and pipeline steps.
-    Observers can be registered to listen to key updates. Not a dataclass so we can put multiple decorators around subclasses.
-    """
-    def __init__(self):
-        # Holds any data, accessable by str keys, should always stay this way 
-        self._data: Dict[str, Any] = {}
-        self._observer: Dict[str, Any] = {}
-        
-    def update(self, key, value):
-        self._data[key] = value
-        self._notify(key, value)
-
-    def keys(self) -> KeysView[Any]:
-        return self._data.keys()
-    
-    def items(self) -> ItemsView[Any, Any]:
-        return self._data.items()
-    
-    def __contains__(self, value) -> bool:
-        return self.__dict__.keys().__contains__(value)
-    
-    def get(self, key, default) -> Any:
-        return self._data.get(key, default=default)
-    
-    def _notify(self, key, value):
-        if key in self._observers:
-            for observer in self._observers[key]:
-                observer.update(key, value)
-    
-    def register_observer(self, key, observer):
-        if key not in self._observers:
-            self._observers[key] = []
-        self._observers[key].append(observer)
-
-    def unregister_observer(self, key, observer):
-        if key in self._observers:
-            self._observers[key].remove(observer)
-            if not self._observers[key]:
-                del self._observers[key]
 
 @dataclass
 class TaskInterator(Task):
-    """"""
-    common_cmd_args: str = None
+    """
+    Task abstraction to hold a sequence of Tasks implemented as an iterator.
+     
+    """
+    common_cmd_args: str = ""
     tasks: List[Task] = field(default_factory=lambda: [])
     
     def is_completed(self):
         return len(self.tasks) <= 0 or any([not t.is_completed() for t in self.tasks])
     
-    def __iter__(self):
+    def __iter__(self): # return iterable, so self in this case as this class implements __next__
         return self
 
     def __next__(self) -> Task: # Python 2: def next(self)
         # first Task in list is always the one to run by default, you may want to change this in a subclass
-        return next(t for t in self.tasks if not t.is_completed())
+        self.__before_task__()
+        print("=============")
+        print(self.tasks)
+        print(type(self.tasks[0]))
+        print(self.tasks[0])
+        item = next(t for t in self.tasks if not t.is_completed())
+        self.__after_task__()
+        return item
+    
+    def __after_task__(self):
+        """hook that triggers after __next__ call internally (inside __next__)"""
+        pass
+    
+    def __before_task__(self):
+        """hook that triggers before __next__ call internally (inside __next__)"""
+        pass
+    
+    def run(self, scheduler, *args, **kwargs):
+        """not recommended calling chain, use run of scheudler please"""
+        log.warning("not recommended calling chain, use run of scheudler please")
+        return scheduler.run(*args, **kwargs) 
 
+    def __str__(self):
+        return f"{self.__class__}:{self.name}-{self.tasks}"
     
 @dataclass
 class Sequence(TaskInterator):
@@ -404,13 +416,17 @@ class FileCopyGoal(Goal):
     to: Any = None
     def __post_init__(self):
         to = self.to
-        to = os.path.expandvars(path=to)
+        to = os.path.expandvars(path=self.to)
         to = os.path.expanduser(path=to)
-        os.makedirs(to, exist_ok=True)
         self.to = to
-    
+                 
+    @expand_class_attributes(filter=["to"])
     def run(self, *args, **kwargs):
         value = None # comes from source object, Goal should get called with a source object or Command as ref 
+        log.info(f"Copying file {value} to {self.to}")
+        #datastore = OutputManager()
+        #to = expand_variables(self.to, **datastore)
+        os.makedirs(self.to, exist_ok=True)
         if "value" in kwargs.keys():
             # dangerous but i think we will only ever have one output from a source called value
             # we could also do this by kwargs then...
@@ -418,13 +434,3 @@ class FileCopyGoal(Goal):
         if self.store is None:
             self.store = OutputManager() # singleton is also global, so we can just use this here (dirty but works i guess)
         self.store.update_value(self.key, value)
-
-@singleton()
-class OutputManager(Store):
-    """
-    Holds Information about Command Outputs and notifies outputs to subscribed keys in dict when a new value gets written to the output.
-    """
-    def __init__(self):
-        super().__init__()
-        log.info("creating output store")
-        pass
