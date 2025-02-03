@@ -122,16 +122,18 @@ class Scheduler(Serializable):
             job.wait_for_completion()
             job.finished_at = datetime.now()
             log.info(f"{self.__class__} Completed: {job}")
-            
+        log.debug(f"scheudler running {type(maybeTaskInterator)}")
         if self.policy is not None:
             self.policy.run(maybeTaskInterator, self.jobClazz)
         else:
             if isinstance(maybeTaskInterator, TaskInterator):
                 for task in maybeTaskInterator:
+                    log.debug(f"running task {task}")
                     _run(task)
-            elif isinstance(maybeTaskInterator,Task):
+            elif isinstance(maybeTaskInterator, Task):
                 _run(maybeTaskInterator)
-    
+            else: 
+                raise NotImplementedError(f"{self} TaskInterator or Task expected")
     def get_save_attributes(self):
         return ["policy", "jobClazz"]
        

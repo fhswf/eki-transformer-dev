@@ -317,10 +317,8 @@ class TaskInterator(Task):
     def __next__(self) -> Task: # Python 2: def next(self)
         # first Task in list is always the one to run by default, you may want to change this in a subclass
         self.__before_task__()
-        print("=============")
         print(self.tasks)
-        print(type(self.tasks[0]))
-        print(self.tasks[0])
+        print(self.tasks[0].is_completed())    
         item = next(t for t in self.tasks if not t.is_completed())
         self.__after_task__()
         return item
@@ -346,6 +344,7 @@ class Sequence(TaskInterator):
     
     def run(self, *args, **kwargs):
         for cmd in self.tasks:
+            log.info(f"{self} running {cmd}")
             cmd.run(*args, **kwargs)
 
 @dataclass
