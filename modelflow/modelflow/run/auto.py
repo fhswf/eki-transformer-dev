@@ -1,4 +1,4 @@
-from modelflow.command.common import Task, TaskInterator
+from modelflow.command.common import Task, TaskInterator, Command
 from modelflow.scheduler.common import Serializable
 from dataclasses import dataclass
 from typing import Any
@@ -12,23 +12,39 @@ log = logging.getLogger(__name__)
 @dataclass    
 class LayerExchange(TaskInterator, Serializable):
     # TODO only works for qtransform atm 
-    cmd_args : str = ""
+    exchange_loop_cmd : str = ""
     source_layer: str = ""
     target_layer: str = ""
     strategy: str = "first" # TODO replace this with enum or class
     until: Any  = None # TODO replace this with enum or class
     current_step: Any = None
+    init_cmd: str = "" 
     def __post_init__(self):
         # prepare call pipeline, do we replace layer by layer here or within qtransform?
         # logic here could be done on a graph basis independend on training framework
         # self.tasks = [] # done in super
         super().__post_init__()
-        self.__after_task__()
     
     def maybe_create_sub_task(self)->Task:
         """create a sub tasks for a conversion step and fill missing parts of sub tasks with task content of this taskiterators common attr"""
         if self.check_conversion_done():
             self.create_sub_task()
+    
+    def create_sub_task(self):
+        """create a sub task for a conversion step"""
+        if self.current_step == 0 and len(self.init_cmd) > 0:
+            cmd = self.init_cmd
+        else:
+            cmd = self.exchange_loop_cmd
+        
+        sub_task = Command(
+            cmd=cmd,
+            outputs=self.outputs,
+            name=f"ConversionStep{self.current_step}",
+        )
+        self.tasks.append(sub_task)
+        self.current_step = self.current_step + 1
+        log.info(f"Created sub task: {sub_task}")
             
     def get_checkpoint_location(self):
         """query the checkpoint location from last command output from OutputManager. key is run_chkpt"""
@@ -117,12 +133,17 @@ class LayerExchange(TaskInterator, Serializable):
         log.info("Model layers replaced and checkpoint saved.")
         
     def check_conversion_done(self):
-        # check if conversion was completed by checking the saved model, or the output logs
-        return self.parse_torch_model() > 0
-    
+        if self.get_checkpoint_location() is None and (self.init_cmd is None or len(self.init_cmd) == 0):    
+            raise Exception("No checkpoint location found and no init_cmd provided to create one.")
+        else:
+            log.info("No init_cmd found, but checkpoint exists. ignoring init_cmd.")
+            
+        layers_to_do = self.parse_torch_model() > 0
+        return not layers_to_do
+        
     def get_save_attributes(self):
         return ["source_layer", "target_layer", "strategy", "until", "current_step"]
 
-    def __after_task__(self):
+    def __before_task__(self):
         # check if conversion was completed by checking the saved model, or the output logs
         self.maybe_create_sub_task()

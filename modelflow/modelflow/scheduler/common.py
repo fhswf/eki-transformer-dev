@@ -112,6 +112,9 @@ class Scheduler(Serializable):
     policy: Any  = None
     jobClazz: Type[Job] = None
 
+    def __post_init__(self):
+        pass
+    
     def run(self, maybeTaskInterator: Union[TaskInterator,Task] , *args, **kwargs):
         """launches sheduler"""
         def _run(task):

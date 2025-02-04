@@ -44,6 +44,7 @@ class UnixJob(Job):
         return False
     
     def convert_task_to_job(self, task:Task):
+        print(task)
         raise NotImplementedError
 
     def get_process(self):
@@ -59,8 +60,10 @@ class UnixJob(Job):
 
 class UnixScheduler(Scheduler):
     """convenience class for local unix execution"""
+    jobClazz:Type[Job] = UnixJob
     
     def __post_init__(self):
+        super().__post_init__()
         print(self.get_save_attributes())
         pass
     

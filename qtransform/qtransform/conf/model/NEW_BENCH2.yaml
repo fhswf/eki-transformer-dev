@@ -1,5 +1,6 @@
 cls: GPT
 calc_loss_in_model: True
+type: checkpoint # TODO not sure if neccessary
 args:
   n_layer : 2
   n_head : 4

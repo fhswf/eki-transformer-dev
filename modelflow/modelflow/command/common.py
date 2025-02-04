@@ -193,16 +193,15 @@ class Task(abc.ABC):
     
 @dataclass
 class Command(Task):
-    cmd_args: str = None
+    cmd: str = ""
     
 @dataclass
 class SystemCommand(Command):
-    cmd_bin: str = None
     
     def subprocess_run(self, shell=bool):
         result = None
         try:
-            result: subprocess.CompletedProcess = subprocess.run(self.cmd_bin + " " + self.cmd_args, shell=shell, check=True)    
+            result: subprocess.CompletedProcess = subprocess.run(self.cmd, shell=shell, check=True)    
         except subprocess.CalledProcessError as e:
             log.exception(f"subprocess ended with error {e}")
         return result

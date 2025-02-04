@@ -1,13 +1,51 @@
 # hydra config for class same as file name:
 _target_: modelflow.command.Sequence
 tasks: # tasks are all in sequence
+  - _target_: modelflow.command.SystemCommand
+    cmd: "qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=2 run.max_iters=10 tokenizer=tsV2  model=NEW_BENCH2"
+    outputs:
+      - _target_: modelflow.command.Output
+        source:
+          _target_: modelflow.command.StdoutSource # needs to access parent command and reads out stdout pipe
+          regex: | 
+            \[INFO\] - qtransform ID: (\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}-\w+-\w+)
+        goals:
+        - _target_: modelflow.command.StoreVariableGoal
+          key: "run_id"
+          # value: same as value of source by default
+
+      - _target_: modelflow.command.Output
+        source:
+          _target_: modelflow.command.StdoutSource
+          regex: | 
+           \[INFO\] - Model checkpoint saving to (.+)
+        goals:
+        - _target_: modelflow.command.StoreVariableGoal
+          key: "run_chkpt"
+          # value: same as value of source by default
+
+      - _target_: modelflow.command.Output
+        source:
+          _target_: modelflow.command.FilePathSource
+          path: "qtransform/chkpts/{{run_id}}.chkpt"
+          # returns path of file by default not content (FilePathSource not FileContentSource!)
+        goals:
+        - _target_: modelflow.command.FileCopyGoal
+          to: "modelflow/{{run_id}}"
+        - _target_: modelflow.command.StoreVariableGoal
+          key: "chkpt-{{run_id}}"
+          # value: path of file
+
   # TODO reconstruct this templte to do command loop until condition, this would allow train and layer replace to be seperate and lib independended
   - _target_: modelflow.run.LayerExchange
-    cmd_args: " qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=2 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048 run.epochs=1 tokenizer=hf_gptneo +model.type=CHECKPOINT  model=NEW_BENCH2 quantization=qat quantization/model=NEW_BENCH2b run.export=True"
+    exchange_loop_cmd: " qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=2 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048 run.epochs=1 tokenizer=hf_gptneo +model.type=CHECKPOINT  model=NEW_BENCH2 quantization=qat quantization/model=NEW_BENCH2b run.export=True"
+    # first run might not be present so this gives a default value
+    init_cmd: ""
     source_layer: "LayerNorm"
     target_layer: "BatchNormTransposed"
     # all output functions get executed in sequence, make sure dependend variables are in proper order
     # depending on the task output extractors get called multiple times are more commands are generated
+    # TLDR theese get used multiple times unitl LayerExchange is done
     outputs:
       - _target_: modelflow.command.Output
         source:
