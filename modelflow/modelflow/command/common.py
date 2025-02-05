@@ -185,11 +185,12 @@ class Task(abc.ABC):
     def __call__(self,  *args, **kwargs):
         return self.run(args, kwargs)
 
-    def __repr__(self):
-        return f"{self.__class__}:{self.name}"
+    #def __repr__(self):
+    #    return f"Task(name={self.name}, started_at={self.started_at}, completed_at={self.completed_at}, success={self.success})"
 
-    def __str__(self):
-        return f"{self.__class__}:{self.name}"
+    #def __str__(self):
+    #    return f"Task(name={self.name}, started_at={self.started_at}, completed_at={self.completed_at}, success={self.success})"
+
     
 @dataclass
 class Command(Task):

@@ -1,27 +1,49 @@
-from modelflow.scheduler.common import Scheduler, Job, JobExecutionException
-from modelflow.command.common import Task
+from modelflow.scheduler.common import Scheduler, Job, JobExecutionException, JobConversionException
+from modelflow.command.common import Task, SystemCommand, Command
 import re
 import time
 import logging
 import subprocess 
 from dataclasses import dataclass
-from typing import Type
+from typing import Type, Any
+import shutil
+import os
+import shlex
 log = logging.getLogger(__name__)
 
 
     
 @dataclass
 class UnixJob(Job):
-    
+    process: Any = None
+    command: Any = None 
     def __post_init__(self):
         super().__post_init__()
-        self.process = None
-        self.command = None 
+        
         
     def start(self):
         log.info(f"Running on local Unix: {self.command}")
         # Start the process without waiting for it to complete
-        self.process = subprocess.Popen(self.command, shell=True, capture_output=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)# TODO Read docs
+        # Check if the first item in self.command points to an executable
+        command_parts = self.command.split()
+        executable_path = shutil.which(command_parts[0])
+
+        if executable_path:
+            # Replace the first item with the absolute path
+            command_parts[0] = executable_path
+            self.command = ' '.join(command_parts)
+        else:
+            log.warning(f"Executable {command_parts[0]} not found in PATH. Attempting to run as is.")
+            
+        if os.name == 'posix':
+            shell = False
+            self.command = shlex.split(self.command)
+        else:
+            shell = True
+            # use shell=True on Windows
+            # if so args to popen must be a string not array
+            
+        self.process = subprocess.Popen(self.command, shell=shell, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         # completed_at
         
     def cancel(self):
@@ -43,9 +65,20 @@ class UnixJob(Job):
             return True
         return False
     
-    def convert_task_to_job(self, task:Task):
+    def convert_task_to_job(self, task: SystemCommand):
+        """
+        convert SystemCommand to UnixJob. Must return True if successful.
+        copies relevant attributes from task into self. 
+        """
+        if not isinstance(task, SystemCommand):
+            raise JobConversionException("task must be an instance of SystemCommand")
+        self.task = task
+        self.command = task.cmd
+        print(type(task))
         print(task)
-        raise NotImplementedError
+        print(type(self))
+        print(self)
+        return True
 
     def get_process(self):
         return self.process
@@ -57,7 +90,6 @@ class UnixJob(Job):
         return self.get_stdout()
 
 @dataclass
-
 class UnixScheduler(Scheduler):
     """convenience class for local unix execution"""
     jobClazz:Type[Job] = UnixJob

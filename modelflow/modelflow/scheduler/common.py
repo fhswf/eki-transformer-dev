@@ -121,9 +121,9 @@ class Scheduler(Serializable):
             job = self.jobClazz(task)
             log.info(f"{self.__class__} Running: {job}")
             job() # runs job.start()
-            job.started_at = datetime.now()
+            job.started_at = datetime.datetime.now()
             job.wait_for_completion()
-            job.finished_at = datetime.now()
+            job.finished_at = datetime.datetime.now()
             log.info(f"{self.__class__} Completed: {job}")
         log.debug(f"scheudler running {type(maybeTaskInterator)}")
         if self.policy is not None:
