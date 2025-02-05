@@ -185,17 +185,20 @@ class Task(abc.ABC):
     def __call__(self,  *args, **kwargs):
         return self.run(args, kwargs)
 
-    #def __repr__(self):
-    #    return f"Task(name={self.name}, started_at={self.started_at}, completed_at={self.completed_at}, success={self.success})"
+    def __repr__(self):
+        return f"{self.__class__.__name__} {self.name}"
 
-    #def __str__(self):
-    #    return f"Task(name={self.name}, started_at={self.started_at}, completed_at={self.completed_at}, success={self.success})"
+    def __str__(self):
+        return f"{self.__class__.__name__} {self.name}"
 
     
 @dataclass
 class Command(Task):
     cmd: str = ""
-    
+    def __repr__(self):
+        return f"{super().__repr__()} {self.__class__.__name__} - {self.cmd}"
+    def __str__(self):
+        return f"{super().__str__()} {self.__class__.__name__} - {self.cmd}"
 @dataclass
 class SystemCommand(Command):
     
@@ -317,8 +320,8 @@ class TaskInterator(Task):
     def __next__(self) -> Task: # Python 2: def next(self)
         # first Task in list is always the one to run by default, you may want to change this in a subclass
         self.__before_task__()
-        print(self.tasks)
-        print(self.tasks[0].is_completed())    
+        #print(self.tasks)
+        #print(self.tasks[0].is_completed())    
         item = next(t for t in self.tasks if not t.is_completed())
         self.__after_task__()
         return item
@@ -336,7 +339,7 @@ class TaskInterator(Task):
         log.warning("not recommended calling chain, use run of scheudler please")
         return scheduler.run(*args, **kwargs) 
 
-    def __str__(self):
+    def __repr__(self):
         return f"{self.__class__}:{self.name}-{self.tasks}"
     
 @dataclass

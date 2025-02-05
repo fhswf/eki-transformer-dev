@@ -1,6 +1,6 @@
 name: fhswf/TinyStoriesV2_cleaned
-tokenized:
-  type: huggingface #name of python module which implements a class of type TokenizedDatasetGenerator
+#tokenized:
+#  type: huggingface #name of python module which implements a class of type TokenizedDatasetGenerator
 
 untokenized: 
   splits: 
@@ -14,3 +14,4 @@ untokenized:
       
 defaults:
   - untokenized/huggingface
+  - tokenized/hf

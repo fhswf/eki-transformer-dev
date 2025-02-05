@@ -74,10 +74,6 @@ class UnixJob(Job):
             raise JobConversionException("task must be an instance of SystemCommand")
         self.task = task
         self.command = task.cmd
-        print(type(task))
-        print(task)
-        print(type(self))
-        print(self)
         return True
 
     def get_process(self):
@@ -89,6 +85,12 @@ class UnixJob(Job):
     def get_task_output(self):
         return self.get_stdout()
 
+    def __repr__(self):
+        return f"UnixJob {self.command}, super={super().__repr__()})"
+    
+    def __str__(self):
+        return f"UnixJob {self.command}, super={super().__str__()})"
+    
 @dataclass
 class UnixScheduler(Scheduler):
     """convenience class for local unix execution"""
@@ -96,8 +98,14 @@ class UnixScheduler(Scheduler):
     
     def __post_init__(self):
         super().__post_init__()
-        print(self.get_save_attributes())
+        # print(self.get_save_attributes())
         pass
     
     def get_save_attributes(self):
         return super().get_save_attributes()
+    
+    def __repr__(self):
+        return super().__repr__()
+    
+    def __str__(self):
+        return super().__str__()

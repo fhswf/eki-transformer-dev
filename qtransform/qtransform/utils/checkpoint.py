@@ -34,14 +34,19 @@ class QtransChkptMetaData():
     qtrans_model_config: Any = field(default_factory=get_from_config_f("model"))
     qtrans_dataset_config:  Any = field(default_factory=get_from_config_f("dataset"))
     qtrans_quantization_config:  Any = field(default_factory=get_from_config_f("quantization"))
-    qtrans_tokenizer_config:  Any = field(default_factory=get_from_config_f("model"))
+    qtrans_tokenizer_config:  Any = field(default_factory=get_from_config_f("tokenizer"))
  
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'QtransChkptMetaData':
+        print(type(data))
+        print(data)
         return cls(**{k: data.get(k, field.default) for k, field in cls.__dataclass_fields__.items()})
-        
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {field.name: getattr(self, field.name) for field in fields(self)}
+    
 def load_checkpoint(checkpoint_path: str):
-    """ load torch model checkpoint and return the epoch count"""
+    """ load torch model checkpoint and return the epoch count. Note that torch.load is using python pickle magic."""
     if not os.path.exists(checkpoint_path):
         log.error(f'Checkpoint {checkpoint_path} does not exist')
         raise FileNotFoundError()
@@ -63,7 +68,7 @@ def save_checkpoint(model: nn.Module,
     metadata: QtransChkptMetaData = None
     print(kwargs)
     print(HydraConfig.get())
-    
+    # TODO this is not working, the metadata is not passed
     if "metadata" == kwargs.keys() and type(kwargs["metadata"]) is QtransChkptMetaData:
         metadata = kwargs["metadata"]
     else:

@@ -38,7 +38,7 @@ tasks: # tasks are all in sequence
 
   # TODO reconstruct this templte to do command loop until condition, this would allow train and layer replace to be seperate and lib independended
   - _target_: modelflow.run.LayerExchange
-    exchange_loop_cmd: " qtransform run=train dataset=tsV2 dataset.dataloader.batch_size=2 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048 run.epochs=1 tokenizer=hf_gptneo +model.type=CHECKPOINT  model=NEW_BENCH2 quantization=qat quantization/model=NEW_BENCH2b run.export=True"
+    exchange_loop_cmd: " qtransform run=train run.export=True"
     # first run might not be present so this gives a default value
     init_cmd: ""
     source_layer: "LayerNorm"

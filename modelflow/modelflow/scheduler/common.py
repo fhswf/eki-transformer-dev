@@ -59,7 +59,8 @@ class Job(abc.ABC):
     breaking_timeout = None # maximum timeout for a job in seconds
     started_at = None
     finished_at = None
-    
+    log_interval:int = 60 # log every 60 seconds
+    polling_secs:int = 10 # check for job completion every 10 seconds
     def __post_init__(self):
         if self.convert_task_to_job(self.task):
             log.info("job conversion completed")
@@ -91,7 +92,7 @@ class Job(abc.ABC):
         """supposed to fill class attributes with information to acutally run the task"""
         raise NotImplementedError
     
-    def wait_for_completion(self, timeout:int=None, polling_secs:int=10):
+    def wait_for_completion(self, timeout:int=None):
         """blocking loop that waits for is_completed to return True"""
         if timeout is None:
             if self.breaking_timeout is not None:
@@ -99,13 +100,23 @@ class Job(abc.ABC):
             else:
                 log.warning(f"waiting for job completion for job {self} without timeout")
         while not self.is_completed():
-            time.sleep(polling_secs)
+            time.sleep(self.polling_secs)
+            if hasattr(self, 'log_interval') and self.log_interval is not None:
+                elapsed_time = (datetime.datetime.now() - self.started_at).total_seconds()
+                if elapsed_time % self.log_interval < self.polling_secs:
+                    log.info(f"Waiting for job {self} to complete. Elapsed time: {elapsed_time} seconds")
             if timeout is not None:
                 if  (datetime.now() - self.started_at).total_seconds() > timeout:
                     self.cancel()
                     raise JobExecutionTimeoutException(f"job {self} canceled due to timeout")
         return True
-            
+        
+    def __repr__(self):
+        return f"{self.__class__.__name__} with Task: {self.task}"
+    
+    def __str__(self):
+        return f"{self.__class__.__name__} with Task: {self.task}"
+    
 @dataclass
 class Scheduler(Serializable):
     """Abstract Base class for a shuduler that launches commands. Enables save state loading."""
@@ -118,30 +129,33 @@ class Scheduler(Serializable):
     def run(self, maybeTaskInterator: Union[TaskInterator,Task] , *args, **kwargs):
         """launches sheduler"""
         def _run(task):
-            job = self.jobClazz(task)
-            log.info(f"{self.__class__} Running: {job}")
+            job: Job = self.jobClazz(task)
+            log.info(f"Scheduler {self.__class__.__name__} Running: {job}")
             job() # runs job.start()
             job.started_at = datetime.datetime.now()
             job.wait_for_completion()
             job.finished_at = datetime.datetime.now()
-            log.info(f"{self.__class__} Completed: {job}")
-        log.debug(f"scheudler running {type(maybeTaskInterator)}")
+            log.info(f"Scheduler {self.__class__.__name__} Completed: {job}")
+        log.info(f"Scheduler {self.__class__.__name__} started MetaTask: {maybeTaskInterator}")
         if self.policy is not None:
             self.policy.run(maybeTaskInterator, self.jobClazz)
         else:
             if isinstance(maybeTaskInterator, TaskInterator):
                 for task in maybeTaskInterator:
-                    log.debug(f"running task {task}")
                     _run(task)
             elif isinstance(maybeTaskInterator, Task):
                 _run(maybeTaskInterator)
             else: 
                 raise NotImplementedError(f"{self} TaskInterator or Task expected")
+            
     def get_save_attributes(self):
         return ["policy", "jobClazz"]
        
     def __call__(self, taskInterator: TaskInterator, *args, **kwargs):
         return self.run(taskInterator, *args, **kwargs)
+    
+    def __repr__(self):
+        return f"{self.__class__.__name__} with jobClazz: {self.jobClazz}"
     
 """
 class Policy(abc.ABC):

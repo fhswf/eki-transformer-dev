@@ -20,8 +20,6 @@ class LayerExchange(TaskInterator, Serializable):
     current_step: Any = None
     init_cmd: str = "" 
     def __post_init__(self):
-        # prepare call pipeline, do we replace layer by layer here or within qtransform?
-        # logic here could be done on a graph basis independend on training framework
         # self.tasks = [] # done in super
         super().__post_init__()
     

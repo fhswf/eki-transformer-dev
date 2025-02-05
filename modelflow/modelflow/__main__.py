@@ -8,7 +8,7 @@ import modelflow
 from modelflow.command.common import OutputManager
 from modelflow.scheduler.common import Scheduler
 from modelflow.utils import addLoggingHandler, addLoggingLevel
-from modelflow.utils.helper import get_cwd, get_output_dir
+from modelflow.utils.helper import get_cwd, get_output_dir, get_output_log_dir
 from modelflow.utils.id import ID
 from modelflow import CFG
 import sys
@@ -18,7 +18,7 @@ addLoggingLevel("TRACE", logging.DEBUG - 5, "trace")
 log = logging.getLogger(__name__)
 
 def launch_main(cfg: DictConfig):
-    addLoggingHandler(os.path.join(get_output_dir() , ID + ".log"))
+    addLoggingHandler(os.path.join(get_output_log_dir() , ID + ".log"))
     OmegaConf.update(cfg, "runtime.choices", HydraConfig().instance().get().runtime.choices, force_add=True)
     logging.captureWarnings(True)
     root_log = logging.getLogger("root")
@@ -62,10 +62,9 @@ def main(cfg):
         log.info("creating scheduler")
         scheduler:Scheduler = instantiate(cfg.scheduler, _convert_="object")
         log.info("creating runc config")
-        run_config = instantiate(cfg.run, _convert_="object")
-        log.debug(run_config)
-        log.info("starting scheduler")
-        scheduler.run(run_config)
+        run_obj = instantiate(cfg.run, _convert_="object")
+        log.info(f"starting scheduler with cfg.run: {cfg.runtime.choices.get('run')}")
+        scheduler.run(run_obj)
     except Exception as e:
         exit_code = 1 # generic error
         log.critical(f"Script execution failed. Reason: {e}", exc_info=True)
