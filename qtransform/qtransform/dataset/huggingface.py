@@ -15,6 +15,7 @@ from itertools import chain
 from logging import getLogger
 import requests
 from dataclasses import dataclass, fields, InitVar, Field
+from torch import ones
 
 log = getLogger(__name__)
 
@@ -233,7 +234,6 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         return DataCollatorWithPadding(tokenizer=tokenizer, padding='max_length', max_length=self.cfg.tokenized.args.block_size)
         
         
-from torch import ones
 
 def pad(self,
         encoded_inputs: Union[

@@ -10,7 +10,7 @@ hydra:
 #TODO: write last checkpoint/ onnx model name here
 defaults:
   - _self_
-  - model: 
+  - model:
   #use fields from "config.yaml" (defined below) and override them with default config from dataset
   - dataset/tokenized: default 
   - dataset/untokenized: default

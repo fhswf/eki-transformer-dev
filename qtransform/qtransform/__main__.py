@@ -1,7 +1,7 @@
 import os
 import hydra
 from hydra.core.hydra_config import HydraConfig
-from hydra import compose
+from hydra import compose, initialize
 from omegaconf import DictConfig, OmegaConf
 from dataclasses import asdict
 import logging
@@ -36,18 +36,6 @@ def module_wrapper(cfg: DictConfig):
     addLoggingHandler(os.path.join(get_output_log_dir() , ID + ".log"))
     main()
     
-def find_overwritten_args_from_cli(cfg, cli_args):
-    diff = {}
-    for arg in cli_args:
-        if '=' in arg:
-            key, value = arg.split('=', 1)
-            keys = key.split('.')
-            current_cfg = cfg
-            for k in keys[:-1]:
-                current_cfg = current_cfg.get(k, {})
-            if keys[-1] in current_cfg and str(current_cfg[keys[-1]]) != value:
-                diff[key] = current_cfg[keys[-1]]
-    return diff
 
 def main():
     # TODO do we nned check if execution is inside slurm?
@@ -72,16 +60,15 @@ def main():
     if hasattr(log, "trace"): log.trace("launched with config: " + json.dumps(OmegaConf.to_container(cfg), indent=2))
     log.info(f"Launch command: {sys.argv}")
     log.info(f"qtransform ID: {ID}")
-
-    log.debug(f'LAUNCHED WITH CONFIG: {cfg}')
+    hydra_cli_args = OmegaConf.to_container(HydraConfig.get().overrides.task)
+    log.info(f"{hydra_cli_args=}")
+    log.info(f'LAUNCHED WITH CONFIG: {cfg}')
     
     # before we start wandb we need to read out the checkpoint if we continue training
     checkpoint_location = cfg.get('model')
     checkpoint_location = checkpoint_location.get('checkpoint')
     if checkpoint_location is not None:
         # find overwritten arguments
-        cli_args = sys.argv[1:]  # Exclude the script name
-        log.info(f"Overwritten arguments: {cli_args}")
         log.info(f"checkpoint {checkpoint_location} was given, loading meta data to continue from")
         checkpoint = load_checkpoint(checkpoint_location)
         checkpoint_metadata = checkpoint.get('qtrans_metadata')
@@ -89,47 +76,32 @@ def main():
             raise ValueError(f"checkpoint {checkpoint_location} does not contain qtransform metadata")
         if not isinstance(checkpoint_metadata, QtransChkptMetaData):
             checkpoint_metadata = QtransChkptMetaData.from_dict(checkpoint_metadata)
-        
-        # Update the current config with the checkpoint metadata, only if the current config values are missing
-        def update_config(cfg, metadata, overwritten_args):
-            updated_values = {}
-            for key, value in metadata.items():
-                if key.startswith("qtrans_") and key.endswith("_config"):
-                    stripped_key = key[len("qtrans_"):-len("_config")]
-                    if isinstance(value, dict):
-                        updated_values[stripped_key] = update_config(cfg[stripped_key], value, overwritten_args.get(stripped_key, {}))
-                    else:
-                        if stripped_key not in overwritten_args:
-                            cfg[stripped_key] = value
-                            updated_values[stripped_key] = value
-            return updated_values
-        
-         
-        # Convert QtransChkptMetaData to dictionary
-        print(f"Checkpoint metadata: {checkpoint_metadata}")
-        checkpoint_dict = OmegaConf.to_container(OmegaConf.structured(checkpoint_metadata), resolve=True)
-        
-        # Filter keys that start with qtrans_ and end with _config
-        filtered_checkpoint_dict = {k[len("qtrans_"):-len("_config")]: v for k, v in checkpoint_dict.items() if k.startswith("qtrans_") and k.endswith("_config")}
-        
-        print(f"Filtered checkpoint dict: {filtered_checkpoint_dict}")
-        # Merge configurations: defaults -> checkpoint -> CLI
-        # default_cfg = compose(config_name="config")
-        merged_cfg = OmegaConf.merge(cfg, OmegaConf.create(filtered_checkpoint_dict))
-        print(merged_cfg)
-        print(OmegaConf.from_dotlist(cli_args))
-        merged_cfg = OmegaConf.merge(merged_cfg, OmegaConf.from_dotlist(cli_args))
-        cfg = merged_cfg
-        ConfigSingleton().config = cfg
 
-        # Find and log overwritten arguments from CLI
-        overwritten_args = find_overwritten_args_from_cli(merged_cfg, cli_args)
-        log.info(f"Overwritten arguments from CLI: {overwritten_args}")
+        log.info(f"Overwritten arguments from checkpoint: {checkpoint_metadata.qtrans_hydra_overrides}")
+
+        def merge_hydra_cli_args(checkpoint_overrides, cli_overrides):
+            """
+            Merges the CLI overrides with the checkpoint overrides.
+            CLI overrides take precedence over checkpoint overrides.
+            """
+            checkpoint_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in checkpoint_overrides}
+            cli_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in cli_overrides}
+            merged_overrides = {**checkpoint_overrides_dict, **cli_overrides_dict}
+            return [f"{key}={value}" for key, value in merged_overrides.items()]
         
-        log.info(f"Final merged config: {OmegaConf.to_yaml(merged_cfg)}")
-    
-    wandb_init(cfg) 
+        merged_overrides_array = merge_hydra_cli_args(checkpoint_metadata.qtrans_hydra_overrides, hydra_cli_args)
+        
+        log.info(f"merged overwrites: {merged_overrides_array}")
+        cfg = hydra.compose("config", overrides=merged_overrides_array)
+        # cfg = hydra.compose(overrides=hydra_cli_args)
+        OmegaConf.update(cfg, "runtime.overwrites", merged_overrides_array, force_add=True)
+        ConfigSingleton().config = cfg
+        log.info(cfg)
+
+    # start programm now...
     exit_code=0
+    log.info(cfg)
+    wandb_init(cfg) 
     if "command" not in cfg.run:
         log.error("No run command found in run config, run config was: " + str(cfg.run))
         raise KeyError

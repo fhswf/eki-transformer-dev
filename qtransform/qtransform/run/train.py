@@ -1,6 +1,7 @@
 import logging
 from typing import Any, Tuple, Union
 from omegaconf import DictConfig, OmegaConf, open_dict
+from hydra import compose
 import os
 import torch
 from torch import nn
@@ -120,7 +121,6 @@ def run(cfg: DictConfig):
     # TODO put this in some util function
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
-        from hydra import compose
         #load another entire hydra config with run=export, then override the current run config with export
         #this saves having to re-initialize the globalhydra configuration and further redundant config steps
         #(https://hydra.cc/docs/advanced/compose_api/ and https://github.com/facebookresearch/hydra/issues/440)
