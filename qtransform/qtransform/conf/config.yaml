@@ -7,6 +7,7 @@ hydra:
   #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
   searchpath:
     - pkg://qtransform
+    - file://conf
 #TODO: write last checkpoint/ onnx model name here
 defaults:
   - _self_
