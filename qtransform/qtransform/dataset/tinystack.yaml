@@ -1,0 +1,13 @@
+name: fhswf/tiny-stack
+
+untokenized:
+  splits:
+    bench:
+      split: train
+    eval:
+      split: validation
+      mapping: test
+
+defaults:
+  - untokenized/huggingface
+  - tokenized/hf
