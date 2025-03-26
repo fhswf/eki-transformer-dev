@@ -6,7 +6,44 @@ temperature: 0.7
 top_k: 200
 #start: "My name is Mariam, my favorite" #"\n" #generates text starting with #start (\n, "<|endoftext|>" or etc.) Can also specify a file, use as: "FILE:prompt.txt" where prompt.txt is absolute
 #start: "Sara and Ben are playing in the snow. They make a big snowman with a hat and a scarf. They are happy and laugh.\n But then a big dog comes. The dog is angry and barks. He runs to the snowman and bites his hat. Sara and Ben are scared and cry. ”Go away, dog! Leave our snowman alone!” Sara shouts. \n But the dog does not listen. He bites the scarf and the snowman’s nose.\n He shakes his head and makes the snowman fall. Sara and"
-start: "<endoftext>One day, a little girl named Lily went to the park with her mom. At the park, Lily saw a big ice-cream truck. She was very excited and wanted to eat ice-cream. She said"
+start: |
+  """<code>
+  def spin_slot_machine():
+    import random
+    symbols = ['🍒', '🍋', '🍊', '🍉', '🔔', '⭐', '🍀']
+    return [random.choice(symbols) for _ in range(3)]
+
+  def check_win(spins):
+      return len(set(spins)) = 1
+  
+  def calculate_payout(win):
+      if win:
+          return 10
+      return 0
+  
+  def main():
+      total_payout = 0
+      rounds = 10
+      for _ in range(rounds):
+          spins = spin_slot_machine()
+          win = check_win(spins)
+          payout = calculate_payout(win)
+          total_payout += payout
+          print(f"Spins: {' | '.join(spins)} - {'Win' if win else 'Lose'} - Payout: {payout}")
+  
+      print(f"Total payout after {rounds} rounds: {total_payout}")
+  
+  if __name__ == "__main__":
+    main()
+  </code>
+  <error_message>
+  File "/app/scripts/request-30.py", line 7
+    return len(set(spins)) = 1
+                           ^
+  SyntaxError: invalid syntax
+  </error_message>
+  <description>
+  """
 compile: False #use torch.compile
 
 #path of directory create files containing the infered samples. if empty, write onto stdout. 
