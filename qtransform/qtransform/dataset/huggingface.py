@@ -87,7 +87,7 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
         return dataset_splits
 
     def tokenize_data(self, untokenized_data: DatasetDict) -> None:
-        """        if hasattr(tokenizer_singleton.tokenizer, "tokenizer"):
+        if hasattr(tokenizer_singleton.tokenizer, "tokenizer"):
             real_tokenizer = tokenizer_singleton.tokenizer.tokenizer  # Der echte HF-Tokenizer
             real_tokenizer.add_special_tokens({
                 "additional_special_tokens": [
@@ -96,14 +96,10 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
                     "<description>", "</description>"
                 ]
             })
-            print("Spezialtokens erfolgreich hinzugefügt!")
-        else:
-            print("Konnte keinen internen Tokenizer finden.")
 
-        print(real_tokenizer.tokenize("<code> This is a test </code>"))
-        print(real_tokenizer.encode("<code> This is a test </code>"))
+        # print(real_tokenizer.tokenize("<code> This is a test </code>"))
+        # print(real_tokenizer.encode("<code> This is a test </code>"))
 
-        """
         # slice spits: https://huggingface.co/docs/datasets/loading#slice-splits
         # keys of DatasetDict are split types
         log.debug(f'Tokenizing data: {untokenized_data}')
@@ -117,9 +113,9 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             tokenized = [tokenizer_singleton.tokenizer.encode(x) for x in batch[text_column_name]]
 
             # Test output
-            print(f"Original: {batch[text_column_name][0]}")
-            print(f"Tokenized: {tokenized[0]}")
-            print(f"Tokens: {tokenizer_singleton.tokenizer.tokenizer.convert_ids_to_tokens(tokenized[0])}")
+            # print(f"Original: {batch[text_column_name][0]}")
+            # print(f"Tokenized: {tokenized[0]}")
+            # print(f"Tokens: {tokenizer_singleton.tokenizer.tokenizer.convert_ids_to_tokens(tokenized[0])}")
 
             return {MODEL_INPUT_NAME: tokenized}
 
@@ -169,9 +165,6 @@ class HuggingfaceTokenizedDatasetGenerator(TokenizedDatasetGenerator):
             desc=f"Grouping texts in chunks of {self.cfg.tokenized.args.block_size}",
             cache_file_names=cache_file_names
         )
-
-        print(lm_datasets)
-        print(lm_datasets['TRAIN'][0])
 
         log.debug(f'Grouped datasets: {lm_datasets}')
         log.debug(
