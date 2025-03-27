@@ -9,7 +9,7 @@
 #SBATCH -p gpu
 #SBATCH -A hpc-prf-ekiapp
 #SBATCH --mail-type FAIL
-#SBATCH --mail-user kuhmichel.max@fh-swf.de
+#SBATCH --mail-user weber.paul@fh-swf.de
 #SBATCH --gres=gpu:a100:1
 
 # launch script with :
@@ -18,4 +18,4 @@
 # monitor job with squeue or squeue_pretty or spredict
 # cancle job with scancel JOBID or all jobs with scancel -u USERNAME
 
-eval apps/tinyStories.sh
+eval apps/tinystack.sh
