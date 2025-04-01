@@ -48,8 +48,8 @@ else
 fi
 
 
-data="dataset=tsV2 dataset.dataloader.batch_size=32 dataset.root_path=$WORK_HOME/.qtransform/datasets tokenizer=tinystack tokenizer.encoding=fhswf/tinystack"
-run="run=train run.epochs=1 +model.type=CHECKPOINT  run.export=True debug=True +trace=True"
+data="dataset=tinystack dataset.dataloader.batch_size=32 dataset.root_path=$WORK_HOME/.qtransform/datasets tokenizer=tinystack"
+run="run=train run.epochs=1 model=tinystack run.export=True debug=True +trace=True"
 quant="quantization=qat quantization/model=SLURM_BENCH"
 # models=( BENCH_gpt2_ReBNT_tiny BENCH_gpt2_ReBNT_small BENCH_gpt2_ReBNT_smaller )
 models=( tinystack )
