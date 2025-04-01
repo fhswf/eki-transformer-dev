@@ -19,7 +19,7 @@ else
     module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
     module load lang/Tkinter/3.11.5-GCCcore-13.2.0
     # set env to be compatible with pc2
-    export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
+    export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/paulw"
     export PYTHONUSERBASE="$SB_PRF_HOME/.local"
     mkdir -p $PYTHONUSERBASE
     export HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache"
