@@ -22,7 +22,8 @@ else
     export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/paulw"
     export PYTHONUSERBASE="$SB_PRF_HOME/.local"
     mkdir -p $PYTHONUSERBASE
-    export HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache"
+    export HF_HOME="$PC2PFS/hpc-prf-ekiapp/paulw/hf_cache"
+    export TRANSFORMERS_CACHE=$HF_HOME
     mkdir -p $HF_HOME
     # does not work atm:
     #export OMP_NUM_THREADS=1

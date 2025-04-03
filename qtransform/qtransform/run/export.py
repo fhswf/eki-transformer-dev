@@ -56,7 +56,9 @@ def run(cfg: DictConfig, **kwargs):
         # TODO make calibration run configurable?
         if i == 10:
             break
-        model(data_point['input_ids'])
+        device = next(model.parameters()).device
+        input_ids = data_point['input_ids'].to(device)
+        model(input_ids)
     # take a (random) sample and get raw model output
     sample_out = model(data_point['input_ids'])
     sample_tensor = data_point['input_ids']
