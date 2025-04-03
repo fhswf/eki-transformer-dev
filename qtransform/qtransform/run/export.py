@@ -57,8 +57,8 @@ def run(cfg: DictConfig, **kwargs):
         if i == 10:
             break
         device = next(model.parameters()).device
-        input_ids = data_point['input_ids'].to(device)
-        model(input_ids)
+        data_point = {k: v.to(device) for k, v in data_point.items()}
+        model(data_point['input_ids'])
     # take a (random) sample and get raw model output
     sample_out = model(data_point['input_ids'])
     sample_tensor = data_point['input_ids']
