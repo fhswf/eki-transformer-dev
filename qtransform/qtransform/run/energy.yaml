@@ -1,5 +1,9 @@
 command: energy
 
-# export params are loaded from export.yaml
+max_new_tokens: 512
+temperature: 0.7
+top_k: 200
 
 max_iters: ???
+out_dir: 'energy_measurements'
+idle_time: 0 # higher idle time means slightly more accurate measurements

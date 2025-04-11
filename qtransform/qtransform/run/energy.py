@@ -1,27 +1,24 @@
 import logging
-from typing import Any, Tuple, Union
-from omegaconf import DictConfig, OmegaConf, open_dict
-from hydra import compose
+from os.path import isabs, join, expanduser, exists
+from os import getcwd, makedirs
+import pandas as pd
+import hydra
+import zeus.monitor.energy
+from omegaconf import DictConfig
 from zeus.monitor import ZeusMonitor
 
-from qtransform.model import gpt, ModelArgs, QTRModelWrapper
-from transformers import AutoTokenizer
+from qtransform.model import QTRModelWrapper
 import os
 import torch
-from torch import nn
-from torch import optim
-from torch.optim import lr_scheduler
 from torch.utils import data as torch_data  # prevent naming conflict with data from dataloaders
 from datetime import datetime
-import torch.nn.functional as F
-from time import time, sleep
-from qtransform.utils.checkpoint import save_checkpoint
+import time
+
+from qtransform.run import generate
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
 from qtransform.model import get_model_wrapper, DynamicCheckpointQTRModelWrapper
-from torch.profiler import profile, record_function, ProfilerActivity
 from functools import lru_cache
-from qtransform.wandb import wandb_watch, wandb_log
 
 log = logging.getLogger(__name__)
 
@@ -33,7 +30,7 @@ def warn_once(logger: logging.Logger, msg: str):
 
 
 def run(cfg: DictConfig):
-    """ launches training with provided config"""
+    """ launches energy benchmark with provided config"""
     log.info("================")
     log.info("Running energy benchmark")
     log.info("================")
@@ -49,7 +46,6 @@ def run(cfg: DictConfig):
 
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
-    # TODO: move quant_config as subconfig into model_cfg to perform quantization within modelwrapper
     quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:
         if not model_wrapper.quantized:
@@ -80,23 +76,23 @@ def run(cfg: DictConfig):
     train_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
 
-    # cfg.run => energy.yaml
-    monitor = ZeusMonitor(log_file="~/energy_measurement.csv")
-    #device_str = str(device)
-    #domains = None
-    #if device_str == "cpu":
-    #    domains = [RaplPackageDomain(0), RaplUncoreDomain(0)]
-    #elif device_str == "cuda":
-    #    domains = [NvidiaGPUDomain(0)]
-    #else:
-    #    raise ValueError(f"Unsupported device: {device}")
+    monitor = ZeusMonitor()
 
-    bench(cfg, model_wrapper, eval_dataloader, tokenizer_singleton, monitor)
+    bench(cfg, model_wrapper, eval_dataloader, monitor)
 
-def bench(cfg, model_wrapper: QTRModelWrapper, dataloader, tokenizer_singleton, monitor : ZeusMonitor):
 
+def bench(cfg, model_wrapper: QTRModelWrapper, dataloader, monitor: ZeusMonitor):
+    idle_time = cfg.run.idle_time
+    idle_measurement = zeus.monitor.energy.Measurement(0, {0: 0}, {0: 0}, {0: 0})
+    if idle_time > 0:
+        log.info(f"Measuring energy while idle. Set idle time is {idle_time} s")
+        monitor.begin_window("Idle")
+        time.sleep(idle_time)
+        idle_measurement = monitor.end_window("Idle")
+        log.info(f"Measuring idle energy complete.")
+
+    measurements = []
     lens = min(len(dataloader), cfg.run.max_iters)
-    tokenizer = tokenizer_singleton.tokenizer
     if isinstance(model_wrapper.model, torch.nn.Module):
         model_wrapper.model.eval()
     log.info("Measuring energy consumption during generation")
@@ -106,21 +102,93 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader, tokenizer_singleton, 
         if i >= lens:
             break
         inputs = None
-        labels = None
         if len(data) > 2:
             inputs = data['input_ids']
-            labels = data['labels']
         elif len(data) == 2:
-            inputs, labels = data
+            inputs, _ = data
         else:
             log.error(f"unsupported dataloader output. len was {len(data)}. ")
             raise NotImplementedError
         with torch.no_grad():
             inputs = inputs.to(device_singleton.device)
-            labels = labels.to(device_singleton.device)
 
-            monitor.begin_window("Inference")
-            output = model_wrapper(inputs, labels)
-            measurement = monitor.end_window("Inference", sync_execution=True)
-            print(measurement.total_energy)
-    log.info("Measurements finished")
+            monitor.begin_window("Generation")
+            y: torch.Tensor = generate(model_wrapper=model_wrapper, idx=inputs,
+                                       max_new_tokens=cfg.run.max_new_tokens,
+                                       temperature=cfg.run.temperature,
+                                       top_k=cfg.run.top_k)
+            measurement = monitor.end_window("Generation", sync_execution=True)
+            measurements.append(measurement)
+
+            # print(tokenizer.decode(y[0].tolist()) + '\n---------------\n')
+
+    log.info("Measuring finished")
+
+    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)'])
+
+    avg_cpu_energy_idle = sum(idle_measurement.cpu_energy.values()) / idle_time if idle_time > 0 else 0
+    avg_gpu_energy_idle = sum(idle_measurement.gpu_energy.values()) / idle_time if idle_time > 0 else 0
+    for measurement in measurements:
+        df_verbose.loc[len(df_verbose)] = {
+            'time(s)': measurement.time,
+            'cpu_energy(J)': sum(
+                measurement.cpu_energy.values()) - avg_cpu_energy_idle * measurement.time,
+            'gpu_energy(J)': sum(
+                measurement.gpu_energy.values()) - avg_gpu_energy_idle * measurement.time}
+
+    total_time = df_verbose['time(s)'].sum()
+    total_cpu_energy = df_verbose['cpu_energy(J)'].sum()
+    total_gpu_energy = df_verbose['gpu_energy(J)'].sum()
+
+    avg_time = df_verbose['time(s)'].mean()
+    avg_cpu_energy = df_verbose['cpu_energy(J)'].mean()
+    avg_gpu_energy = df_verbose['gpu_energy(J)'].mean()
+
+    df_summary = pd.DataFrame({
+        'total_time(s)': [total_time],
+        'avg_time(s)': [avg_time],
+        'total_cpu_energy(J)': [total_cpu_energy],
+        'avg_cpu_energy(J)': [avg_cpu_energy],
+        'total_gpu_energy(J)': [total_gpu_energy],
+        'avg_gpu_energy(J)': [avg_gpu_energy]
+    })
+
+    out_dir = cfg.run.out_dir
+    if out_dir is not None and len(out_dir) > 0:
+
+        if not isabs(out_dir):
+            try:
+                base_out_path = join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, out_dir)
+            except Exception:
+                base_out_path = join(getcwd(), out_dir)
+        else:
+            base_out_path = out_dir
+
+        base_out_path = base_out_path.replace('~', expanduser('~'))
+        if not exists(base_out_path):
+            log.debug(f'Creating base energy dir: {base_out_path}')
+            makedirs(base_out_path, exist_ok=True)
+            # create file which keeps track of how many runs were done
+            with open(join(base_out_path, 'runs.txt'), 'x') as f:
+                f.write("1")
+
+        # read and increment run number
+        with open(join(base_out_path, 'runs.txt'), "r+") as f:
+            lines = f.readlines()
+            run_num = int(lines[0])
+            f.seek(0)
+            f.writelines(str(run_num + 1))
+
+        run_folder = join(base_out_path, str(run_num))
+        if not exists(run_folder):
+            log.debug(f'Creating run dir: {run_folder}')
+            makedirs(run_folder, exist_ok=True)
+            with open(join(run_folder, 'run_cfg.txt'), 'x') as f:
+                f.write(str(cfg.run))
+
+            out_path_verbose = join(run_folder, "energy_verbose")
+            out_path_averages = join(run_folder, "energy_averages")
+
+            log.info(f'Storing results in: "{run_folder}"')
+            df_verbose.to_csv(out_path_verbose, sep=";", index=False, mode="w", header=True)
+            df_summary.to_csv(out_path_averages, sep=";", index=False, mode="w", header=True)
