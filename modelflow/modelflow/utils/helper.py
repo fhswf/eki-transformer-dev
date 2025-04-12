@@ -117,7 +117,7 @@ def get_cwd() -> str:
 
 @ensure_folder
 def get_output_dir() -> str:
-    return os.path.join(get_cwd(), "modelflow")
+    return os.path.join(get_cwd(), "output", "modelflow")
 
 @ensure_folder
 def get_output_dir_with_id() -> str:

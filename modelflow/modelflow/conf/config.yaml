@@ -1,8 +1,8 @@
 hydra:
   run:
-    dir: modelflow/hydra/${now:%Y-%m-%d_%H\:%M\:%S}
+    dir: output/modelflow/hydra/${now:%Y-%m-%d_%H\:%M\:%S}
   sweep:
-    dir: modelflow/hydra/${now:%Y-%m-%d_%H\:%M\:%S}
+    dir: output/modelflow/hydra/${now:%Y-%m-%d_%H\:%M\:%S}
     subdir: ${hydra.job.num}
   #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
   searchpath:
