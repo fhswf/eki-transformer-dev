@@ -88,13 +88,24 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
     idle_time = cfg.run.idle_time
     idle_measurement = measure_idle_energy(idle_time, monitor)
 
+    preheat(cfg, model_wrapper, dataloader)
+
     generation_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor)
 
     df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)'])
 
-    avg_cpu_energy_idle = sum(idle_measurement.cpu_energy.values()) / idle_time if idle_time > 0 else 0
-    avg_gpu_energy_idle = sum(idle_measurement.gpu_energy.values()) / idle_time if idle_time > 0 else 0
+    avg_cpu_energy_idle = 0
+    avg_gpu_energy_idle = 0
+    if idle_time > 0:
+        # zeus treats cpu and gpu differently: if no cpu is available/can't be read energy will be none, so it has to be set to 0
+        if idle_measurement.cpu_energy:
+            avg_cpu_energy_idle = sum(idle_measurement.cpu_energy.values()) / idle_time
+        avg_gpu_energy_idle = sum(idle_measurement.gpu_energy.values()) / idle_time
+
     for measurement in generation_measurements:
+        if not measurement.cpu_energy:
+            # same as before, set energy to 0
+            measurement.cpu_energy = {0: 0}
         df_verbose.loc[len(df_verbose)] = {
             'time(s)': measurement.time,
             'cpu_energy(J)': sum(
@@ -111,6 +122,7 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
     avg_gpu_energy = df_verbose['gpu_energy(J)'].mean()
 
     df_summary = pd.DataFrame({
+        'run': '',
         'total_time(s)': [total_time],
         'avg_time(s)': [avg_time],
         'total_cpu_energy(J)': [total_cpu_energy],
@@ -134,7 +146,7 @@ def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> Measurement:
 
 
 def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader, monitor: ZeusMonitor) -> \
-list[Measurement]:
+        list[Measurement]:
     measurements = []
     lens = min(len(dataloader), cfg.run.max_iters)
     if isinstance(model_wrapper.model, torch.nn.Module):
@@ -168,6 +180,36 @@ list[Measurement]:
 
     log.info("Measuring finished")
     return measurements
+
+
+def preheat(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader):
+    lens = min(len(dataloader), cfg.run.preheat_iters)
+    if lens > 0:
+        log.info("Starting preheating")
+        if isinstance(model_wrapper.model, torch.nn.Module):
+            model_wrapper.model.eval()
+        for i, data in enumerate(dataloader):
+
+            log.debug(f'Iteration: {i}')
+            if i >= lens:
+                break
+            inputs = None
+            if len(data) > 2:
+                inputs = data['input_ids']
+            elif len(data) == 2:
+                inputs, _ = data
+            else:
+                log.error(f"unsupported dataloader output. len was {len(data)}. ")
+                raise NotImplementedError
+            with torch.no_grad():
+                inputs = inputs.to(device_singleton.device)
+
+                generate(model_wrapper=model_wrapper, idx=inputs,
+                         max_new_tokens=64,
+                         temperature=1.0,
+                         top_k=1)
+
+        log.info("Preheating finished")
 
 
 def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
@@ -205,8 +247,13 @@ def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
                 f.write(str(cfg.run))
 
             out_path_verbose = join(run_folder, "energy_verbose.csv")
-            out_path_averages = join(run_folder, "energy_averages.csv")
 
             log.info(f'Saving results to: "{run_folder}"')
             df_verbose.to_csv(out_path_verbose, sep=";", index=False, mode="w", header=True)
-            df_summary.to_csv(out_path_averages, sep=";", index=False, mode="w", header=True)
+
+            out_path_averages = join(base_out_path, "energy_averages.csv")
+            df_summary["run"] = run_num
+            if not exists(out_path_averages):
+                df_summary.to_csv(out_path_averages, sep=";", index=False, mode="w", header=True)
+            else:
+                df_summary.to_csv(out_path_averages, sep=";", index=False, mode="a", header=False)
