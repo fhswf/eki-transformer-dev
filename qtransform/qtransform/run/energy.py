@@ -5,7 +5,9 @@ import pandas as pd
 import hydra
 import zeus.monitor.energy
 from omegaconf import DictConfig
-from zeus.monitor import ZeusMonitor
+from pandas import DataFrame
+from torch.utils.data import DataLoader
+from zeus.monitor import ZeusMonitor, Measurement
 
 from qtransform.model import QTRModelWrapper
 import os
@@ -76,21 +78,63 @@ def run(cfg: DictConfig):
     train_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
 
+
+    bench(cfg, model_wrapper, eval_dataloader)
+
+
+def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
     monitor = ZeusMonitor()
 
-    bench(cfg, model_wrapper, eval_dataloader, monitor)
-
-
-def bench(cfg, model_wrapper: QTRModelWrapper, dataloader, monitor: ZeusMonitor):
     idle_time = cfg.run.idle_time
-    idle_measurement = zeus.monitor.energy.Measurement(0, {0: 0}, {0: 0}, {0: 0})
+    idle_measurement = measure_idle_energy(idle_time, monitor)
+
+    generation_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor)
+
+    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)'])
+
+    avg_cpu_energy_idle = sum(idle_measurement.cpu_energy.values()) / idle_time if idle_time > 0 else 0
+    avg_gpu_energy_idle = sum(idle_measurement.gpu_energy.values()) / idle_time if idle_time > 0 else 0
+    for measurement in generation_measurements:
+        df_verbose.loc[len(df_verbose)] = {
+            'time(s)': measurement.time,
+            'cpu_energy(J)': sum(
+                measurement.cpu_energy.values()) - avg_cpu_energy_idle * measurement.time,
+            'gpu_energy(J)': sum(
+                measurement.gpu_energy.values()) - avg_gpu_energy_idle * measurement.time}
+
+    total_time = df_verbose['time(s)'].sum()
+    total_cpu_energy = df_verbose['cpu_energy(J)'].sum()
+    total_gpu_energy = df_verbose['gpu_energy(J)'].sum()
+
+    avg_time = df_verbose['time(s)'].mean()
+    avg_cpu_energy = df_verbose['cpu_energy(J)'].mean()
+    avg_gpu_energy = df_verbose['gpu_energy(J)'].mean()
+
+    df_summary = pd.DataFrame({
+        'total_time(s)': [total_time],
+        'avg_time(s)': [avg_time],
+        'total_cpu_energy(J)': [total_cpu_energy],
+        'avg_cpu_energy(J)': [avg_cpu_energy],
+        'total_gpu_energy(J)': [total_gpu_energy],
+        'avg_gpu_energy(J)': [avg_gpu_energy]
+    })
+
+    save_results(cfg, df_verbose, df_summary)
+
+
+def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> Measurement:
+    measurement = zeus.monitor.energy.Measurement(0, {0: 0}, {0: 0}, {0: 0})
     if idle_time > 0:
-        log.info(f"Measuring energy while idle. Set idle time is {idle_time} s")
+        log.info(f"Measuring energy while idle. Set idle time is {idle_time} seconds")
         monitor.begin_window("Idle")
         time.sleep(idle_time)
-        idle_measurement = monitor.end_window("Idle")
+        measurement = monitor.end_window("Idle")
         log.info(f"Measuring idle energy complete.")
+    return measurement
 
+
+def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader, monitor: ZeusMonitor) -> \
+list[Measurement]:
     measurements = []
     lens = min(len(dataloader), cfg.run.max_iters)
     if isinstance(model_wrapper.model, torch.nn.Module):
@@ -123,36 +167,10 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader, monitor: ZeusMonitor)
             # print(tokenizer.decode(y[0].tolist()) + '\n---------------\n')
 
     log.info("Measuring finished")
+    return measurements
 
-    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)'])
 
-    avg_cpu_energy_idle = sum(idle_measurement.cpu_energy.values()) / idle_time if idle_time > 0 else 0
-    avg_gpu_energy_idle = sum(idle_measurement.gpu_energy.values()) / idle_time if idle_time > 0 else 0
-    for measurement in measurements:
-        df_verbose.loc[len(df_verbose)] = {
-            'time(s)': measurement.time,
-            'cpu_energy(J)': sum(
-                measurement.cpu_energy.values()) - avg_cpu_energy_idle * measurement.time,
-            'gpu_energy(J)': sum(
-                measurement.gpu_energy.values()) - avg_gpu_energy_idle * measurement.time}
-
-    total_time = df_verbose['time(s)'].sum()
-    total_cpu_energy = df_verbose['cpu_energy(J)'].sum()
-    total_gpu_energy = df_verbose['gpu_energy(J)'].sum()
-
-    avg_time = df_verbose['time(s)'].mean()
-    avg_cpu_energy = df_verbose['cpu_energy(J)'].mean()
-    avg_gpu_energy = df_verbose['gpu_energy(J)'].mean()
-
-    df_summary = pd.DataFrame({
-        'total_time(s)': [total_time],
-        'avg_time(s)': [avg_time],
-        'total_cpu_energy(J)': [total_cpu_energy],
-        'avg_cpu_energy(J)': [avg_cpu_energy],
-        'total_gpu_energy(J)': [total_gpu_energy],
-        'avg_gpu_energy(J)': [avg_gpu_energy]
-    })
-
+def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
     out_dir = cfg.run.out_dir
     if out_dir is not None and len(out_dir) > 0:
 
@@ -186,9 +204,9 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader, monitor: ZeusMonitor)
             with open(join(run_folder, 'run_cfg.txt'), 'x') as f:
                 f.write(str(cfg.run))
 
-            out_path_verbose = join(run_folder, "energy_verbose")
-            out_path_averages = join(run_folder, "energy_averages")
+            out_path_verbose = join(run_folder, "energy_verbose.csv")
+            out_path_averages = join(run_folder, "energy_averages.csv")
 
-            log.info(f'Storing results in: "{run_folder}"')
+            log.info(f'Saving results to: "{run_folder}"')
             df_verbose.to_csv(out_path_verbose, sep=";", index=False, mode="w", header=True)
             df_summary.to_csv(out_path_averages, sep=";", index=False, mode="w", header=True)
