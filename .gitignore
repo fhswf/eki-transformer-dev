@@ -1,3 +1,4 @@
+output
 slurm-*.out
 *.bin
 **/tmp/*
