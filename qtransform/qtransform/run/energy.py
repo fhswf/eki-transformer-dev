@@ -131,7 +131,14 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
         'avg_gpu_energy(J)': [avg_gpu_energy]
     })
 
-    save_results(cfg, df_verbose, df_summary)
+    if cfg.run.out.save:
+        save_results(cfg, df_verbose, df_summary)
+    else:
+        print('\n---------------\n')
+        print(df_verbose)
+        print('\n---------------\n')
+        print(df_summary)
+        print('\n---------------\n')
 
 
 def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> Measurement:
@@ -183,7 +190,7 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: D
 
 
 def preheat(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader):
-    lens = min(len(dataloader), cfg.run.preheat_iters)
+    lens = min(len(dataloader), cfg.run.preheat.max_iters)
     if lens > 0:
         log.info("Starting preheating")
         if isinstance(model_wrapper.model, torch.nn.Module):
@@ -205,7 +212,7 @@ def preheat(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader):
                 inputs = inputs.to(device_singleton.device)
 
                 generate(model_wrapper=model_wrapper, idx=inputs,
-                         max_new_tokens=64,
+                         max_new_tokens=cfg.run.preheat.max_new_tokens,
                          temperature=1.0,
                          top_k=1)
 
@@ -213,7 +220,7 @@ def preheat(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader):
 
 
 def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
-    out_dir = cfg.run.out_dir
+    out_dir = cfg.run.out.dir_name
     if out_dir is not None and len(out_dir) > 0:
 
         if not isabs(out_dir):
