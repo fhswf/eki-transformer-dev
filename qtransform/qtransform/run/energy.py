@@ -83,6 +83,9 @@ def run(cfg: DictConfig):
 
 
 def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
+    """
+    Driver code for energy benchmark
+    """
     monitor = ZeusMonitor()
 
     idle_time = cfg.run.idle_time
@@ -97,7 +100,8 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
     avg_cpu_energy_idle = 0
     avg_gpu_energy_idle = 0
     if idle_time > 0:
-        # zeus treats cpu and gpu differently: if no cpu is available/can't be read energy will be none, so it has to be set to 0
+        # zeus treats cpu and gpu differently:
+        # if no cpu is available/can't be read energy will be none, so it has to be set to 0
         if idle_measurement.cpu_energy:
             avg_cpu_energy_idle = sum(idle_measurement.cpu_energy.values()) / idle_time
         avg_gpu_energy_idle = sum(idle_measurement.gpu_energy.values()) / idle_time
@@ -121,6 +125,7 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
     avg_cpu_energy = df_verbose['cpu_energy(J)'].mean()
     avg_gpu_energy = df_verbose['gpu_energy(J)'].mean()
 
+    # note that the averages here are "per run averages"
     df_summary = pd.DataFrame({
         'run': '',
         'total_time(s)': [total_time],
@@ -142,6 +147,9 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
 
 
 def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> Measurement:
+    """
+    Measures energy while idling. Intended to be used before doing ANY generation.
+    """
     measurement = zeus.monitor.energy.Measurement(0, {0: 0}, {0: 0}, {0: 0})
     if idle_time > 0:
         log.info(f"Measuring energy while idle. Set idle time is {idle_time} seconds")
@@ -154,6 +162,10 @@ def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> Measurement:
 
 def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader, monitor: ZeusMonitor) -> \
         list[Measurement]:
+    """
+    Mesures energy during generation.
+    max_new_tokens, max_iters, temperature and top_k can be set through the configs run parameters.
+    """
     measurements = []
     lens = min(len(dataloader), cfg.run.max_iters)
     if isinstance(model_wrapper.model, torch.nn.Module):
@@ -190,6 +202,10 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: D
 
 
 def preheat(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader):
+    """
+    Preheats the device. Intended to be used before measuring energy during generation.
+    max_new_tokens and max_iters can be set through the configs run parameters. temperature and top_k are constant.
+    """
     lens = min(len(dataloader), cfg.run.preheat.max_iters)
     if lens > 0:
         log.info("Starting preheating")
@@ -220,6 +236,12 @@ def preheat(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader):
 
 
 def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
+    """
+    Saves results. Results of measurements are stored alongside the configs run parameters in a folder
+    with the specific run number. The run number starts at 1 and is stored between different calls of the
+    qtransform energy command and is incremented by each call using this function.
+    Intended to be used after measuring energy during generation.
+    """
     out_dir = cfg.run.out.dir_name
     if out_dir is not None and len(out_dir) > 0:
 
