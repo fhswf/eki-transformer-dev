@@ -46,8 +46,9 @@ def load_checkpoint(checkpoint_path: str):
     if not os.path.exists(checkpoint_path):
         log.error(f'Checkpoint {checkpoint_path} does not exist')
         raise FileNotFoundError()
-    log.info(f"Loading checkpoint from {checkpoint_path}")   
-    checkpoint = torch.load(checkpoint_path, map_location=device_singleton.device)
+    log.info(f"Loading checkpoint from {checkpoint_path}")
+    # TODO check for other solution than weights_only=False
+    checkpoint = torch.load(checkpoint_path, map_location=device_singleton.device, weights_only=False)
     return checkpoint
 
 def load_state_dict_proxy(model, checkpoint, **kwargs):
