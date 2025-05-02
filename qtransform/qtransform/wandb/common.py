@@ -1,3 +1,5 @@
+from functools import wraps
+
 import wandb
 import os
 from qtransform.utils.id import ID
@@ -6,6 +8,22 @@ import omegaconf
 import logging
 
 _qtransform_wandb_conf = None
+_WANDB_ENABLED = False
+
+
+def wandb_enabled(func):
+    """
+    A decorator to check if wandb is enabled.
+    """
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        global _WANDB_ENABLED
+        if _WANDB_ENABLED:
+            return func(*args, **kwargs)
+        return None
+
+    return wrapper
 
 # some docs for hydra and wandb:
 # https://wandb.ai/adrishd/hydra-example/reports/Configuring-W-B-Projects-with-Hydra--VmlldzoxNTA2MzQw
@@ -29,6 +47,7 @@ def wandb_ensure_envs(cfg):
     if WANDB_DIR is None:
         os.environ["WANDB_DIR"] = os.path.join(os.getcwd())
 
+@wandb_enabled
 def wandb_setup_logger(cfg):
     logger = logging.getLogger('wandb_logger')
     logger.setLevel(logging.root.level)
@@ -36,6 +55,7 @@ def wandb_setup_logger(cfg):
         logger.addHandler(handler)
     pass
 
+@wandb_enabled
 def wandb_log(*args, **kwargs):
     wandb.log(*args, **kwargs)
     pass
@@ -43,6 +63,8 @@ def wandb_log(*args, **kwargs):
 def wandb_init(cfg, config=None):
     # prep for wandb usage
     if cfg.wandb.enabled:
+        global _WANDB_ENABLED
+        _WANDB_ENABLED = True
         wandb_ensure_envs(cfg)
         global _qtransform_wandb_conf
         _qtransform_wandb_conf = cfg 
@@ -63,10 +85,12 @@ def wandb_init(cfg, config=None):
         )
     pass
 
+@wandb_enabled
 def wandb_finish():
     wandb.finish()
     pass
 
+@wandb_enabled
 def wandb_watch(*args, **kwargs):
     wandb.watch(*args, **kwargs)
     pass
