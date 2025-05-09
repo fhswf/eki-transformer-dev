@@ -15,7 +15,5 @@ top_k: 200
 
 max_iters: ???
 
-
 out:
-  dir_name: 'energy_measurements'
-  save: True # if false will print results instead
+  path: null # path where the results should be saved to

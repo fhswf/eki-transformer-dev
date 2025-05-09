@@ -136,14 +136,9 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
         'avg_gpu_energy(J)': [avg_gpu_energy]
     })
 
-    if cfg.run.out.save:
-        save_results(cfg, df_verbose, df_summary)
-    else:
-        print('\n---------------\n')
-        print(df_verbose)
-        print('\n---------------\n')
-        print(df_summary)
-        print('\n---------------\n')
+
+    save_results(cfg, df_verbose, df_summary)
+
 
 
 def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> Measurement:
@@ -240,18 +235,13 @@ def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
     Saves results. Results of measurements are stored alongside the configs run parameters in a folder
     with the specific run number. The run number starts at 1 and is stored between different calls of the
     qtransform energy command and is incremented by each call using this function.
+
+    If no path is specified, the results will be printed instead.
+
     Intended to be used after measuring energy during generation.
     """
-    out_dir = cfg.run.out.dir_name
-    if out_dir is not None and len(out_dir) > 0:
-
-        if not isabs(out_dir):
-            try:
-                base_out_path = join(hydra.core.hydra_config.HydraConfig.get().runtime.cwd, out_dir)
-            except Exception:
-                base_out_path = join(getcwd(), out_dir)
-        else:
-            base_out_path = out_dir
+    base_out_path = cfg.run.out.path
+    if base_out_path:
 
         base_out_path = base_out_path.replace('~', expanduser('~'))
         if not exists(base_out_path):
@@ -286,3 +276,9 @@ def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
                 df_summary.to_csv(out_path_averages, sep=";", index=False, mode="w", header=True)
             else:
                 df_summary.to_csv(out_path_averages, sep=";", index=False, mode="a", header=False)
+    else:
+        print('\n---------------\n')
+        print(df_verbose)
+        print('\n---------------\n')
+        print(df_summary)
+        print('\n---------------\n')
