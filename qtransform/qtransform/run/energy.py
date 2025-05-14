@@ -133,7 +133,8 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
         'total_cpu_energy(J)': [total_cpu_energy],
         'avg_cpu_energy(J)': [avg_cpu_energy],
         'total_gpu_energy(J)': [total_gpu_energy],
-        'avg_gpu_energy(J)': [avg_gpu_energy]
+        'avg_gpu_energy(J)': [avg_gpu_energy],
+        'max_new_tokens': [cfg.run.max_new_tokens]
     })
 
 
