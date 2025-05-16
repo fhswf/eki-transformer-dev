@@ -1,16 +1,18 @@
 import subprocess
 
-base_path = "/home/student/energy_measurements/"
+base_path = "/home/student/energy_measurements"
 
 max_iters = 100
 
 model_checkpoint = {
-    "EB_gpt_small_l1_h2": {"checkpoint": "/home/student/energy_measurements/chkpts/2025-04-30_12:20:10-quaint-speakerEB_gpt_small_l1_h2tsV2", "max_new_tokens": 64, "path" : f"{base_path+'EB_gpt_small_l1_h2'}"},
-    "EB_gpt_small_l2_h4": {"checkpoint": None, "max_new_tokens": 64, "path" : f"{base_path+'EB_gpt_small_l2_h4'}"},
+    "EB_gpt_small_l1_h2": {"checkpoint": f"{base_path}/chkpts/2025-04-30_12:20:10-quaint-speakerEB_gpt_small_l1_h2tsV2", "max_new_tokens": 64, "path" : f"{base_path+'/EB_gpt_small_l1_h2_check'}"},
+    "EB_gpt_small_l1_h2": {"checkpoint": None, "max_new_tokens": 64, "path" : f"{base_path+'/EB_gpt_small_l1_h2'}"},
+    "EB_gpt_small_l2_h4": {"checkpoint": f"{base_path}/chkpts/2025-04-30_12:21:59-excited-morningEB_gpt_small_l2_h4tsV2", "max_new_tokens": 64, "path" : f"{base_path+'/EB_gpt_small_l2_h4_check'}"},
+    "EB_gpt_small_l2_h4": {"checkpoint": None, "max_new_tokens": 64, "path" : f"{base_path+'/EB_gpt_small_l2_h4'}"},
 }
 
 base_params = ["qtransform", "run=energy", "dataset=tsV2", "tokenizer=tsV2", "wandb.enabled=False",
-               f"run.max_iters={max_iters}", "run.preheat.max_iters=1"]
+               f"run.max_iters={max_iters}", "run.preheat.max_iters=5"]
 
 params = []
 
