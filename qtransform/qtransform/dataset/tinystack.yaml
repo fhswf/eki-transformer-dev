@@ -11,5 +11,5 @@ untokenized:
     class: qtransform.dataset.tinystack.TinyStack
 
 defaults:
-  - untokenized/huggingface
-  - tokenized/hf
+  - untokenized/huggingface_tinystack
+  - tokenized/hf_tinystack
