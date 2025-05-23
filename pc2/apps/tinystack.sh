@@ -6,6 +6,7 @@
 
 # check if this script is running in slurm
 
+
 if [ -z "$SLURM_JOB_ID" ]; then
   echo "Vanilla Node execution"
 else
@@ -50,12 +51,12 @@ fi
 
 
 data="dataset=tinystack dataset.dataloader.batch_size=32 dataset.root_path=$WORK_HOME/.qtransform/datasets tokenizer=tinystack"
-run="run=train run.epochs=1 model=tinystack run.export=True debug=True +trace=True"
+run="run=infer run.epochs=10 model=tinystack run.export=True debug=True +trace=True"
 quant="quantization=qat quantization/model=SLURM_BENCH"
 # models=( BENCH_gpt2_ReBNT_tiny BENCH_gpt2_ReBNT_small BENCH_gpt2_ReBNT_smaller )
 models=( tinystack )
 for model in ${models[@]}
 do
-    echo qtransform $run model=$model $data $quant +run.max_iters=50
-    qtransform $run model=$model $data $quant +run.max_iters=50
+    echo qtransform $run model=$model $quant
+    qtransform $run model=$model $quant
 done

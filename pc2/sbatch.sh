@@ -18,4 +18,6 @@
 # monitor job with squeue or squeue_pretty or spredict
 # cancle job with scancel JOBID or all jobs with scancel -u USERNAME
 
+export WANDB_API_KEY="Put API Key here"
+
 eval apps/tinystack.sh
