@@ -122,6 +122,8 @@ def main():
         ConfigSingleton().config = cfg
         log.info(cfg)
 
+
+
     # start programm now...
     exit_code=0
     log.info(cfg)
