@@ -80,10 +80,8 @@ def main():
         log.info(f"Overwritten arguments from checkpoint: {checkpoint_metadata.qtrans_hydra_overrides}")
 
         def merge_hydra_cli_args(checkpoint_overrides, cli_overrides):
-            # Liste von Keys, die du NICHT aus dem Checkpoint übernehmen willst
-            blocked_keys = ["run.epochs", "run.export"]  # erweiterbar nach Bedarf
+            blocked_keys = ["run.epochs", "run.export", "run.max_iters"] 
 
-            # Hilfsfunktion zum Validieren
             def is_valid_override(s):
                 return isinstance(s, str) and "=" in s and not any(s.startswith(b + "=") for b in blocked_keys)
 
@@ -96,7 +94,6 @@ def main():
                 else:
                     log.info(f"Ignoring checkpoint override: {item!r}")
 
-            # CLI-Overrides verarbeiten (werden bevorzugt)
             cli_overrides_dict = {}
             for item in cli_overrides:
                 if "=" in item:
@@ -105,11 +102,18 @@ def main():
                 else:
                     log.warning(f"Ignoring invalid CLI override: {item!r}")
 
-            # CLI überschreibt Checkpoint
             merged_overrides = {**checkpoint_overrides_dict, **cli_overrides_dict}
 
-            # Rückgabe als List[str]
             return [f"{key}={value}" for key, value in merged_overrides.items()]
+
+
+        merged_overrides_array = merge_hydra_cli_args(checkpoint_metadata.qtrans_hydra_overrides, hydra_cli_args)
+        
+        log.info(f"merged overwrites: {merged_overrides_array}")
+        cfg = hydra.compose("config", overrides=merged_overrides_array)
+        OmegaConf.update(cfg, "runtime.overwrites", merged_overrides_array, force_add=True)
+        ConfigSingleton().config = cfg
+        log.info(cfg)
 
 
         merged_overrides_array = merge_hydra_cli_args(checkpoint_metadata.qtrans_hydra_overrides, hydra_cli_args)
