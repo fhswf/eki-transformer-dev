@@ -19,5 +19,6 @@
 # cancle job with scancel JOBID or all jobs with scancel -u USERNAME
 
 export WANDB_API_KEY="Put API Key here"
+export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/paulw"
 
 eval apps/tinystack.sh
