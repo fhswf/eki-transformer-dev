@@ -20,10 +20,9 @@ else
     module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
     module load lang/Tkinter/3.11.5-GCCcore-13.2.0
     # set env to be compatible with pc2
-    export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/paulw"
     export PYTHONUSERBASE="$SB_PRF_HOME/.local"
     mkdir -p $PYTHONUSERBASE
-    export HF_HOME="$PC2PFS/hpc-prf-ekiapp/paulw/hf_cache"
+    export HF_HOME="$WORK_HOME/hf_cache"
     export TRANSFORMERS_CACHE=$HF_HOME
     mkdir -p $HF_HOME
     # does not work atm:
