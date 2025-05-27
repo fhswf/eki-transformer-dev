@@ -1,0 +1,9 @@
+wrapper: TransformersTokenizer
+pretrained_tokenizer: AutoTokenizer
+module: transformers
+#(https://huggingface.co/docs/transformers/main_classes/tokenizer)
+fast: True
+encoding: fhswf/tiny-stack-tokenizer
+#fhswf/BPE_GPT2_TinyStoriesV2_cleaned_1024
+# fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048
+# fhswf/BPE_GPT2_TinyStoriesV2_cleaned_4096

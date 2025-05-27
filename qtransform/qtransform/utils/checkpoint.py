@@ -47,7 +47,8 @@ def load_checkpoint(checkpoint_path: str):
         log.error(f'Checkpoint {checkpoint_path} does not exist')
         raise FileNotFoundError()
     log.info(f"Loading checkpoint from {checkpoint_path}")   
-    checkpoint = torch.load(checkpoint_path, map_location=device_singleton.device)
+    checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'), weights_only=False)
+    #checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
     return checkpoint
 
 def load_state_dict_proxy(model, checkpoint, **kwargs):
@@ -76,7 +77,6 @@ def save_checkpoint(model: nn.Module,
     if "runtime" in ConfigSingleton().config and "overwrites" in ConfigSingleton().config["runtime"]:
         metadata.qtrans_hydra_overrides = ConfigSingleton().config["runtime"]["overwrites"]
     
-    metadata.checkpoint_counter = metadata.checkpoint_counter + 1
     checkpoint_path = os.path.join(get_output_chkpt_dir(), metadata.model_name)
     log.info(f"Model checkpoint saving to {checkpoint_path}")
     torch.save(obj={

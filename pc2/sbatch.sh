@@ -9,7 +9,7 @@
 #SBATCH -p gpu
 #SBATCH -A hpc-prf-ekiapp
 #SBATCH --mail-type FAIL
-#SBATCH --mail-user kuhmichel.max@fh-swf.de
+#SBATCH --mail-user weber.paul@fh-swf.de
 #SBATCH --gres=gpu:a100:1
 
 # launch script with :
@@ -18,4 +18,7 @@
 # monitor job with squeue or squeue_pretty or spredict
 # cancle job with scancel JOBID or all jobs with scancel -u USERNAME
 
-eval apps/tinyStories.sh
+export WANDB_API_KEY="Put API Key here"
+export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/paulw"
+
+eval apps/tinystack.sh

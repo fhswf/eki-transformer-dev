@@ -1,0 +1,15 @@
+name: fhswf/tiny-stack
+
+untokenized:
+  splits:
+    bench:
+      split: train
+    eval:
+      split: validation
+      mapping: test
+  dataset_processor:
+    class: qtransform.dataset.tinystack.TinyStack
+
+defaults:
+  - untokenized/huggingface_tinystack
+  - tokenized/hf_tinystack
