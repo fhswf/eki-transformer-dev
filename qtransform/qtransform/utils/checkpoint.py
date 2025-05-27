@@ -77,9 +77,9 @@ def save_checkpoint(model: nn.Module,
     if "runtime" in ConfigSingleton().config and "overwrites" in ConfigSingleton().config["runtime"]:
         metadata.qtrans_hydra_overrides = ConfigSingleton().config["runtime"]["overwrites"]
     
-    metadata.checkpoint_counter = metadata.checkpoint_counter + 1
     checkpoint_path = os.path.join(get_output_chkpt_dir(), metadata.model_name)
-    log.info(f"Model checkpoint saving to {checkpoint_path}").save(obj={
+    log.info(f"Model checkpoint saving to {checkpoint_path}")
+    torch.save(obj={
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "qtrans_metadata": metadata
