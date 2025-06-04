@@ -91,9 +91,9 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
     idle_time = cfg.run.idle_time
     idle_measurement = measure_idle_energy(idle_time, monitor)
 
-    preheat(cfg, model_wrapper, dataloader)
+    measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=True)
 
-    generation_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor)
+    generation_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=False)
 
     df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)'])
 
@@ -156,57 +156,27 @@ def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> Measurement:
     return measurement
 
 
-def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader, monitor: ZeusMonitor) -> \
+def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader, monitor: ZeusMonitor, preheating : bool) -> \
         list[Measurement]:
     """
     Mesures energy during generation.
     max_new_tokens, max_iters, temperature and top_k can be set through the configs run parameters.
+    If preheating, the max_iters from the preheating section is used instead.
     """
     measurements = []
-    lens = min(len(dataloader), cfg.run.max_iters)
-    if isinstance(model_wrapper.model, torch.nn.Module):
-        model_wrapper.model.eval()
-    log.info("Measuring energy consumption during generation")
-    for i, data in enumerate(dataloader):
+    log_msg_start = "Measuring energy consumption during generation"
+    log_msg_end = "Measuring finished"
+    if preheating:
+        log_msg_start = "Starting preheating"
+        log_msg_end = "Preheating finished"
+        lens = min(len(dataloader), cfg.run.preheat.max_iters)
+    else:
+        lens = min(len(dataloader), cfg.run.max_iters)
 
-        log.debug(f'Iteration: {i}')
-        if i >= lens:
-            break
-        inputs = None
-        if len(data) > 2:
-            inputs = data['input_ids']
-        elif len(data) == 2:
-            inputs, _ = data
-        else:
-            log.error(f"unsupported dataloader output. len was {len(data)}. ")
-            raise NotImplementedError
-        with torch.no_grad():
-            inputs = inputs.to(device_singleton.device)
-
-            monitor.begin_window("Generation")
-            y: torch.Tensor = generate(model_wrapper=model_wrapper, idx=inputs,
-                                       max_new_tokens=cfg.run.max_new_tokens,
-                                       temperature=cfg.run.temperature,
-                                       top_k=cfg.run.top_k)
-            measurement = monitor.end_window("Generation", sync_execution=True)
-            measurements.append(measurement)
-
-            # print(tokenizer.decode(y[0].tolist()) + '\n---------------\n')
-
-    log.info("Measuring finished")
-    return measurements
-
-
-def preheat(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader):
-    """
-    Preheats the device. Intended to be used before measuring energy during generation.
-    max_new_tokens and max_iters can be set through the configs run parameters. temperature and top_k are constant.
-    """
-    lens = min(len(dataloader), cfg.run.preheat.max_iters)
     if lens > 0:
-        log.info("Starting preheating")
         if isinstance(model_wrapper.model, torch.nn.Module):
             model_wrapper.model.eval()
+        log.info(log_msg_start)
         for i, data in enumerate(dataloader):
 
             log.debug(f'Iteration: {i}')
@@ -223,12 +193,18 @@ def preheat(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader):
             with torch.no_grad():
                 inputs = inputs.to(device_singleton.device)
 
-                generate(model_wrapper=model_wrapper, idx=inputs,
-                         max_new_tokens=cfg.run.preheat.max_new_tokens,
-                         temperature=1.0,
-                         top_k=1)
+                monitor.begin_window("Generation")
+                y: torch.Tensor = generate(model_wrapper=model_wrapper, idx=inputs,
+                                           max_new_tokens=cfg.run.max_new_tokens,
+                                           temperature=cfg.run.temperature,
+                                           top_k=cfg.run.top_k)
+                measurement = monitor.end_window("Generation", sync_execution=True)
+                measurements.append(measurement)
 
-        log.info("Preheating finished")
+                # print(tokenizer.decode(y[0].tolist()) + '\n---------------\n')
+
+        log.info(log_msg_end)
+    return measurements
 
 
 def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:

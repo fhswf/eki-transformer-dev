@@ -2,11 +2,10 @@ command: energy
 
 idle_time: 0 # higher idle time means slightly more accurate measurements
 
-# iterations and tokens to generate with given dataset to "preheat" the running device
+# iterations to generate with given dataset to "preheat" the running device
 # other generation options for preheating can't be changed via run configurations for now
 preheat:
   max_iters: 0
-  max_new_tokens: 512
 
 # generation configuration
 max_new_tokens: 512
