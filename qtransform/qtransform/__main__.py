@@ -72,29 +72,32 @@ def main():
         log.info(f"checkpoint {checkpoint_location} was given, loading meta data to continue from")
         checkpoint = load_checkpoint(checkpoint_location)
         checkpoint_metadata = checkpoint.get('qtrans_metadata')
-        if checkpoint_metadata is None:
-            raise ValueError(f"checkpoint {checkpoint_location} does not contain qtransform metadata")
-        if not isinstance(checkpoint_metadata, QtransChkptMetaData):
-            checkpoint_metadata = QtransChkptMetaData.from_dict(checkpoint_metadata)
+        if checkpoint_metadata is not None:
+            if not isinstance(checkpoint_metadata, QtransChkptMetaData):
+                checkpoint_metadata = QtransChkptMetaData.from_dict(checkpoint_metadata)
 
-        log.info(f"Overwritten arguments from checkpoint: {checkpoint_metadata.qtrans_hydra_overrides}")
+            log.info(f"Overwritten arguments from checkpoint: {checkpoint_metadata.qtrans_hydra_overrides}")
 
-        def merge_hydra_cli_args(checkpoint_overrides, cli_overrides):
-            """
-            Merges the CLI overrides with the checkpoint overrides.
-            CLI overrides take precedence over checkpoint overrides.
-            """
-            checkpoint_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in checkpoint_overrides}
-            cli_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in cli_overrides}
-            merged_overrides = {**checkpoint_overrides_dict, **cli_overrides_dict}
-            return [f"{key}={value}" for key, value in merged_overrides.items()]
-        
-        merged_overrides_array = merge_hydra_cli_args(checkpoint_metadata.qtrans_hydra_overrides, hydra_cli_args)
-        
-        log.info(f"merged overwrites: {merged_overrides_array}")
-        cfg = hydra.compose("config", overrides=merged_overrides_array)
-        # cfg = hydra.compose(overrides=hydra_cli_args)
-        OmegaConf.update(cfg, "runtime.overwrites", merged_overrides_array, force_add=True)
+            def merge_hydra_cli_args(checkpoint_overrides, cli_overrides):
+                """
+                Merges the CLI overrides with the checkpoint overrides.
+                CLI overrides take precedence over checkpoint overrides.
+                """
+                checkpoint_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in checkpoint_overrides}
+                cli_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in cli_overrides}
+                merged_overrides = {**checkpoint_overrides_dict, **cli_overrides_dict}
+                return [f"{key}={value}" for key, value in merged_overrides.items()]
+
+            merged_overrides_array = merge_hydra_cli_args(checkpoint_metadata.qtrans_hydra_overrides, hydra_cli_args)
+
+            log.info(f"merged overwrites: {merged_overrides_array}")
+            cfg = hydra.compose("config", overrides=merged_overrides_array)
+            # cfg = hydra.compose(overrides=hydra_cli_args)
+            OmegaConf.update(cfg, "runtime.overwrites", merged_overrides_array, force_add=True)
+        else:
+            #raise ValueError(f"checkpoint {checkpoint_location} does not contain qtransform metadata")
+            log.warning("No checkpoint overrides found in checkpoint metadata")
+
         ConfigSingleton().config = cfg
         log.info(cfg)
 
