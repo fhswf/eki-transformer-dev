@@ -95,7 +95,7 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
 
     generation_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=False)
 
-    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)'])
+    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end'])
 
     avg_cpu_energy_idle = 0
     avg_gpu_energy_idle = 0
@@ -106,7 +106,10 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
             avg_cpu_energy_idle = sum(idle_measurement.cpu_energy.values()) / idle_time
         avg_gpu_energy_idle = sum(idle_measurement.gpu_energy.values()) / idle_time
 
-    for measurement in generation_measurements:
+    for _measurement in generation_measurements:
+        measurement = _measurement['measurement']
+        start = _measurement['start']
+        end = _measurement['end']
         if not measurement.cpu_energy:
             # same as before, set energy to 0
             measurement.cpu_energy = {0: 0}
@@ -115,7 +118,10 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
             'cpu_energy(J)': sum(
                 measurement.cpu_energy.values()) - avg_cpu_energy_idle * measurement.time,
             'gpu_energy(J)': sum(
-                measurement.gpu_energy.values()) - avg_gpu_energy_idle * measurement.time}
+                measurement.gpu_energy.values()) - avg_gpu_energy_idle * measurement.time,
+            'start': start,
+            'end': end
+            }
 
     total_time = df_verbose['time(s)'].sum()
     total_cpu_energy = df_verbose['cpu_energy(J)'].sum()
@@ -156,8 +162,8 @@ def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> Measurement:
     return measurement
 
 
-def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader, monitor: ZeusMonitor, preheating : bool) -> \
-        list[Measurement]:
+def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader, monitor: ZeusMonitor,
+                              preheating: bool) -> list[dict[str, Measurement | float]]:
     """
     Mesures energy during generation.
     max_new_tokens, max_iters, temperature and top_k can be set through the configs run parameters.
@@ -193,13 +199,15 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: D
             with torch.no_grad():
                 inputs = inputs.to(device_singleton.device)
 
+                begin = time.time()
                 monitor.begin_window("Generation")
                 y: torch.Tensor = generate(model_wrapper=model_wrapper, idx=inputs,
                                            max_new_tokens=cfg.run.max_new_tokens,
                                            temperature=cfg.run.temperature,
                                            top_k=cfg.run.top_k)
                 measurement = monitor.end_window("Generation", sync_execution=True)
-                measurements.append(measurement)
+                end = time.time()
+                measurements.append({"measurement": measurement, "start": begin, "end": end})
 
                 # print(tokenizer.decode(y[0].tolist()) + '\n---------------\n')
 
