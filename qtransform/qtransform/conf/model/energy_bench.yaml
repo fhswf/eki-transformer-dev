@@ -1,6 +1,7 @@
 cls: GPT
 calc_loss_in_model: True
 type: checkpoint
+cstr:
 args:
   n_layer : 2
   n_head : 4
