@@ -8,6 +8,7 @@ import logging
 import qtransform
 from qtransform.utils import addLoggingHandler, addLoggingLevel
 from qtransform import ConfigSingleton
+from qtransform import device_singleton
 from qtransform.utils.helper import get_output_log_dir
 import sys
 import json
@@ -45,6 +46,7 @@ def main():
     #     print(f"This script is running inside a SLURM job with SLURM_JOB_ID={os.environ['SLURM_JOB_ID']}")
     
     cfg = ConfigSingleton().config
+    device_singleton.device = cfg.device
     OmegaConf.update(cfg, "runtime.choices", HydraConfig().instance().get().runtime.choices, force_add=True)
     logging.captureWarnings(True)
     root_log = logging.getLogger("root")
