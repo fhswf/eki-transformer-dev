@@ -30,7 +30,7 @@ for model, checkpoint in model_checkpoint.items():
         command = base_params.copy()
         command.extend(param)
         check, max_new_tokens, path = checkpoint.values()
-        command.extend([f"model={model}", f"run.max_new_tokens={max_new_tokens}", f"run.preheat.max_new_tokens={max_new_tokens}", f"run.out.path={path}"])
+        command.extend([f"model={model}", f"run.max_new_tokens={max_new_tokens}", f"run.out.path={path}"])
         if check is not None:
             command.append(f"model.checkpoint={check}")
         commands.append(command)
