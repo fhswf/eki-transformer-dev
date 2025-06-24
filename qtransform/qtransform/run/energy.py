@@ -68,7 +68,6 @@ def run(cfg: DictConfig):
     model_wrapper.to(device=device)
     if hasattr(log, "trace"): log.trace(model_wrapper.model)
 
-
     log.info(f"Starting benchmark")
     # for now. This just prevent the error msg, maybe in the future we find a way of using the hf-tok-parallelism feature
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -77,7 +76,6 @@ def run(cfg: DictConfig):
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
     train_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
-
 
     bench(cfg, model_wrapper, eval_dataloader)
 
@@ -89,77 +87,53 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
     monitor = ZeusMonitor()
 
     idle_time = cfg.run.idle_time
-    idle_measurement = measure_idle_energy(idle_time, monitor)
+    idle_measurements = measure_idle_energy(idle_time, monitor)
 
-    measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=True)
+    preheat_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=True)
 
     generation_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=False)
 
-    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end'])
+    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', 'type'])
 
-    avg_cpu_energy_idle = 0
-    avg_gpu_energy_idle = 0
-    if idle_time > 0:
-        # zeus treats cpu and gpu differently:
-        # if no cpu is available/can't be read energy will be none, so it has to be set to 0
-        if idle_measurement.cpu_energy:
-            avg_cpu_energy_idle = sum(idle_measurement.cpu_energy.values()) / idle_time
-        avg_gpu_energy_idle = sum(idle_measurement.gpu_energy.values()) / idle_time
-
-    for _measurement in generation_measurements:
-        measurement = _measurement['measurement']
-        start = _measurement['start']
-        end = _measurement['end']
-        if not measurement.cpu_energy:
-            # same as before, set energy to 0
-            measurement.cpu_energy = {0: 0}
-        df_verbose.loc[len(df_verbose)] = {
-            'time(s)': measurement.time,
-            'cpu_energy(J)': sum(
-                measurement.cpu_energy.values()) - avg_cpu_energy_idle * measurement.time,
-            'gpu_energy(J)': sum(
-                measurement.gpu_energy.values()) - avg_gpu_energy_idle * measurement.time,
-            'start': start,
-            'end': end
+    for measurements in [idle_measurements, preheat_measurements, generation_measurements]:
+        for _measurement in measurements:
+            measurement = _measurement['measurement']
+            start = _measurement['start']
+            end = _measurement['end']
+            type_str = _measurement['type']
+            if not measurement.cpu_energy:
+                # same as before, set energy to 0
+                measurement.cpu_energy = {0: 0}
+            df_verbose.loc[len(df_verbose)] = {
+                'time(s)': measurement.time,
+                'cpu_energy(J)': sum(
+                    measurement.cpu_energy.values()),
+                'gpu_energy(J)': sum(
+                    measurement.gpu_energy.values()),
+                'start': start,
+                'end': end,
+                'type': type_str,
             }
 
-    total_time = df_verbose['time(s)'].sum()
-    total_cpu_energy = df_verbose['cpu_energy(J)'].sum()
-    total_gpu_energy = df_verbose['gpu_energy(J)'].sum()
-
-    avg_time = df_verbose['time(s)'].mean()
-    avg_cpu_energy = df_verbose['cpu_energy(J)'].mean()
-    avg_gpu_energy = df_verbose['gpu_energy(J)'].mean()
-
-    # note that the averages here are "per run averages"
-    df_summary = pd.DataFrame({
-        'run': '',
-        'total_time(s)': [total_time],
-        'avg_time(s)': [avg_time],
-        'total_cpu_energy(J)': [total_cpu_energy],
-        'avg_cpu_energy(J)': [avg_cpu_energy],
-        'total_gpu_energy(J)': [total_gpu_energy],
-        'avg_gpu_energy(J)': [avg_gpu_energy],
-        'max_new_tokens': [cfg.run.max_new_tokens]
-    })
+    save_results(cfg, df_verbose)
 
 
-    save_results(cfg, df_verbose, df_summary)
-
-
-
-def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> Measurement:
+def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> list[dict[str, Measurement | float]]:
     """
-    Measures energy while idling. Intended to be used before doing ANY generation.
+    Measures energy while idling. Intended to be used before doing ANY generation. Useful for visualizing energy consumption before generation.
     """
-    measurement = zeus.monitor.energy.Measurement(0, {0: 0}, {0: 0}, {0: 0})
+    measurements = []
     if idle_time > 0:
         log.info(f"Measuring energy while idle. Set idle time is {idle_time} seconds")
-        monitor.begin_window("Idle")
-        time.sleep(idle_time)
-        measurement = monitor.end_window("Idle")
+        for i in range(idle_time):
+            begin = time.time()
+            monitor.begin_window("Idle")
+            time.sleep(1)
+            measurement = monitor.end_window("Idle")
+            end = time.time()
+            measurements.append({"measurement": measurement, "start": begin, "end": end, "type": "idle"})
         log.info(f"Measuring idle energy complete.")
-    return measurement
+    return measurements
 
 
 def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader, monitor: ZeusMonitor,
@@ -172,9 +146,11 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: D
     measurements = []
     log_msg_start = "Measuring energy consumption during generation"
     log_msg_end = "Measuring finished"
+    type_str = "generation"
     if preheating:
         log_msg_start = "Starting preheating"
         log_msg_end = "Preheating finished"
+        type_str = "preheat"
         lens = min(len(dataloader), cfg.run.preheat.max_iters)
     else:
         lens = min(len(dataloader), cfg.run.max_iters)
@@ -207,7 +183,7 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: D
                                            top_k=cfg.run.top_k)
                 measurement = monitor.end_window("Generation", sync_execution=True)
                 end = time.time()
-                measurements.append({"measurement": measurement, "start": begin, "end": end})
+                measurements.append({"measurement": measurement, "start": begin, "end": end, "type": type_str})
 
                 # print(tokenizer.decode(y[0].tolist()) + '\n---------------\n')
 
@@ -215,7 +191,7 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: D
     return measurements
 
 
-def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
+def save_results(cfg, df_verbose: DataFrame) -> None:
     """
     Saves results. Results of measurements are stored alongside the configs run parameters in a folder
     with the specific run number. The run number starts at 1 and is stored between different calls of the
@@ -255,15 +231,7 @@ def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
             log.info(f'Saving results to: "{run_folder}"')
             df_verbose.to_csv(out_path_verbose, sep=";", index=False, mode="w", header=True)
 
-            out_path_averages = join(base_out_path, "energy_averages.csv")
-            df_summary["run"] = run_num
-            if not exists(out_path_averages):
-                df_summary.to_csv(out_path_averages, sep=";", index=False, mode="w", header=True)
-            else:
-                df_summary.to_csv(out_path_averages, sep=";", index=False, mode="a", header=False)
     else:
         print('\n---------------\n')
         print(df_verbose)
-        print('\n---------------\n')
-        print(df_summary)
         print('\n---------------\n')
