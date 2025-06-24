@@ -1,6 +1,7 @@
 import subprocess
+import getpass
 
-base_path = "/home/student/energy"
+base_path = f"/home/{getpass.getuser()}/energy"
 
 max_iters = 1000
 
@@ -17,7 +18,7 @@ model_checkpoints = {
 }
 
 base_params = ["qtransform", "run=energy", "dataset=tsV2", "tokenizer=tsV2", "wandb.enabled=False",
-               f"run.max_iters={max_iters}", "run.preheat.max_iters=5"]
+               f"run.max_iters={max_iters}", "run.preheat.max_iters=5", "run.idle_time=60"]
 
 params = []
 
