@@ -1,7 +1,6 @@
 import subprocess
-import getpass
 
-base_path = f"/home/{getpass.getuser()}/energy"
+base_path = f"/home/student/energy"
 
 max_iters = 1000
 
