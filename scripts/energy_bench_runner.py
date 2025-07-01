@@ -6,13 +6,16 @@ max_iters = 1000
 
 model_checkpoints = {
     "energy_bench": [
-        {"checkpoint": f"{base_path}/chkpts/gpt2-s256-t2048-l1-h2-e256-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-13_10_56_37__epoch_1", "max_new_tokens": 64, "path" : f"{base_path+'/cp_gpt2-s256-t2048-l1-h2-e256_gte_1s'}", "cstring" : "MGPT-s256-t2048-l1-h2-e256-AReLU-NBatchNormTranspose-Plearned"},
-        {"checkpoint": f"{base_path}/chkpts/gpt2-s256-t2048-l2-h4-e256-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-13_10_53_07__epoch_1", "max_new_tokens": 32, "path" : f"{base_path+'/cp_gpt2-s256-t2048-l2-h4-e256_gte_1s'}", "cstring" : "MGPT-s256-t2048-l2-h4-e256-AReLU-NBatchNormTranspose-Plearned"},
-        {"checkpoint": f"{base_path}/chkpts/gpt2-s512-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-12_14_44_22__epoch_1", "max_new_tokens": 4, "path" : f"{base_path+'/cp_gpt2-s512-t2048-l2-h4-e512_gte_1s'}", "cstring" : "MGPT-s512-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned"},
+        #{"checkpoint": f"{base_path}/chkpts/gpt2-s256-t2048-l1-h2-e256-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-13_10_56_37__epoch_1", "max_new_tokens": 64, "path" : f"{base_path+'/cp_gpt2-s256-t2048-l1-h2-e256_gte_1s'}", "cstring" : "MGPT-s256-t2048-l1-h2-e256-AReLU-NBatchNormTranspose-Plearned"},
+        #{"checkpoint": f"{base_path}/chkpts/gpt2-s256-t2048-l2-h4-e256-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-13_10_53_07__epoch_1", "max_new_tokens": 32, "path" : f"{base_path+'/cp_gpt2-s256-t2048-l2-h4-e256_gte_1s'}", "cstring" : "MGPT-s256-t2048-l2-h4-e256-AReLU-NBatchNormTranspose-Plearned"},
+        #{"checkpoint": f"{base_path}/chkpts/gpt2-s512-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-12_14_44_22__epoch_1", "max_new_tokens": 4, "path" : f"{base_path+'/cp_gpt2-s512-t2048-l2-h4-e512_gte_1s'}", "cstring" : "MGPT-s512-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned"},
 
-        #{"checkpoint": f"{base_path}/chkpts/gpt2-s256-t2048-l1-h2-e256-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-13_10_56_37__epoch_1", "max_new_tokens": 64, "path" : f"{base_path+'/cp_gpt2-s256-t2048-l1-h2-e256_same_token'}", "cstring" : "MGPT-s256-t2048-l1-h2-e256-AReLU-NBatchNormTranspose-Plearned"},
-        {"checkpoint": f"{base_path}/chkpts/gpt2-s256-t2048-l2-h4-e256-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-13_10_53_07__epoch_1", "max_new_tokens": 64, "path" : f"{base_path+'/cp_gpt2-s256-t2048-l2-h4-e256_same_token'}", "cstring" : "MGPT-s256-t2048-l2-h4-e256-AReLU-NBatchNormTranspose-Plearned"},
-        {"checkpoint": f"{base_path}/chkpts/gpt2-s512-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-12_14_44_22__epoch_1", "max_new_tokens": 64, "path" : f"{base_path+'/cp_gpt2-s512-t2048-l2-h4-e512_same_token'}", "cstring" : "MGPT-s512-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned"},
+        {"checkpoint": None, "max_new_tokens": 64, "path" : f"{base_path+'/gpt2-s256-t2048-l1-h2-e256_gte_1s'}", "cstring" : "MGPT-s256-t2048-l1-h2-e256-AReLU-NBatchNormTranspose-Plearned"},
+        {"checkpoint": None, "max_new_tokens": 32, "path" : f"{base_path+'/gpt2-s256-t2048-l2-h4-e256_gte_1s'}", "cstring" : "MGPT-s256-t2048-l2-h4-e256-AReLU-NBatchNormTranspose-Plearned"},
+        {"checkpoint": None, "max_new_tokens": 4, "path" : f"{base_path+'/gpt2-s512-t2048-l2-h4-e512_gte_1s'}", "cstring" : "MGPT-s512-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned"},
+
+        #{"checkpoint": f"{base_path}/chkpts/gpt2-s256-t2048-l2-h4-e256-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-13_10_53_07__epoch_1", "max_new_tokens": 64, "path" : f"{base_path+'/cp_gpt2-s256-t2048-l2-h4-e256_same_token'}", "cstring" : "MGPT-s256-t2048-l2-h4-e256-AReLU-NBatchNormTranspose-Plearned"},
+        #{"checkpoint": f"{base_path}/chkpts/gpt2-s512-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned_fhswf__TinyStoriesV2_cleaned_2024-06-12_14_44_22__epoch_1", "max_new_tokens": 64, "path" : f"{base_path+'/cp_gpt2-s512-t2048-l2-h4-e512_same_token'}", "cstring" : "MGPT-s512-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned"},
     ]
 }
 
