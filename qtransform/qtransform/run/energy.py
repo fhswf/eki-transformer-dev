@@ -1,9 +1,7 @@
 import logging
-from os.path import isabs, join, expanduser, exists
-from os import getcwd, makedirs
+from os.path import join, expanduser, exists
+from os import makedirs
 import pandas as pd
-import hydra
-import zeus.monitor.energy
 from omegaconf import DictConfig
 from pandas import DataFrame
 from torch.utils.data import DataLoader
@@ -12,7 +10,6 @@ from zeus.monitor import ZeusMonitor, Measurement
 from qtransform.model import QTRModelWrapper
 import os
 import torch
-from torch.utils import data as torch_data  # prevent naming conflict with data from dataloaders
 from datetime import datetime
 import time
 
@@ -41,9 +38,7 @@ def run(cfg: DictConfig):
 
     if "dataloader" not in cfg.dataset:
         log.error(
-            f"dataloder not specified for dataset: {cfg.dataset.name}. Use dataset=huggingface to get one automaticly.")
-    device_singleton.device = cfg.device
-    device = device_singleton.device
+            f"dataloader not specified for dataset: {cfg.dataset.name}. Use dataset=huggingface to get one automatically.")
     torch.manual_seed(cfg.seed)
 
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
@@ -58,14 +53,14 @@ def run(cfg: DictConfig):
         # from qtransform.quantization import get_quantizer
         # quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
         # model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
-        # quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore
+        # quantize last layers (batchnorm). params last saved checkpoint do not entirely reflect current model anymore
         # if replace_layers_later is not None:
         #    model, _ = quantizer.get_quantized_model(replace_layers_later)
     assert isinstance(model_wrapper,
                       DynamicCheckpointQTRModelWrapper), f'Model should be torch module, not {type(model_wrapper)}'
     # only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     # this is a problem if a layer uses a non-named Tensor during the forward pass
-    model_wrapper.to(device=device)
+    model_wrapper.to(device=device_singleton.device)
     if hasattr(log, "trace"): log.trace(model_wrapper.model)
 
     log.info(f"Starting benchmark")
@@ -74,7 +69,6 @@ def run(cfg: DictConfig):
     tokenizer_singleton.tokenizer = cfg.tokenizer
     from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
-    train_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
 
     bench(cfg, model_wrapper, eval_dataloader)
@@ -104,7 +98,7 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
             input_str = _measurement['input']
             output_str = _measurement['output']
             if not measurement.cpu_energy:
-                # same as before, set energy to 0
+                # If Zeus can't find any CPU, the cpu_energy dict is none, so here it's manually set to 0
                 measurement.cpu_energy = {0: 0}
             df_verbose.loc[len(df_verbose)] = {
                 'time(s)': measurement.time,
