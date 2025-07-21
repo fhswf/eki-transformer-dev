@@ -132,19 +132,19 @@ class DeviceSingleton:
             case 'cuda':
                 new_device = 'cuda' if cuda.is_available() else 'cpu'
                 if new_device == "cpu":
-                    log.warning("specified to use gpus, but cuda is not avaiable")
+                    log.warning("specified to use gpus, but cuda is not available")
             case 'gpu':
                 new_device = 'cuda' if cuda.is_available() else 'cpu'
                 if new_device == "cpu":
-                    log.warning("specified to use gpus, but cuda is not avaiable")
+                    log.warning("specified to use gpus, but cuda is not available")
             case 'mps':
                 new_device = 'mps' if backends.mps.is_available() else 'cpu'
                 if new_device == "cpu":
-                    log.warning("specified to use mps, but mps is not avaiable")
+                    log.warning("specified to use mps, but mps is not available")
             case 'cpu':
                 new_device = 'cpu'
             case _:
-                log.warning(f'Device {new_device} not recognized. Using default: CPU')
+                log.warning(f'Device {value} not recognized. Using default: CPU')
                 new_device = 'cpu'
         self._device = device(new_device)
         
