@@ -95,8 +95,11 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
             start = _measurement['start']
             end = _measurement['end']
             type_str = _measurement['type']
-            input_str = _measurement['input']
-            output_str = _measurement['output']
+            input_str = ""
+            output_str = ""
+            if type_str != 'idle':
+                input_str = _measurement['input']
+                output_str = _measurement['output']
             if not measurement.cpu_energy:
                 # If Zeus can't find any CPU, the cpu_energy dict is none, so here it's manually set to 0
                 measurement.cpu_energy = {0: 0}
