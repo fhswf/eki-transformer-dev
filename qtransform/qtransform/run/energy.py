@@ -93,7 +93,7 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
 
     generation_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=False)
 
-    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', 'type'])
+    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', 'type', 'input', 'output'])
 
     for measurements in [idle_measurements, preheat_measurements, generation_measurements]:
         for _measurement in measurements:
@@ -101,6 +101,8 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
             start = _measurement['start']
             end = _measurement['end']
             type_str = _measurement['type']
+            input_str = _measurement['input']
+            output_str = _measurement['output']
             if not measurement.cpu_energy:
                 # same as before, set energy to 0
                 measurement.cpu_energy = {0: 0}
@@ -113,6 +115,8 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
                 'start': start,
                 'end': end,
                 'type': type_str,
+                'input': input_str,
+                'output': output_str
             }
 
     save_results(cfg, df_verbose)
@@ -183,9 +187,13 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: D
                                            top_k=cfg.run.top_k)
                 measurement = monitor.end_window("Generation", sync_execution=True)
                 end = time.time()
-                measurements.append({"measurement": measurement, "start": begin, "end": end, "type": type_str})
-
-                # print(tokenizer.decode(y[0].tolist()) + '\n---------------\n')
+                measurements.append({
+                    "measurement": measurement, "start": begin, "end": end, "type": type_str,
+                    "input": tokenizer_singleton.tokenizer.decode(inputs[0]),
+                    "output": tokenizer_singleton.tokenizer.decode(y[0].tolist()[len(inputs[0]):])
+                })
+                #print(tokenizer_singleton.tokenizer.decode(y[0].tolist()[len(inputs[0]):]))
+                #print(tokenizer_singleton.tokenizer.decode(y[0].tolist()) + '\n---------------\n')
 
         log.info(log_msg_end)
     return measurements
