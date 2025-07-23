@@ -87,7 +87,7 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
 
     generation_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=False)
 
-    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', 'type', 'input', 'output'])
+    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', 'type'])
 
     for measurements in [idle_measurements, preheat_measurements, generation_measurements]:
         for _measurement in measurements:
@@ -95,11 +95,6 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
             start = _measurement['start']
             end = _measurement['end']
             type_str = _measurement['type']
-            input_str = ""
-            output_str = ""
-            if type_str != 'idle':
-                input_str = _measurement['input']
-                output_str = _measurement['output']
             if not measurement.cpu_energy:
                 # If Zeus can't find any CPU, the cpu_energy dict is none, so here it's manually set to 0
                 measurement.cpu_energy = {0: 0}
@@ -112,8 +107,6 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
                 'start': start,
                 'end': end,
                 'type': type_str,
-                'input': input_str,
-                'output': output_str
             }
 
     save_results(cfg, df_verbose)
@@ -186,8 +179,8 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: D
                 end = time.time()
                 measurements.append({
                     "measurement": measurement, "start": begin, "end": end, "type": type_str,
-                    "input": tokenizer_singleton.tokenizer.decode(inputs[0]),
-                    "output": tokenizer_singleton.tokenizer.decode(y[0].tolist()[len(inputs[0]):])
+                    #"input": tokenizer_singleton.tokenizer.decode(inputs[0]),
+                    #"output": tokenizer_singleton.tokenizer.decode(y[0].tolist()[len(inputs[0]):])
                 })
                 #print(tokenizer_singleton.tokenizer.decode(y[0].tolist()[len(inputs[0]):]))
                 #print(tokenizer_singleton.tokenizer.decode(y[0].tolist()) + '\n---------------\n')
