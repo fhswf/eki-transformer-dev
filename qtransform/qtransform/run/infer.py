@@ -10,12 +10,18 @@ import tiktoken
 from qtransform import device_singleton
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform.tokenizer.tokenizer import Tokenizer
-from qtransform.model import get_model_wrapper, QTRModelWrapper
+from qtransform.model import ModelType, get_model_wrapper, QTRModelWrapper,DynamicCheckpointQTRModelWrapper
 from os.path import isdir, exists, join, expanduser, isabs
 from os import makedirs, getcwd, makedirs
 from datetime import datetime
-from . import generate
 import numpy as np
+from functools import lru_cache
+import torch.nn.functional as F
+
+# Keep track of 10 different messages and then warn again
+@lru_cache(1)
+def warn_once(logger: logging.Logger, msg: str):
+    logger.warning(msg)
 
 log = logging.getLogger(__name__)
 
@@ -47,12 +53,57 @@ def run(cfg : DictConfig):
     log.info("=================")
     log.info("Running Inference")
     log.info("=================")
-    device_singleton.device = cfg.device
-    device = device_singleton.device
+    infer(cfg, device=device_singleton.device)
+    
+@torch.no_grad()
+def generate(model_wrapper: QTRModelWrapper, idx: torch.Tensor, max_new_tokens: int, temperature: float =1.0, top_k: int =None):
+    """
+    Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
+    the sequence max_new_tokens times, feeding the predictions back into the model each time.
+    This works for both ONNX models and torch Modules.
+    Most likely you'll want to make sure to be in model.eval() mode of operation for this.
+    """
+    if not isinstance(model_wrapper, QTRModelWrapper):
+        log.error(f'Cannot generate text without QTRModelWrapper instance')
+        raise TypeError()
+    if model_wrapper.model_type == ModelType.PRETRAINED:
+        log.warning(f'Inference for pretrained models not tested yet')
+    
+    block_size = model_wrapper.model_cfg.args.block_size
+    # get block size from onnx model if it is an onnx model
+    if block_size is None:
+        if model_wrapper.model_type == ModelType.ONNX:
+            shape = []
+            tensor_type = model_wrapper.model.graph.input[0].type.tensor_type
+            for dim in tensor_type.shape.dim:
+                # dim.dim_value is 0 if dynamic, otherwise the static value
+                shape.append(dim.dim_value)
+            block_size = shape[1] if len(shape) > 1 else None
+    log.info(f'Using block_size: {block_size} for model {model_wrapper.model_type.name}')
+    
+    for _ in range(max_new_tokens):
+        # if the sequence context is growing too long we must crop it at block_size
+        idx_cond = idx if idx.size(1) <= block_size else idx[:, -block_size:]
+        # forward the model to get the logits for the index in the sequence
+        # the results should not be softmaxed yet as they will be later within this function
+        logits, _ = model_wrapper(idx_cond)
+        # pluck the logits at the final step and scale by desired temperature
+        if temperature is not None and temperature > 0 and  temperature > 1.0e-10:
+            logits = logits[:, -1, :] / temperature
+        else:
+            logits = logits[:, -1, :] 
+        # optionally crop the logits to only the top k options
+        if top_k is not None:
+            v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+            logits[logits < v[:, [-1]]] = -float('Inf')
+        # apply softmax to convert logits to (normalized) probabilities
+        probs = F.softmax(logits, dim=-1)
+        # sample from the distribution
+        idx_next = torch.multinomial(probs, num_samples=1)
+        # append sampled index to the running sequence and continue
+        idx = torch.cat((idx, idx_next), dim=1)
+    return idx
 
-    torch.manual_seed(cfg.seed)
-    log.info(f"using device: {str(device)}")
-    infer(cfg, device)
 
 #TODO: huggingface makes use of pipelines for inference
 #(https://huggingface.co/docs/transformers/main_classes/pipelines)
@@ -71,7 +122,25 @@ def infer(cfg: DictConfig, device: Any):
     # -----------------------------------------------------------------------------
     #TODO: make inference work for huggingface pretrained models
     model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
-    model_wrapper.model.to(device=device)
+    #model_wrapper.model.to(device=device)
+    
+    quant_cfg = cfg.get('quantization')
+    if quant_cfg and quant_cfg.quantize:
+        if not model_wrapper.quantized:    
+            log.info(f'Quantizing model')
+            model_wrapper.quantize_model(quant_cfg)
+        else:
+            warn_once(log, f'Model was already quantized, ignoring quant_cfg from hydra')
+        #from qtransform.quantization import get_quantizer
+        #quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
+        #model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
+        #quantize last layers (batchnorm). parmams last saved checkpoint do not entirely reflect current model anymore 
+        #if replace_layers_later is not None:
+        #    model, _ = quantizer.get_quantized_model(replace_layers_later)
+        assert isinstance(model_wrapper, DynamicCheckpointQTRModelWrapper), f'Model should be torch module, not {type(model_wrapper)}'
+    #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
+    #this is a problem if a layer uses a non-named Tensor during the forward pass
+    model_wrapper.to(device=device_singleton.device)
     
     # try and get tokenizer conf from checkpoint
     # TODO do we have a generic way via the picke file? To combine model and tokenizer
@@ -96,6 +165,7 @@ def infer(cfg: DictConfig, device: Any):
         """
         tokenizer_singleton.tokenizer = cfg.tokenizer
         tokenizer = tokenizer_singleton.tokenizer
+        print(f"{type(tokenizer)=}")
         # TODO is this warning still up to date?
         log.warning(f'Dataset and tokenizer usage is still a WIP, for now gpt2 tiktokenizer is used for inference')
         start_ids = tokenizer.encode(start)

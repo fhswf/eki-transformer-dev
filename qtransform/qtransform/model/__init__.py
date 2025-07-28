@@ -6,6 +6,7 @@ from typing import Any, Optional
 import omegaconf
 from omegaconf import DictConfig, open_dict, OmegaConf
 from qtransform.classloader import get_data
+from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from torch import nn, Tensor, from_numpy
 from torch import compile as torch_compile
 from torch import __version__ as torch_version
@@ -98,6 +99,7 @@ class ModelConfig():
     calc_loss_in_model: bool
     args: ModelArgs
     checkpoint: Optional[str]
+    from_file: Optional[str]
     model_name: str = "Missing-Model-Name" # used to name the saved checkpoints
     cstr: str = None # infer model args from a config string: Mgpt2-s256-t2048-l2-h4-e512-AReLU-NBatchNormTranspose-Plearned
 
@@ -463,7 +465,9 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
             #print(idx_cond.cpu().numpy())
             #print(idx_cond.cpu().numpy().size)
             #np.save("global_in.npy", idx_cond.cpu().numpy())
-
+        
+        # onnx is cpu bound
+        log.warning(f"ONNX model is running on {device}, for this only cpu is supported inference")
         if labels is not None:
             idict = {input_name: idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
             warn_once(log, "labels are givin to external forwards pass wrapper but they are ignored inside onns models atm")
@@ -471,6 +475,25 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
             idict = {input_name: idx_cond.cpu().numpy()}
         # use infer_shapes()
         #forward pass of gpt model returns the non-softmaxed token predictions
+        print(len(idict[input_name][0]))
+    
+        block_size = None
+        if self.model_type == ModelType.ONNX:
+            shape = []
+            tensor_type = self.model.graph.input[0].type.tensor_type
+            for dim in tensor_type.shape.dim:
+                # dim.dim_value is 0 if dynamic, otherwise the static value
+                shape.append(dim.dim_value)
+            block_size = shape[1] if len(shape) > 1 else None
+        # pad idict to block size:
+        if len(idict[input_name][0]) < block_size:
+            # get pad token from tokenizer:
+            pad_token = tokenizer_singleton.tokenizer.PADDING_TOKEN
+            # check if pad_token to id
+            pad_token_id = tokenizer_singleton.tokenizer.encode(pad_token)
+            np.pad_width = block_size - len(idict[input_name][0])
+            idict[input_name] = np.pad(idict[input_name], ((0, 0), (0, np.pad_width)), mode='constant', constant_values=pad_token_id)
+
         odict = run_fn(self.model, idict)
         # print(odict)
         if "global_out" in odict.keys():
@@ -483,7 +506,7 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
         else:
             logits = from_numpy(odict["output"]).to(device=device)
 
-        return logits 
+        return logits, None  # TODO: labels are not supported in ONNX models atm, return None for loss
 
     def save_model(self):
         raise NotImplementedError

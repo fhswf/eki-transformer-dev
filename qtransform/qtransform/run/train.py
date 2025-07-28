@@ -38,12 +38,6 @@ def run(cfg: DictConfig):
     ## note: float16 data type will automatically use a GradScaler
     #ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
 
-    if "dataloader" not in cfg.dataset:
-        log.error(f"dataloder not specified for dataset: {cfg.dataset.name}. Use dataset=huggingface to get one automaticly.")
-    device_singleton.device = cfg.device
-    device = device_singleton.device
-    torch.manual_seed(cfg.seed)    
-    
     log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     #TODO: move quant_config as subconfig into model_cfg to perform quantization within modelwrapper
@@ -63,7 +57,7 @@ def run(cfg: DictConfig):
     assert isinstance(model_wrapper, DynamicCheckpointQTRModelWrapper), f'Model should be torch module, not {type(model_wrapper)}'
     #only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     #this is a problem if a layer uses a non-named Tensor during the forward pass
-    model_wrapper.to(device=device)
+    model_wrapper.to(device=device_singleton.device)
     if hasattr(log,"trace"): log.trace(model_wrapper.model)
     
     if model_wrapper.epochs >= 1:
@@ -103,7 +97,7 @@ def run(cfg: DictConfig):
     # lets go
     last_checkpoint, epoch, train_steps = train(
         cfg=cfg, 
-        device=device, 
+        device=device_singleton.device, 
         model_wrapper=model_wrapper,
         train_data_loader=train_dataloader, 
         eval_data_loader=eval_dataloader,
