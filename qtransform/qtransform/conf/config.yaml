@@ -18,7 +18,7 @@ defaults:
   - dataset/dataloader: default
   #default config from the lines above are overwritten with specified config
   - wandb: default
-  - dataset:
+  - dataset: default
   - tokenizer: transformers
   - optim: default
   - optim/scheduler: default
@@ -82,3 +82,4 @@ callbacks:
 
 model: 
   checkpoint:
+  from_file:

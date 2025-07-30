@@ -29,3 +29,5 @@ todos.md
 **/*.npy
 #wandb
 **/*.wandb*
+
+**/output/**

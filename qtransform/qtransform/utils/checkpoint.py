@@ -47,6 +47,7 @@ def load_checkpoint(checkpoint_path: str):
         log.error(f'Checkpoint {checkpoint_path} does not exist')
         raise FileNotFoundError()
     log.info(f"Loading checkpoint from {checkpoint_path}")   
+    print(device_singleton.device)
     checkpoint = torch.load(checkpoint_path, map_location=device_singleton.device)
     return checkpoint
 
