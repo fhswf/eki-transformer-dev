@@ -10,7 +10,7 @@ import os
 import torch
 from datetime import datetime
 import yaml
-from qtransform.run import generate
+from qtransform.run.infer import generate
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
 from qtransform.model import get_model_wrapper, DynamicCheckpointQTRModelWrapper
