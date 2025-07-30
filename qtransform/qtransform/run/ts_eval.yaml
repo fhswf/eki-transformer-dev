@@ -1,0 +1,9 @@
+command: ts_eval
+
+# generation configuration
+max_new_tokens: 512
+temperature: 0.7
+top_k: 200
+
+out:
+  path: ??? # path where the results should be saved to
