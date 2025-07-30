@@ -415,34 +415,33 @@ TODO:
 class ONNXQTRModelWrapper(QTRModelWrapper):
 
     def __init__(self, model_cfg: DictConfig):
-        self.load_model(model_cfg)
         self.model_type = ModelType.ONNX
+        self.load_model(model_cfg)
         log.info(f'ONNX model is on: {onnxruntime.get_device()}')
 
     def load_model(self, model_cfg: DictConfig):
         assert model_cfg.from_file 
-        self.from_file(model_cfg.from_file)
-        #TODO: context length could be infered from:
-        #model.graph.input[0].type.tensor_type.shape.dim[-1]
         self.model_cfg = model_cfg
+        self.from_file(model_cfg.from_file)
 
     def from_file(self, file):
         self.model = load_onnx_model(file)
-
-    def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
-        device = idx_cond.device
+        # self.device = device = idx_cond.device
+        log.warning(f"ONNX model is running on cpu, for this only cpu is supported inference")
+        
+        
         # defaults:
-        input_name =  "input"
-        run_fn = None
+        self.input_name =  "input"
+        self.run_fn = None
         # determine if finn onnx or qonnx
         # TODO fix me
         _a = re.findall(r"\.finn", str(self.model_cfg.from_file))
         if len(_a) == 1 and _a[0] == ".finn":  # check if model name contains "finn flag" 
-            input_name =  "global_in"
+            self.input_name =  "global_in"
             
             # late import for compatibilty iussues on pc2
             from finn.core.onnx_exec import execute_onnx as finn_execute_onnx
-            run_fn = finn_execute_onnx
+            self.run_fn = finn_execute_onnx
         # elif self.model_cfg.get("runtime") is not None:
         #     if self.model_cfg.get("runtime") == "finn":
         #         input_name =  "global_in"
@@ -454,57 +453,55 @@ class ONNXQTRModelWrapper(QTRModelWrapper):
         #         input_name =  "input"
         #         run_fn = qonnx_execute_onnx
         else: # defaults
-            input_name =  "input"
+            self.input_name =  "input"
             from qonnx.core.onnx_exec import execute_onnx as qonnx_execute_onnx
-            run_fn = qonnx_execute_onnx
+            self.run_fn = qonnx_execute_onnx
 
         #log.info(f"input_name for onnx graph run {input_name},  using function {run_fn.__name__}")
         # finn removes batch so we do it here
-        if input_name ==  "global_in":
+        if self.input_name ==  "global_in":
             idx_cond = torch.squeeze(idx_cond)
             #print(idx_cond.cpu().numpy())
             #print(idx_cond.cpu().numpy().size)
             #np.save("global_in.npy", idx_cond.cpu().numpy())
         
-        # onnx is cpu bound
-        log.warning(f"ONNX model is running on {device}, for this only cpu is supported inference")
-        if labels is not None:
-            idict = {input_name: idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
-            warn_once(log, "labels are givin to external forwards pass wrapper but they are ignored inside onns models atm")
-        else:
-            idict = {input_name: idx_cond.cpu().numpy()}
+        
         # use infer_shapes()
         #forward pass of gpt model returns the non-softmaxed token predictions
-        print(len(idict[input_name][0]))
+        #print(len(idict[input_name][0]))
     
-        block_size = None
+        self.block_size = None
         if self.model_type == ModelType.ONNX:
             shape = []
             tensor_type = self.model.graph.input[0].type.tensor_type
             for dim in tensor_type.shape.dim:
                 # dim.dim_value is 0 if dynamic, otherwise the static value
                 shape.append(dim.dim_value)
-            block_size = shape[1] if len(shape) > 1 else None
-        # pad idict to block size:
-        if len(idict[input_name][0]) < block_size:
-            # get pad token from tokenizer:
-            pad_token = tokenizer_singleton.tokenizer.PADDING_TOKEN
-            # check if pad_token to id
-            pad_token_id = tokenizer_singleton.tokenizer.encode(pad_token)
-            np.pad_width = block_size - len(idict[input_name][0])
-            idict[input_name] = np.pad(idict[input_name], ((0, 0), (0, np.pad_width)), mode='constant', constant_values=pad_token_id)
+            self.block_size = shape[1] if len(shape) > 1 else None
 
-        odict = run_fn(self.model, idict)
-        # print(odict)
+        # get pad token from tokenizer:
+        # check if pad_token to id
+        self.pad_token_id = tokenizer_singleton.tokenizer.encode(tokenizer_singleton.tokenizer.PADDING_TOKEN)
+        
+
+    def forward(self, idx_cond: Tensor, labels = None) -> Tuple[Tensor, Tensor]:
+        
+        # onnx is cpu bound
+        if labels is not None:
+            idict = {self.input_name: idx_cond.cpu().numpy(), "labels": labels.cpu().numpy()}
+            warn_once(log, "labels are givin to external forwards pass wrapper but they are ignored inside onns models atm")
+        else:
+            idict = {self.input_name: idx_cond.cpu().numpy()}
+
+        np.pad_width = self.block_size - len(idict[self.input_name][0])
+        idict[self.input_name] = np.pad(idict[self.input_name], ((0, 0), (0, np.pad_width)), mode='constant', constant_values=self.pad_token_id)
+
+        odict = self.run_fn(self.model, idict)
         if "global_out" in odict.keys():
-            #print(odict["global_out"])
-            #print(odict["global_out"].size)
-            #np.save("global_out.npy", )
-
-            logits = from_numpy(odict["global_out"]).to(device=device)
+            logits = from_numpy(odict["global_out"]).to(device=idx_cond.device)
             logits = torch.unsqueeze(logits, 0)
         else:
-            logits = from_numpy(odict["output"]).to(device=device)
+            logits = from_numpy(odict["output"]).to(device=idx_cond.device)
 
         return logits, None  # TODO: labels are not supported in ONNX models atm, return None for loss
 

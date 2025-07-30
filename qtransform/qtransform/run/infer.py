@@ -121,6 +121,9 @@ def infer(cfg: DictConfig, device: Any):
     out_dir = infer_cfg.out_dir
     # -----------------------------------------------------------------------------
     #TODO: make inference work for huggingface pretrained models
+    tokenizer_singleton.tokenizer = cfg.tokenizer
+    tokenizer = tokenizer_singleton.tokenizer
+    log.info(f"{type(tokenizer)=}")
     model_wrapper: QTRModelWrapper = get_model_wrapper(cfg.model)
     #model_wrapper.model.to(device=device)
     
@@ -163,9 +166,7 @@ def infer(cfg: DictConfig, device: Any):
         the start prompt has to be tokenized and passed differently. However, some params such as the number of tokens, temperature
         etc. are not passed as args.
         """
-        tokenizer_singleton.tokenizer = cfg.tokenizer
-        tokenizer = tokenizer_singleton.tokenizer
-        print(f"{type(tokenizer)=}")
+        
         # TODO is this warning still up to date?
         log.warning(f'Dataset and tokenizer usage is still a WIP, for now gpt2 tiktokenizer is used for inference')
         start_ids = tokenizer.encode(start)
