@@ -1,8 +1,8 @@
 hydra:
   run:
-    dir: qtransform/hydra/${now:%Y-%m-%d_%H\:%M\:%S}
+    dir: output/qtransform/hydra/${now:%Y-%m-%d_%H\:%M\:%S}
   sweep:
-    dir: qtransform/hydra/${now:%Y-%m-%d_%H\:%M\:%S}
+    dir: output/qtransform/hydra/${now:%Y-%m-%d_%H\:%M\:%S}
     subdir: ${hydra.job.num}
   #verbose: [__main__] # only for hydra debug logging, otherwise use debug=True
   searchpath:
@@ -18,7 +18,7 @@ defaults:
   - dataset/dataloader: default
   #default config from the lines above are overwritten with specified config
   - wandb: default
-  - dataset:
+  - dataset: default
   - tokenizer: transformers
   - optim: default
   - optim/scheduler: default
@@ -82,3 +82,4 @@ callbacks:
 
 model: 
   checkpoint:
+  from_file:

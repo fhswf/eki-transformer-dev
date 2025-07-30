@@ -40,6 +40,7 @@ class TransformersTokenizer(Tokenizer):
             assert tokenizer_cls is not None, \
                 f'Pretrained Tokenizer {self.tokenizer_cfg.pretrained_tokenizer} does not exist'
             self.tokenizer = tokenizer_cls.from_pretrained(self.meta.encoding, truncation=True)
+            log.info(f'Using pretrained tokenizer: {self.tokenizer_cfg.pretrained_tokenizer} with encoding: {self.meta.encoding}')
         else: 
             #no specific pretrainedtokenizer set, find suitable one from AutoTokenizer
             try:
@@ -56,6 +57,7 @@ class TransformersTokenizer(Tokenizer):
         self.tokenizer.model_max_length = 1e30
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.deprecation_warnings["Asking-to-pad-a-fast-tokenizer"] = True
+        self.PADDING_TOKEN = self.tokenizer.pad_token
         #https://github.com/huggingface/datasets/issues/3638
         self.tokenizer("Call init Tokenier", "to enable cacheing bug", truncation=True)
         self.meta.max_token_value = self.tokenizer.vocab_size

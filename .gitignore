@@ -1,3 +1,4 @@
+output
 slurm-*.out
 *.bin
 **/tmp/*
@@ -28,3 +29,5 @@ todos.md
 **/*.npy
 #wandb
 **/*.wandb*
+
+**/output/**

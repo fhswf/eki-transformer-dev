@@ -7,8 +7,8 @@ from dataclasses import asdict
 import logging
 import qtransform
 from qtransform.utils import addLoggingHandler, addLoggingLevel
-from qtransform import ConfigSingleton
-from qtransform import device_singleton
+from qtransform import ConfigSingleton, device_singleton
+import torch
 from qtransform.utils.helper import get_output_log_dir
 import sys
 import json
@@ -46,7 +46,6 @@ def main():
     #     print(f"This script is running inside a SLURM job with SLURM_JOB_ID={os.environ['SLURM_JOB_ID']}")
     
     cfg = ConfigSingleton().config
-    device_singleton.device = cfg.device
     OmegaConf.update(cfg, "runtime.choices", HydraConfig().instance().get().runtime.choices, force_add=True)
     logging.captureWarnings(True)
     root_log = logging.getLogger("root")
@@ -66,6 +65,20 @@ def main():
     log.info(f"{hydra_cli_args=}")
     log.info(f'LAUNCHED WITH CONFIG: {cfg}')
     
+    if "device" not in cfg:
+        device_singleton.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        log.info(f"device not specified in config, using default device: {device_singleton.device}")
+    else:
+        device_singleton.device = cfg.device
+        device = device_singleton.device
+    if "seed" not in cfg:
+        # generate a random seed
+        cfg.seed = torch.randint(0, 2**32 - 1, (1,)).item()
+        log.info(f"seed not specified in config, using default seed: {cfg.seed}")
+    else:
+        log.info(f"using seed: {cfg.seed} from config")
+        torch.manual_seed(cfg.seed)    
+    
     # before we start wandb we need to read out the checkpoint if we continue training
     checkpoint_location = cfg.get('model')
     checkpoint_location = checkpoint_location.get('checkpoint')
@@ -73,33 +86,37 @@ def main():
         # find overwritten arguments
         log.info(f"checkpoint {checkpoint_location} was given, loading meta data to continue from")
         checkpoint = load_checkpoint(checkpoint_location)
+        for key, value in checkpoint.items():
+            log.info(f"checkpoint key: {key}")
         checkpoint_metadata = checkpoint.get('qtrans_metadata')
-        if checkpoint_metadata is not None:
-            if not isinstance(checkpoint_metadata, QtransChkptMetaData):
-                checkpoint_metadata = QtransChkptMetaData.from_dict(checkpoint_metadata)
-
+        
+        if checkpoint_metadata is None:
+            # raise ValueError(f"checkpoint {checkpoint_location} does not contain qtransform metadata")
+            log.warning(f"checkpoint {checkpoint_location} does not contain qtransform metadata, using default values or values from command line")
+        elif not isinstance(checkpoint_metadata, QtransChkptMetaData): # checkpoint metadata cloud be a dict or the class via pickle
+            checkpoint_metadata = QtransChkptMetaData.from_dict(checkpoint_metadata)
             log.info(f"Overwritten arguments from checkpoint: {checkpoint_metadata.qtrans_hydra_overrides}")
-
-            def merge_hydra_cli_args(checkpoint_overrides, cli_overrides):
-                """
-                Merges the CLI overrides with the checkpoint overrides.
-                CLI overrides take precedence over checkpoint overrides.
-                """
-                checkpoint_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in checkpoint_overrides}
-                cli_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in cli_overrides}
-                merged_overrides = {**checkpoint_overrides_dict, **cli_overrides_dict}
-                return [f"{key}={value}" for key, value in merged_overrides.items()]
-
+        
+        def merge_hydra_cli_args(checkpoint_overrides, cli_overrides):
+            """
+            Merges the CLI overrides with the checkpoint overrides.
+            CLI overrides take precedence over checkpoint overrides.
+            """
+            checkpoint_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in checkpoint_overrides}
+            cli_overrides_dict = {item.split('=')[0]: item.split('=')[1] for item in cli_overrides}
+            merged_overrides = {**checkpoint_overrides_dict, **cli_overrides_dict}
+            return [f"{key}={value}" for key, value in merged_overrides.items()]
+        
+        if checkpoint_metadata is not None: # if checkpoint metadata cloud not be loaded, we use the default values
             merged_overrides_array = merge_hydra_cli_args(checkpoint_metadata.qtrans_hydra_overrides, hydra_cli_args)
-
-            log.info(f"merged overwrites: {merged_overrides_array}")
-            cfg = hydra.compose("config", overrides=merged_overrides_array)
-            # cfg = hydra.compose(overrides=hydra_cli_args)
-            OmegaConf.update(cfg, "runtime.overwrites", merged_overrides_array, force_add=True)
         else:
-            #raise ValueError(f"checkpoint {checkpoint_location} does not contain qtransform metadata")
-            log.warning("No checkpoint overrides found in checkpoint metadata")
-
+            # some runttime arguments cloud be missing here so procuede carefully with the cli args
+            merged_overrides_array = hydra_cli_args
+            
+        log.info(f"merged overwrites: {merged_overrides_array}")
+        cfg = hydra.compose("config", overrides=merged_overrides_array)
+        # cfg = hydra.compose(overrides=hydra_cli_args)
+        OmegaConf.update(cfg, "runtime.overwrites", merged_overrides_array, force_add=True)
         ConfigSingleton().config = cfg
         log.info(cfg)
 
