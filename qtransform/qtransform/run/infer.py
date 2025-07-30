@@ -88,7 +88,7 @@ def generate(model_wrapper: QTRModelWrapper, idx: torch.Tensor, max_new_tokens: 
         # the results should not be softmaxed yet as they will be later within this function
         logits, _ = model_wrapper(idx_cond)
         # pluck the logits at the final step and scale by desired temperature
-        if temperature is not None and temperature > 0 and  temperature > 1.0e-10:
+        if temperature is not None and temperature > 1.0e-10:
             logits = logits[:, -1, :] / temperature
         else:
             logits = logits[:, -1, :] 
