@@ -48,7 +48,9 @@ def load_checkpoint(checkpoint_path: str):
         raise FileNotFoundError()
     log.info(f"Loading checkpoint from {checkpoint_path}")   
     print(device_singleton.device)
-    checkpoint = torch.load(checkpoint_path, map_location=device_singleton.device)
+
+    # weights_only can safely be set to False, since we only use intern checkpoints
+    checkpoint = torch.load(checkpoint_path, map_location=device_singleton.device, weights_only=False)
     return checkpoint
 
 def load_state_dict_proxy(model, checkpoint, **kwargs):
