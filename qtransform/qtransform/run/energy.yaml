@@ -4,14 +4,16 @@ idle_time: 0
 
 # iterations to generate with given dataset to "preheat" the running device
 preheat:
-  max_iters: 0
+  data_points: 0
 
 # generation configuration
 max_new_tokens: 512
 temperature: 0.7
 top_k: 200
 
-max_iters: ???
+data_points: ???
+
+batch_size: 1
 
 out:
   path: null # path where the results should be saved to

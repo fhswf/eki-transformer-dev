@@ -4,17 +4,14 @@ from os import makedirs
 import pandas as pd
 from omegaconf import DictConfig
 from pandas import DataFrame
-from torch.utils.data import DataLoader
 from zeus.monitor import ZeusMonitor, Measurement
 
 from qtransform.model import QTRModelWrapper
-import os
 import torch
 from datetime import datetime
 import time
 
 from qtransform.run.infer import generate
-from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
 from qtransform.model import get_model_wrapper, DynamicCheckpointQTRModelWrapper
 from functools import lru_cache
@@ -36,12 +33,8 @@ def run(cfg: DictConfig):
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
 
-    if "dataloader" not in cfg.dataset:
-        log.error(
-            f"dataloader not specified for dataset: {cfg.dataset.name}. Use dataset=huggingface to get one automatically.")
     torch.manual_seed(cfg.seed)
 
-    log.info(f"number of torch dataloader: {str(cfg.dataset.dataloader.num_workers)}")
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:
@@ -64,17 +57,11 @@ def run(cfg: DictConfig):
     if hasattr(log, "trace"): log.trace(model_wrapper.model)
 
     log.info(f"Starting benchmark")
-    # for now. This just prevent the error msg, maybe in the future we find a way of using the hf-tok-parallelism feature
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
-    tokenizer_singleton.tokenizer = cfg.tokenizer
-    from qtransform.dataset import DataLoaderWrapper, DatasetSplitType
-    dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
-    eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
 
-    bench(cfg, model_wrapper, eval_dataloader)
+    bench(cfg, model_wrapper)
 
 
-def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
+def bench(cfg, model_wrapper: QTRModelWrapper) -> None:
     """
     Driver code for energy benchmark
     """
@@ -83,17 +70,18 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
     idle_time = cfg.run.idle_time
     idle_measurements = measure_idle_energy(idle_time, monitor)
 
-    preheat_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=True)
+    preheat_measurements = measure_generation_energy(cfg, model_wrapper, monitor, preheating=True)
 
-    generation_measurements = measure_generation_energy(cfg, model_wrapper, dataloader, monitor, preheating=False)
+    generation_measurements = measure_generation_energy(cfg, model_wrapper, monitor, preheating=False)
 
-    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', 'type'])
+    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', 'tokens', 'type'])
 
     for measurements in [idle_measurements, preheat_measurements, generation_measurements]:
         for _measurement in measurements:
             measurement = _measurement['measurement']
             start = _measurement['start']
             end = _measurement['end']
+            tokens = _measurement.get('tokens')
             type_str = _measurement['type']
             if not measurement.cpu_energy:
                 # If Zeus can't find any CPU, the cpu_energy dict is none, so here it's manually set to 0
@@ -106,6 +94,7 @@ def bench(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader) -> None:
                     measurement.gpu_energy.values()),
                 'start': start,
                 'end': end,
+                'tokens': tokens,
                 'type': type_str,
             }
 
@@ -130,12 +119,12 @@ def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> list[dict[str, 
     return measurements
 
 
-def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: DataLoader, monitor: ZeusMonitor,
+def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, monitor: ZeusMonitor,
                               preheating: bool) -> list[dict[str, Measurement | float]]:
     """
     Mesures energy during generation.
-    max_new_tokens, max_iters, temperature and top_k can be set through the configs run parameters.
-    If preheating, the max_iters from the preheating section is used instead.
+    max_new_tokens, data_points, temperature and top_k can be set through the configs run parameters.
+    If preheating, the data_points from the preheating section are used instead.
     """
     measurements = []
     log_msg_start = "Measuring energy consumption during generation"
@@ -145,45 +134,32 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, dataloader: D
         log_msg_start = "Starting preheating"
         log_msg_end = "Preheating finished"
         type_str = "preheat"
-        lens = min(len(dataloader), cfg.run.preheat.max_iters)
+        lens = cfg.run.preheat.data_points
     else:
-        lens = min(len(dataloader), cfg.run.max_iters)
+        lens = cfg.run.data_points
 
     if lens > 0:
         if isinstance(model_wrapper.model, torch.nn.Module):
             model_wrapper.model.eval()
         log.info(log_msg_start)
-        for i, data in enumerate(dataloader):
 
-            log.debug(f'Iteration: {i}')
-            if i >= lens:
-                break
-            inputs = None
-            if len(data) > 2:
-                inputs = data['input_ids']
-            elif len(data) == 2:
-                inputs, _ = data
-            else:
-                log.error(f"unsupported dataloader output. len was {len(data)}. ")
-                raise NotImplementedError
-            with torch.no_grad():
-                inputs = inputs.to(device_singleton.device)
+        with torch.no_grad():
+            for i in range(0, lens, cfg.run.batch_size):
+                current_batch_size = min(cfg.run.batch_size, lens - i)
+                inputs = torch.randint(0, 2048, [current_batch_size, 512], device=device_singleton.device)
 
                 begin = time.time()
                 monitor.begin_window("Generation")
-                y: torch.Tensor = generate(model_wrapper=model_wrapper, idx=inputs,
-                                           max_new_tokens=cfg.run.max_new_tokens,
-                                           temperature=cfg.run.temperature,
-                                           top_k=cfg.run.top_k)
+                outputs: torch.Tensor = generate(model_wrapper=model_wrapper, idx=inputs,
+                                                 max_new_tokens=cfg.run.max_new_tokens,
+                                                 temperature=cfg.run.temperature,
+                                                 top_k=cfg.run.top_k)
                 measurement = monitor.end_window("Generation", sync_execution=True)
                 end = time.time()
                 measurements.append({
                     "measurement": measurement, "start": begin, "end": end, "type": type_str,
-                    #"input": tokenizer_singleton.tokenizer.decode(inputs[0]),
-                    #"output": tokenizer_singleton.tokenizer.decode(y[0].tolist()[len(inputs[0]):])
+                    "tokens": current_batch_size * cfg.run.max_new_tokens,
                 })
-                #print(tokenizer_singleton.tokenizer.decode(y[0].tolist()[len(inputs[0]):]))
-                #print(tokenizer_singleton.tokenizer.decode(y[0].tolist()) + '\n---------------\n')
 
         log.info(log_msg_end)
     return measurements
