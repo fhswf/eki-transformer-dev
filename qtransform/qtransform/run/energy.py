@@ -91,7 +91,31 @@ def bench(cfg, model_wrapper: QTRModelWrapper) -> None:
                 'type': type_str,
             }
 
-    save_results(cfg, df_verbose)
+            temp_df = df_verbose[df_verbose["type"] == "generation"]
+            total_time = temp_df['time(s)'].sum()
+            total_cpu_energy = temp_df['cpu_energy(J)'].sum()
+            total_gpu_energy = temp_df['gpu_energy(J)'].sum()
+            avg_time = temp_df['time(s)'].mean()
+            avg_cpu_energy = temp_df['cpu_energy(J)'].mean()
+            avg_gpu_energy = temp_df['gpu_energy(J)'].mean()
+            total_tokens = temp_df['tokens'].sum()
+            avg_tokens = temp_df['tokens'].mean()
+
+            # note that the averages here are "per run averages"
+            df_summary = pd.DataFrame({
+                'run': '',
+                'total_time(s)': [total_time],
+                'avg_time(s)': [avg_time],
+                'total_cpu_energy(J)': [total_cpu_energy],
+                'avg_cpu_energy(J)': [avg_cpu_energy],
+                'total_gpu_energy(J)': [total_gpu_energy],
+                'avg_gpu_energy(J)': [avg_gpu_energy],
+                'total_tokens': [total_tokens],
+                'avg_tokens': [avg_tokens],
+                'batch_size': [cfg.run.batch_size],
+            })
+
+    save_results(cfg, df_verbose, df_summary)
 
 
 def measure_idle_energy(idle_time: int, monitor: ZeusMonitor) -> list[dict[str, Measurement | float]]:
@@ -158,7 +182,7 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, monitor: Zeus
     return measurements
 
 
-def save_results(cfg, df_verbose: DataFrame) -> None:
+def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
     """
     Saves results. Results of measurements are stored alongside the configs run parameters in a folder
     with the specific run number. The run number starts at 1 and is stored between different calls of the
@@ -198,7 +222,18 @@ def save_results(cfg, df_verbose: DataFrame) -> None:
             log.info(f'Saving results to: "{run_folder}"')
             df_verbose.to_csv(out_path_verbose, sep=";", index=False, mode="w", header=True)
 
+
+            out_path_summary = join(base_out_path, "generation_energy_summary.csv")
+
+            df_summary["run"] = run_num
+            if not exists(out_path_summary):
+                df_summary.to_csv(out_path_summary, sep=";", index=False, mode="w", header=True)
+            else:
+                df_summary.to_csv(out_path_summary, sep=";", index=False, mode="a", header=False)
     else:
         print('\n---------------\n')
         print(df_verbose)
+        print('\n---------------\n')
+        print('\n---------------\n')
+        print(df_summary)
         print('\n---------------\n')
