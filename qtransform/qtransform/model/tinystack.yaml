@@ -8,7 +8,7 @@ args:
   dropout : 0.1
   bias : True
   block_size : 512
-  vocab_size : 12631
+  vocab_size : 52000
   transformer_active_func: ReLU
   norm_layer: BatchNormTranspose
   flash: False
