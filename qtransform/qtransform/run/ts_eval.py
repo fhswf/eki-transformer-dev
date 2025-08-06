@@ -35,7 +35,7 @@ def run(cfg: DictConfig):
     log.info(f"time is: {timestamp}")
 
     torch.manual_seed(cfg.seed)
-
+    tokenizer_singleton.tokenizer = cfg.tokenizer
     model_wrapper: DynamicCheckpointQTRModelWrapper = get_model_wrapper(cfg.model)
     quant_cfg = cfg.get('quantization')
     if quant_cfg and quant_cfg.quantize:
@@ -44,14 +44,7 @@ def run(cfg: DictConfig):
             model_wrapper.quantize_model(quant_cfg)
         else:
             warn_once(log, f'Model was already quantized, ignoring quant_cfg from hydra')
-        # from qtransform.quantization import get_quantizer
-        # quantizer, model_quant_cfg = get_quantizer(quant_cfg, model=model)
-        # model, replace_layers_later = quantizer.get_quantized_model(model_quant_cfg, inplace=True)
-        # quantize last layers (batchnorm). params last saved checkpoint do not entirely reflect current model anymore
-        # if replace_layers_later is not None:
-        #    model, _ = quantizer.get_quantized_model(replace_layers_later)
-    assert isinstance(model_wrapper,
-                      DynamicCheckpointQTRModelWrapper), f'Model should be torch module, not {type(model_wrapper)}'
+
     # only parameters (type torch.nn.parameter.Parameter) are moved to the device, not non-named Tensors
     # this is a problem if a layer uses a non-named Tensor during the forward pass
     model_wrapper.to(device=device_singleton.device)
