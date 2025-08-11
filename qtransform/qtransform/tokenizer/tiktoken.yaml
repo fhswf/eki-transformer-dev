@@ -1,4 +1,3 @@
 wrapper: TikTokenizer
-encoding: ???
+encoding: fhswf/tiny-stack-tokenizer
 module: tiktoken
-name: ${encoding} #support for lazyhuggingface, TODO: remove it
