@@ -315,20 +315,3 @@ def analyze_convergence(self, run_id):
     """)
     # Your analysis logic here
 ```
-
-## Benefits of Local Storage
-
-1. **Offline access**: Analyze data without internet connection
-2. **Fast queries**: SQLite provides efficient local querying
-3. **Data preservation**: Keep data even if wandb runs are deleted
-4. **Custom analysis**: Run complex SQL queries across all runs
-5. **Backup**: Local backup of training results
-6. **Integration**: Easy to integrate with other local tools and scripts
-
-## Troubleshooting
-
-- **Authentication**: Make sure you're logged into wandb with `wandb login`
-- **Permissions**: Ensure you have access to the specified entity/project
-- **Storage space**: Large projects may require significant disk space
-- **Rate limits**: The script includes error handling for API limits
-- **Missing metrics**: Not all runs may have the same logged metrics

@@ -15,44 +15,62 @@ import json
 import numpy as np
 from collections import defaultdict, Counter
 
-def extract_detailed_config_data(conn, sample_size=50):
-    """Extract detailed configuration and performance data for a smaller sample of runs"""
-    # OPTIMIZATION: Reduce sample size significantly for faster processing
+
+def calculate_transformer_param_count(n_layers, d_model, vocab_size, max_seq_length, expansion_factor=4):
+    # Multi-head self-attention
+    n_atte = (4 * (d_model**2 + d_model))
+    # Feedforward network
+    n_ff = (expansion_factor * d_model**2 + d_model**2 * expansion_factor)
+    # LayerNorm parameters (two LayerNorm layers per transformer block)
+    n_ln = 2 * d_model
+    # decoder
+    n_deco = n_atte + n_ff + 2*n_ln
+    
+    # Embedding parameters: vocab embeddings + position embeddings
+    n_emb_in = (vocab_size * d_model)  # + (d_model * max_seq_length)
+    n_emb_out = vocab_size * d_model
+    n_emb = n_emb_in + n_emb_out
+    
+    total_params = n_layers * n_deco + n_emb + n_ln 
+    
+    return total_params
+
+def extract_detailed_config_data(conn, use_fixed_quant_for_all_layers=True):
+    """Extract detailed configuration and performance data for ALL runs"""
+    # Get ALL runs instead of sampling
     runs_df = pd.read_sql_query(f"""
         SELECT run_id, name, config, summary, state
         FROM runs
-        WHERE state IN ('finished', 'running', 'crashed')  -- Include more states
-        ORDER BY RANDOM()
-        LIMIT {sample_size}
+        WHERE state IN ('finished', 'running', 'crashed')
+        ORDER BY name
     """, conn)
     
-    print(f"   Processing {len(runs_df)} completed runs for faster analysis...")
+    print(f"   Processing ALL {len(runs_df)} runs ...")
     
-    # Get final training and validation losses for sampled runs
+    # OPTIMIZED: Get final training losses efficiently using window functions
     final_metrics = {}
     
     if not runs_df.empty:
         run_ids = "', '".join(runs_df['run_id'].tolist())
         
-        # OPTIMIZATION: Get final training loss with single optimized query
+        # MUCH BETTER: Single query using window function to get last loss per run
         train_loss_query = f"""
-            SELECT run_id, metric_value as final_train_loss
-            FROM metrics m1
-            WHERE metric_name = 'train/loss' 
-            AND run_id IN ('{run_ids}')
-            AND step = (
-                SELECT MAX(step) 
-                FROM metrics m2 
-                WHERE m2.run_id = m1.run_id AND m2.metric_name = 'train/loss'
+            WITH ranked_metrics AS (
+                SELECT run_id, metric_value as final_train_loss,
+                       ROW_NUMBER() OVER (PARTITION BY run_id ORDER BY step DESC) as rn
+                FROM metrics
+                WHERE metric_name = 'train/loss' 
+                AND run_id IN ('{run_ids}')
             )
+            SELECT run_id, final_train_loss
+            FROM ranked_metrics
+            WHERE rn = 1
         """
         train_losses = pd.read_sql_query(train_loss_query, conn)
         for _, row in train_losses.iterrows():
             final_metrics[row['run_id']] = {'train_loss': row['final_train_loss']}
         
-        # OPTIMIZATION: Skip validation loss if not critical for analysis
-        # This reduces query complexity significantly
-        print(f"   Skipping validation loss queries for performance (train loss focus)")
+        print(f"   Got final losses for {len(train_losses)} runs efficiently")
     
     detailed_data = []
     
@@ -72,11 +90,9 @@ def extract_detailed_config_data(conn, sample_size=50):
             n_layer = model_config.get('n_layer', 0)
             n_head = model_config.get('n_head', 0)
             vocab_size = model_config.get('vocab_size', 0)
-            
-            # Estimate model parameters
-            embed_params = vocab_size * n_embd
-            layer_params = n_layer * (4 * n_embd * n_embd + 2 * n_embd)
-            total_params = embed_params + layer_params
+            se = model_config.get('block_size', 0)
+
+            total_params = calculate_transformer_param_count(n_layer, n_embd, vocab_size, se)
             
             # Extract quantization bit widths (excluding fixed 8-bit layers)
             bit_widths = []
@@ -94,21 +110,29 @@ def extract_detailed_config_data(conn, sample_size=50):
                                 bit_width = quant_config_item['args'].get('bit_width')
                                 if bit_width:
                                     bit_widths.append(bit_width)
+                                if use_fixed_quant_for_all_layers:  # stop and break at first sight
+                                    break
             
-            # Determine the primary quantization bit width (should be uniform for variable layers)
-            uniform_bit_width = None
-            primary_bit_width = None
-            if bit_widths:
-                # Get the most common bit width (excluding 8-bit fixed layers)
-                bit_width_counts = Counter(bit_widths)
-                primary_bit_width = bit_width_counts.most_common(1)[0][0]
-                
-                # Check if all variable layers use the same bit width
-                variable_bit_widths = [bw for bw in bit_widths if bw != 8]
-                if variable_bit_widths and len(set(variable_bit_widths)) == 1:
-                    uniform_bit_width = variable_bit_widths[0]
-                elif variable_bit_widths:
-                    uniform_bit_width = primary_bit_width  # Use most common bit width
+            # Determine the primary quantization bit width
+            if not use_fixed_quant_for_all_layers:
+                # More complex logic for mixed quantization (currently unused)
+                uniform_bit_width = None
+                primary_bit_width = None
+                if bit_widths:
+                    # Get the most common bit width (excluding 8-bit fixed layers)
+                    bit_width_counts = Counter(bit_widths)
+                    primary_bit_width = bit_width_counts.most_common(1)[0][0]
+                    
+                    # Check if all variable layers use the same bit width
+                    variable_bit_widths = [bw for bw in bit_widths if bw != 8]
+                    if variable_bit_widths and len(set(variable_bit_widths)) == 1:
+                        uniform_bit_width = variable_bit_widths[0]
+                    elif variable_bit_widths:
+                        uniform_bit_width = primary_bit_width  # Use most common bit width
+            else:
+                # Simple case: all layers use the same quantization
+                uniform_bit_width = bit_widths[0] if bit_widths else None
+                primary_bit_width = uniform_bit_width
             
             # Get final losses
             metrics = final_metrics.get(row['run_id'], {})
@@ -116,7 +140,6 @@ def extract_detailed_config_data(conn, sample_size=50):
             data_row = {
                 'run_id': row['run_id'],
                 'name': row['name'],
-                'state': row['state'],
                 'n_embd': n_embd,
                 'n_layer': n_layer,
                 'n_head': n_head,
@@ -128,8 +151,6 @@ def extract_detailed_config_data(conn, sample_size=50):
                 'uniform_bit_width': uniform_bit_width,
                 'primary_bit_width': primary_bit_width,
                 'bit_width_category': f"{int(uniform_bit_width)}bit" if uniform_bit_width else "No quant",
-                'all_bit_widths': bit_widths,
-                'variable_layer_count': len([bw for bw in bit_widths if bw != 8]),
                 'final_train_loss': metrics.get('train_loss'),
                 'final_val_loss': None,  # Skip validation loss for performance
                 'learning_rate': optim_config.get('learning_rate'),
@@ -145,42 +166,48 @@ def extract_detailed_config_data(conn, sample_size=50):
     
     return pd.DataFrame(detailed_data)
 
-def get_training_curves(conn, sample_runs=50, max_steps=400, step_interval=10):
-    """Extract training curves with aggressive sampling for optimal performance"""
-    # First, get a representative sample of runs
-    sample_query = f"""
+def get_training_curves(conn, max_steps=400, min_steps=100):
+    """Extract training curves with all steps, filtering out short runs - DETERMINISTIC"""
+    # Get ALL runs deterministically (no random sampling)
+    all_runs_query = f"""
         SELECT DISTINCT run_id 
         FROM metrics 
         WHERE metric_name = 'train/loss'
-        ORDER BY RANDOM() 
-        LIMIT {sample_runs}
+        ORDER BY run_id
     """
-    sample_runs_df = pd.read_sql_query(sample_query, conn)
-    run_ids = "', '".join(sample_runs_df['run_id'].tolist())
+    all_runs_df = pd.read_sql_query(all_runs_query, conn)
+    run_ids = "', '".join(all_runs_df['run_id'].tolist())
     
-    # AGGRESSIVE OPTIMIZATION: Sample every Nth step to reduce data points dramatically
+    # Get ALL steps for ALL runs (completely deterministic)
     training_curves_query = f"""
         SELECT run_id, step, metric_value
         FROM metrics
         WHERE metric_name = 'train/loss'
         AND run_id IN ('{run_ids}')
         AND step <= {max_steps}
-        AND (step % {step_interval} = 0 OR step = 1)  -- Sample every {step_interval}th step + first step
         ORDER BY run_id, step
     """
-    print(f"   Sampling {sample_runs} runs, max {max_steps} steps, every {step_interval}th step...")
+    print(f"   Getting ALL steps for ALL {len(all_runs_df)} runs (max {max_steps} steps)...")
     result = pd.read_sql_query(training_curves_query, conn)
-    print(f"   Reduced to {len(result)} data points (from potential 240k+)")
-    return result
+    
+    # Filter out runs with too few steps
+    run_step_counts = result.groupby('run_id')['step'].count()
+    valid_runs = run_step_counts[run_step_counts >= min_steps].index.tolist()
+    filtered_result = result[result['run_id'].isin(valid_runs)]
+    
+    print(f"   Filtered out {len(all_runs_df) - len(valid_runs)} short runs (< {min_steps} steps)")
+    print(f"   Keeping ALL {len(valid_runs)} runs with {len(filtered_result)} total data points")
+    
+    return filtered_result
 
-def plot_training_curves_vs_bitwidth(df, training_curves_df):
-    """Graph 1: Training curves colored by quantization bit-width (optimized)"""
+def plot_training_curves_by_model_size_subplots(df, training_curves_df):
+    """Individual Plot 1a: Separate subplots for each model size, color-coded by bit width"""
     
     # Filter for runs with valid bit width data
-    valid_df = df.dropna(subset=['uniform_bit_width', 'final_train_loss'])
+    valid_df = df.dropna(subset=['uniform_bit_width', 'final_train_loss', 'total_params'])
     
     if valid_df.empty:
-        print("No valid data for training curves vs bit-width analysis")
+        print("No valid data for training curves by model size analysis")
         return
     
     # Limit to curves we actually have data for
@@ -191,93 +218,284 @@ def plot_training_curves_vs_bitwidth(df, training_curves_df):
         print("No matching training curves for valid runs")
         return
     
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    fig.suptitle('Training Loss Curves vs Quantization Bit-Width (Sample Analysis)', fontsize=14)
+    # Get unique model sizes and bit widths
+    model_sizes = sorted(valid_df['total_params'].unique())
+    bit_widths = sorted(valid_df['uniform_bit_width'].unique())
     
-    # Get unique bit widths for color mapping
+    # Create color mapping for bit widths
+    colors = plt.cm.viridis(np.linspace(0, 1, len(bit_widths)))
+    bit_width_colors = {bw: colors[i] for i, bw in enumerate(bit_widths)}
+    
+    # Calculate subplot layout
+    n_sizes = len(model_sizes)
+    cols = min(3, n_sizes)  # Max 3 columns
+    rows = (n_sizes + cols - 1) // cols
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
+    if n_sizes == 1:
+        axes = [axes]
+    elif rows == 1:
+        axes = [axes] if cols == 1 else axes
+    else:
+        axes = axes.flatten()
+    
+    total_curves = 0
+    
+    for idx, model_size in enumerate(model_sizes):
+        ax = axes[idx] if n_sizes > 1 else axes[0]
+        size_runs = valid_df[valid_df['total_params'] == model_size]
+        curves_in_subplot = 0
+        labeled_bits = set()
+        
+        for _, row in size_runs.iterrows():
+            run_curves = training_curves_df[training_curves_df['run_id'] == row['run_id']]
+            if not run_curves.empty:
+                bit_width = row['uniform_bit_width']
+                color = bit_width_colors[bit_width]
+                # Only show label for first curve of each bit width in this subplot
+                label = f"{int(bit_width)}-bit" if bit_width not in labeled_bits else ""
+                if bit_width not in labeled_bits:
+                    labeled_bits.add(bit_width)
+                
+                ax.plot(run_curves['step'], run_curves['metric_value'], 
+                       color=color, linewidth=1.5, alpha=0.8, label=label)
+                curves_in_subplot += 1
+                total_curves += 1
+        
+        ax.set_title(f'Model Size: {model_size:,} params ({curves_in_subplot} curves)', fontsize=11)
+        ax.set_xlabel('Training Step', fontsize=10)
+        ax.set_ylabel('Training Loss', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        if labeled_bits:
+            ax.legend(fontsize=9, loc='upper right')
+    
+    # Hide unused subplots
+    for idx in range(n_sizes, len(axes)):
+        axes[idx].set_visible(False)
+    
+    plt.suptitle(f'Training Curves by Model Size (Color = Bit Width) - Total: {total_curves} curves', fontsize=14)
+    plt.tight_layout()
+    plt.savefig('1a_training_curves_by_model_size_subplots.png', dpi=150, bbox_inches='tight')
+    print(f"📊 Saved training curves by model size subplots to: 1a_training_curves_by_model_size_subplots.png")
+    plt.show()
+    plt.close()
+
+
+def plot_training_curves_by_bit_width_subplots(df, training_curves_df):
+    """Individual Plot 1b: Separate subplots for each bit width, color-coded by model size"""
+    
+    # Filter for runs with valid bit width data
+    valid_df = df.dropna(subset=['uniform_bit_width', 'final_train_loss', 'total_params'])
+    
+    if valid_df.empty:
+        print("No valid data for training curves by bit width analysis")
+        return
+    
+    # Limit to curves we actually have data for
+    available_runs = set(training_curves_df['run_id'].unique())
+    valid_df = valid_df[valid_df['run_id'].isin(available_runs)]
+    
+    if valid_df.empty:
+        print("No matching training curves for valid runs")
+        return
+    
+    # Get unique bit widths and model sizes
+    bit_widths = sorted(valid_df['uniform_bit_width'].unique())
+    model_sizes = sorted(valid_df['total_params'].unique())
+    
+    # Create color mapping for model sizes
+    colors = plt.cm.Set1(np.linspace(0, 1, len(model_sizes)))
+    model_size_colors = {size: colors[i] for i, size in enumerate(model_sizes)}
+    
+    # Calculate subplot layout
+    n_bits = len(bit_widths)
+    cols = min(3, n_bits)  # Max 3 columns
+    rows = (n_bits + cols - 1) // cols
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(6*cols, 5*rows))
+    if n_bits == 1:
+        axes = [axes]
+    elif rows == 1:
+        axes = [axes] if cols == 1 else axes
+    else:
+        axes = axes.flatten()
+    
+    total_curves = 0
+    
+    for idx, bit_width in enumerate(bit_widths):
+        ax = axes[idx] if n_bits > 1 else axes[0]
+        bw_runs = valid_df[valid_df['uniform_bit_width'] == bit_width]
+        curves_in_subplot = 0
+        labeled_sizes = set()
+        
+        for _, row in bw_runs.iterrows():
+            run_curves = training_curves_df[training_curves_df['run_id'] == row['run_id']]
+            if not run_curves.empty:
+                model_size = row['total_params']
+                color = model_size_colors[model_size]
+                # Only show label for first curve of each model size in this subplot
+                label = f"{model_size:,} params" if model_size not in labeled_sizes else ""
+                if model_size not in labeled_sizes:
+                    labeled_sizes.add(model_size)
+                
+                ax.plot(run_curves['step'], run_curves['metric_value'], 
+                       color=color, linewidth=1.5, alpha=0.8, label=label)
+                curves_in_subplot += 1
+                total_curves += 1
+        
+        ax.set_title(f'Quantization: {int(bit_width)}-bit ({curves_in_subplot} curves)', fontsize=11)
+        ax.set_xlabel('Training Step', fontsize=10)
+        ax.set_ylabel('Training Loss', fontsize=10)
+        ax.grid(True, alpha=0.3)
+        if labeled_sizes:
+            ax.legend(fontsize=9, loc='upper right')
+    
+    # Hide unused subplots
+    for idx in range(n_bits, len(axes)):
+        axes[idx].set_visible(False)
+    
+    plt.suptitle(f'Training Curves by Bit Width (Color = Model Size) - Total: {total_curves} curves', fontsize=14)
+    plt.tight_layout()
+    plt.savefig('1b_training_curves_by_bit_width_subplots.png', dpi=150, bbox_inches='tight')
+    print(f"📊 Saved training curves by bit width subplots to: 1b_training_curves_by_bit_width_subplots.png")
+    plt.show()
+    plt.close()
+
+
+def plot_training_curves_by_model_size(df, training_curves_df):
+    """Individual Plot 1a: Training curves grouped by model size"""
+    
+    # Filter for runs with valid bit width data
+    valid_df = df.dropna(subset=['uniform_bit_width', 'final_train_loss', 'total_params'])
+    
+    if valid_df.empty:
+        print("No valid data for training curves by model size analysis")
+        return
+    
+    # Limit to curves we actually have data for
+    available_runs = set(training_curves_df['run_id'].unique())
+    valid_df = valid_df[valid_df['run_id'].isin(available_runs)]
+    
+    if valid_df.empty:
+        print("No matching training curves for valid runs")
+        return
+    
+    # Create single plot
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    
+    # Get unique model sizes for grouping
+    model_sizes = sorted(valid_df['total_params'].unique())
+    colors = plt.cm.Set1(np.linspace(0, 1, len(model_sizes)))
+    model_size_colors = {size: colors[i] for i, size in enumerate(model_sizes)}
+    
+    # Plot training curves grouped by model size
+    plotted_curves = 0
+    labeled_sizes = set()  # Track which model sizes have been labeled
+    
+    for model_size in model_sizes:
+        size_runs = valid_df[valid_df['total_params'] == model_size]
+        
+        for _, row in size_runs.iterrows():
+            run_curves = training_curves_df[training_curves_df['run_id'] == row['run_id']]
+            if not run_curves.empty:
+                color = model_size_colors[model_size]
+                # Only show label for first curve of each model size
+                label = f"{model_size:,} params" if model_size not in labeled_sizes else ""
+                if model_size not in labeled_sizes:
+                    labeled_sizes.add(model_size)
+                ax.plot(run_curves['step'], run_curves['metric_value'], 
+                       color=color, linewidth=2, alpha=0.7, label=label)
+                plotted_curves += 1
+    
+    ax.set_xlabel('Training Step', fontsize=12)
+    ax.set_ylabel('Training Loss', fontsize=12)
+    ax.set_title(f'Training Loss Curves Grouped by Model Size (ALL {plotted_curves} curves)', fontsize=14)
+    ax.legend(fontsize=10, loc='upper right')
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('1c_training_curves_by_model_size.png', dpi=150, bbox_inches='tight')
+    print("📊 Saved training curves grouped by model size to: 1c_training_curves_by_model_size.png")
+    plt.show()
+    plt.close()
+
+
+def plot_training_curves_by_bit_width(df, training_curves_df):
+    """Individual Plot 1b: Training curves grouped by bit width"""
+    
+    # Filter for runs with valid bit width data
+    valid_df = df.dropna(subset=['uniform_bit_width', 'final_train_loss', 'total_params'])
+    
+    if valid_df.empty:
+        print("No valid data for training curves by bit width analysis")
+        return
+    
+    # Limit to curves we actually have data for
+    available_runs = set(training_curves_df['run_id'].unique())
+    valid_df = valid_df[valid_df['run_id'].isin(available_runs)]
+    
+    if valid_df.empty:
+        print("No matching training curves for valid runs")
+        return
+    
+    # Create single plot
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+    
+    # Get unique bit widths for grouping
     bit_widths = sorted(valid_df['uniform_bit_width'].unique())
     colors = plt.cm.viridis(np.linspace(0, 1, len(bit_widths)))
     bit_width_colors = {bw: colors[i] for i, bw in enumerate(bit_widths)}
     
-    # Plot 1: Training curves colored by bit-width (sample only)
-    ax1 = axes[0]
+    # Plot training curves grouped by bit width
     plotted_curves = 0
-    max_curves_per_bitwidth = 5  # Limit curves for readability
     
     for bit_width in bit_widths:
         bw_runs = valid_df[valid_df['uniform_bit_width'] == bit_width]
-        curves_plotted = 0
+        curves_in_group = 0
         
         for _, row in bw_runs.iterrows():
-            if curves_plotted >= max_curves_per_bitwidth:
-                break
-                
             run_curves = training_curves_df[training_curves_df['run_id'] == row['run_id']]
             if not run_curves.empty:
-                color = bit_width_colors[row['uniform_bit_width']]
-                label = f"{int(row['uniform_bit_width'])}-bit" if curves_plotted == 0 else ""
-                ax1.plot(run_curves['step'], run_curves['metric_value'], 
-                        color=color, label=label, linewidth=1.5, alpha=0.7)
-                curves_plotted += 1
+                color = bit_width_colors[bit_width]
+                # Only show label for first curve of each bit width
+                label = f"{int(bit_width)}-bit" if curves_in_group == 0 else ""
+                ax.plot(run_curves['step'], run_curves['metric_value'], 
+                       color=color, linewidth=2, alpha=0.7, label=label)
                 plotted_curves += 1
+                curves_in_group += 1
     
-    ax1.set_xlabel('Training Step')
-    ax1.set_ylabel('Training Loss')
-    ax1.set_title(f'Training Loss Curves by Quantization ({plotted_curves} curves)')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
-    
-    # Plot 2: Final loss vs bit-width scatter with summary statistics
-    ax2 = axes[1]
-    for bit_width in bit_widths:
-        bw_data = valid_df[valid_df['uniform_bit_width'] == bit_width]
-        if not bw_data.empty:
-            mean_loss = bw_data['final_train_loss'].mean()
-            std_loss = bw_data['final_train_loss'].std() if len(bw_data) > 1 else 0
-            color = bit_width_colors[bit_width]
-            
-            # Scatter plot with jitter for visibility
-            jitter = np.random.normal(0, 0.02, len(bw_data))
-            ax2.scatter(bw_data['uniform_bit_width'] + jitter, bw_data['final_train_loss'], 
-                       color=color, s=80, alpha=0.6, label=f"{int(bit_width)}-bit (n={len(bw_data)})")
-            
-            # Error bar for mean
-            ax2.errorbar(bit_width, mean_loss, yerr=std_loss, 
-                        color=color, capsize=8, capthick=2, linewidth=2, alpha=0.8,
-                        marker='D', markersize=8)
-    
-    ax2.set_xlabel('Quantization Bit-Width (Variable Layers)')
-    ax2.set_ylabel('Final Training Loss')
-    ax2.set_title('Final Training Loss vs Bit-Width (Summary)')
-    ax2.legend()
-    ax2.grid(True, alpha=0.3)
+    ax.set_xlabel('Training Step', fontsize=12)
+    ax.set_ylabel('Training Loss', fontsize=12)
+    ax.set_title(f'Training Loss Curves Grouped by Quantization Bit-Width (ALL {plotted_curves} curves)', fontsize=14)
+    ax.legend(fontsize=11, loc='upper right')
+    ax.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('training_curves_vs_bitwidth_optimized.png', dpi=150, bbox_inches='tight')
-    print("📊 Saved optimized training curves vs bit-width to: training_curves_vs_bitwidth_optimized.png")
+    plt.savefig('1d_training_curves_by_bit_width.png', dpi=150, bbox_inches='tight')
+    print("📊 Saved training curves grouped by bit width to: 1d_training_curves_by_bit_width.png")
     plt.show()
+    plt.close()
 
-def plot_convergence_analysis(df, training_curves_df):
-    """Graph 2: Convergence speed analysis by quantization level (optimized)"""
+
+
+def plot_average_convergence_curves(df, training_curves_df):
+    """Individual Plot 3: Average training curves by quantization level"""
     
     # Filter for runs with valid data
     valid_df = df.dropna(subset=['uniform_bit_width'])
     
     if valid_df.empty:
-        print("No valid data for convergence analysis")
+        print("No valid data for average convergence analysis")
         return
     
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle('Training Convergence Analysis by Quantization Level (Optimized)', fontsize=16)
+    # Create single plot
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
     
-    # Define loss thresholds for convergence analysis
-    target_losses = [6.0, 5.5, 5.0]  # Reduced for performance
     bit_widths = sorted(valid_df['uniform_bit_width'].unique())
     colors = plt.cm.Set1(np.linspace(0, 1, len(bit_widths)))
     bit_width_colors = {bw: colors[i] for i, bw in enumerate(bit_widths)}
     
-    # Plot 1: Average training curves (much faster than individual curves)
-    ax1 = axes[0, 0]
+    # Plot average training curves
     for bit_width in bit_widths:
         bw_runs = valid_df[valid_df['uniform_bit_width'] == bit_width]
         bw_run_ids = bw_runs['run_id'].tolist()
@@ -292,24 +510,47 @@ def plot_convergence_analysis(df, training_curves_df):
             label = f"{int(bit_width)}-bit (n={len(bw_runs)})"
             
             # Plot average with confidence interval
-            ax1.plot(avg_curve['step'], avg_curve['metric_value'], 
-                    color=color, label=label, linewidth=3, alpha=0.9)
+            ax.plot(avg_curve['step'], avg_curve['metric_value'], 
+                   color=color, label=label, linewidth=3, alpha=0.9)
             
             # Add confidence interval if we have std data
             if not std_curve['metric_value'].isna().all():
-                ax1.fill_between(avg_curve['step'], 
-                               avg_curve['metric_value'] - std_curve['metric_value'],
-                               avg_curve['metric_value'] + std_curve['metric_value'],
-                               color=color, alpha=0.2)
+                ax.fill_between(avg_curve['step'], 
+                              avg_curve['metric_value'] - std_curve['metric_value'],
+                              avg_curve['metric_value'] + std_curve['metric_value'],
+                              color=color, alpha=0.2)
     
-    ax1.set_xlabel('Training Step')
-    ax1.set_ylabel('Training Loss (Average)')
-    ax1.set_title('Average Training Curves by Quantization')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
+    ax.set_xlabel('Training Step', fontsize=12)
+    ax.set_ylabel('Average Training Loss', fontsize=12)
+    ax.set_title('Average Training Curves by Quantization Bit-Width', fontsize=14)
+    ax.legend(fontsize=11)
+    ax.grid(True, alpha=0.3)
     
-    # Plot 2: Simplified convergence analysis
-    ax2 = axes[0, 1]
+    plt.tight_layout()
+    plt.savefig('2_average_convergence_curves.png', dpi=150, bbox_inches='tight')
+    print("📊 Saved average convergence curves to: 2_average_convergence_curves.png")
+    plt.show()
+    plt.close()
+
+
+def plot_convergence_performance_summary(df):
+    """Individual Plot 4: Convergence performance summary bar chart"""
+    
+    # Filter for runs with valid data
+    valid_df = df.dropna(subset=['uniform_bit_width'])
+    
+    if valid_df.empty:
+        print("No valid data for convergence performance summary")
+        return
+    
+    # Create single plot
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+    
+    bit_widths = sorted(valid_df['uniform_bit_width'].unique())
+    colors = plt.cm.Set1(np.linspace(0, 1, len(bit_widths)))
+    bit_width_colors = {bw: colors[i] for i, bw in enumerate(bit_widths)}
+    
+    # Prepare convergence summary
     convergence_summary = []
     
     for bit_width in bit_widths:
@@ -327,174 +568,106 @@ def plot_convergence_analysis(df, training_curves_df):
     
     if convergence_summary:
         conv_df = pd.DataFrame(convergence_summary)
-        bars = ax2.bar(range(len(conv_df)), conv_df['mean_final_loss'], 
-                      yerr=conv_df['std_final_loss'], capsize=8, alpha=0.7,
-                      color=[bit_width_colors[bw/1] for bw in conv_df['bit_width']])
+        bars = ax.bar(range(len(conv_df)), conv_df['mean_final_loss'], 
+                     yerr=conv_df['std_final_loss'], capsize=10, alpha=0.8,
+                     color=[bit_width_colors[bw/1] for bw in conv_df['bit_width']])
         
-        ax2.set_xlabel('Quantization Bit-Width')
-        ax2.set_ylabel('Final Training Loss')
-        ax2.set_title('Convergence Performance Summary')
-        ax2.set_xticks(range(len(conv_df)))
-        ax2.set_xticklabels([f'{bw}-bit' for bw in conv_df['bit_width']])
-        ax2.grid(True, alpha=0.3, axis='y')
+        ax.set_xlabel('Quantization Bit-Width', fontsize=12)
+        ax.set_ylabel('Final Training Loss', fontsize=12)
+        ax.set_title('Convergence Performance Summary by Bit-Width', fontsize=14)
+        ax.set_xticks(range(len(conv_df)))
+        ax.set_xticklabels([f'{bw}-bit' for bw in conv_df['bit_width']], fontsize=11)
+        ax.grid(True, alpha=0.3, axis='y')
         
         # Add value labels
         for i, row in conv_df.iterrows():
-            ax2.text(i, row['mean_final_loss'] + row['std_final_loss'] + 0.05,
-                    f'{row["mean_final_loss"]:.3f}\\nn={row["count"]}',
-                    ha='center', va='bottom', fontsize=9)
-    
-    # Plot 3: Loss improvement rates (simplified)
-    ax3 = axes[1, 0]
-    improvement_data = []
-    
-    for bit_width in bit_widths:
-        bw_runs = valid_df[valid_df['uniform_bit_width'] == bit_width]
-        bw_run_ids = bw_runs['run_id'].tolist()
-        bw_curves = training_curves_df[training_curves_df['run_id'].isin(bw_run_ids)]
-        
-        if not bw_curves.empty:
-            # Calculate improvement rate for each run
-            for run_id in bw_run_ids:
-                run_curves = bw_curves[bw_curves['run_id'] == run_id]
-                if len(run_curves) > 1:
-                    initial_loss = run_curves['metric_value'].iloc[0]
-                    final_loss = run_curves['metric_value'].iloc[-1]
-                    improvement_rate = (initial_loss - final_loss) / len(run_curves)
-                    
-                    improvement_data.append({
-                        'bit_width': int(bit_width),
-                        'improvement_rate': improvement_rate
-                    })
-    
-    if improvement_data:
-        imp_df = pd.DataFrame(improvement_data)
-        for bit_width in bit_widths:
-            bw_data = imp_df[imp_df['bit_width'] == int(bit_width)]
-            if not bw_data.empty:
-                color = bit_width_colors[bit_width]
-                ax3.scatter(bw_data['bit_width'], bw_data['improvement_rate'],
-                           color=color, s=100, alpha=0.7, label=f"{int(bit_width)}-bit")
-        
-        ax3.set_xlabel('Quantization Bit-Width')
-        ax3.set_ylabel('Loss Improvement Rate')
-        ax3.set_title('Training Speed by Quantization')
-        ax3.legend()
-        ax3.grid(True, alpha=0.3)
-    else:
-        ax3.text(0.5, 0.5, 'Insufficient data for improvement analysis', 
-                transform=ax3.transAxes, ha='center', va='center', fontsize=12)
-    
-    # Plot 4: Data coverage summary
-    ax4 = axes[1, 1]
-    coverage_data = []
-    
-    for bit_width in bit_widths:
-        bw_runs = valid_df[valid_df['uniform_bit_width'] == bit_width]
-        bw_run_ids = bw_runs['run_id'].tolist()
-        bw_curves = training_curves_df[training_curves_df['run_id'].isin(bw_run_ids)]
-        
-        coverage_data.append({
-            'bit_width': int(bit_width),
-            'total_runs': len(bw_runs),
-            'data_points': len(bw_curves),
-            'avg_steps_per_run': len(bw_curves) / len(bw_runs) if len(bw_runs) > 0 else 0
-        })
-    
-    if coverage_data:
-        cov_df = pd.DataFrame(coverage_data)
-        
-        # Dual y-axis plot
-        ax4_twin = ax4.twinx()
-        
-        bars1 = ax4.bar([x - 0.2 for x in range(len(cov_df))], cov_df['total_runs'], 
-                       width=0.4, alpha=0.7, label='Total Runs', color='skyblue')
-        bars2 = ax4_twin.bar([x + 0.2 for x in range(len(cov_df))], cov_df['data_points'], 
-                            width=0.4, alpha=0.7, label='Data Points', color='lightcoral')
-        
-        ax4.set_xlabel('Quantization Bit-Width')
-        ax4.set_ylabel('Number of Runs', color='skyblue')
-        ax4_twin.set_ylabel('Training Data Points', color='lightcoral')
-        ax4.set_title('Data Coverage by Quantization Level')
-        ax4.set_xticks(range(len(cov_df)))
-        ax4.set_xticklabels([f'{bw}-bit' for bw in cov_df['bit_width']])
-        
-        # Add value labels
-        for i, row in cov_df.iterrows():
-            ax4.text(i-0.2, row['total_runs'] + 0.5, f'{row["total_runs"]}',
-                    ha='center', va='bottom', fontsize=9)
-            ax4_twin.text(i+0.2, row['data_points'] + 5, f'{row["data_points"]}',
-                         ha='center', va='bottom', fontsize=9)
+            ax.text(i, row['mean_final_loss'] + row['std_final_loss'] + 0.05,
+                   f'{row["mean_final_loss"]:.3f}\\nn={row["count"]}',
+                   ha='center', va='bottom', fontsize=10)
     
     plt.tight_layout()
-    plt.savefig('training_convergence_analysis_optimized.png', dpi=150, bbox_inches='tight')
-    print("📊 Saved optimized convergence analysis to: training_convergence_analysis_optimized.png")
+    plt.savefig('3_convergence_performance_summary.png', dpi=150, bbox_inches='tight')
+    print("📊 Saved convergence performance summary to: 3_convergence_performance_summary.png")
     plt.show()
+    plt.close()
+
 
 def plot_hyperparameter_curves_analysis(df, training_curves_df):
-    """Graph 3: Comprehensive hyperparameter and quantization analysis"""
+    """Individual Plot 5: Hyperparameter and quantization analysis colored by model size"""
     
     # Filter for runs with valid data
-    valid_df = df.dropna(subset=['uniform_bit_width'])
+    valid_df = df.dropna(subset=['uniform_bit_width', 'final_train_loss', 'total_params'])
     
     if valid_df.empty:
-        print("No valid data for hyperparameter curves analysis")
+        print("No valid data for hyperparameter analysis")
         return
     
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle('Comprehensive Training Analysis: Quantization, Hyperparameters & Performance', fontsize=16)
+    # Create single plot for hyperparameter landscape
+    fig, ax = plt.subplots(1, 1, figsize=(12, 8))
     
-    bit_widths = sorted(valid_df['uniform_bit_width'].unique())
-    colors = plt.cm.plasma(np.linspace(0, 1, len(bit_widths)))
-    bit_width_colors = {bw: colors[i] for i, bw in enumerate(bit_widths)}
-    
-    # Plot 1: Training curves with detailed labels
-    ax1 = axes[0, 0]
-    for _, row in valid_df.iterrows():
-        run_curves = training_curves_df[training_curves_df['run_id'] == row['run_id']]
-        if not run_curves.empty:
-            color = bit_width_colors[row['uniform_bit_width']]
-            linestyle = '-' if row['weight_decay'] == 0.0 else '--'
-            alpha = 1.0 if row['dropout'] == 0.0 else 0.7
-            
-            label = f"{int(row['uniform_bit_width'])}-bit, wd={row['weight_decay']}, do={row['dropout']}"
-            ax1.plot(run_curves['step'], run_curves['metric_value'], 
-                    color=color, linestyle=linestyle, linewidth=2, alpha=alpha, label=label)
-    
-    ax1.set_xlabel('Training Step')
-    ax1.set_ylabel('Training Loss')
-    ax1.set_title('All Training Curves (detailed)')
-    ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
-    ax1.grid(True, alpha=0.3)
-    
-    # Plot 2: Performance landscape
-    ax2 = axes[0, 1]
-    # Create a heatmap-style visualization of performance
+    # Create a performance landscape visualization colored by model size
     x_data = []
     y_data = []
-    z_data = []
+    z_data = []  # This will now be model size for coloring
+    performance_data = []  # Final loss for point size
     labels = []
     
     for _, row in valid_df.iterrows():
         x_data.append(row['uniform_bit_width'])
         y_data.append(row['weight_decay'] * 10 + row['dropout'])  # Combine hyperparams
-        z_data.append(row['final_train_loss'])
+        z_data.append(row['total_params'])  # Color by model size
+        performance_data.append(row['final_train_loss'])  # Size by performance
         labels.append(f"wd={row['weight_decay']}, do={row['dropout']}")
     
-    scatter = ax2.scatter(x_data, y_data, c=z_data, cmap='RdYlBu_r', s=200, alpha=0.8)
-    ax2.set_xlabel('Quantization Bit-Width')
-    ax2.set_ylabel('Hyperparameter Combination (wd*10 + dropout)')
-    ax2.set_title('Performance Landscape')
-    cbar = plt.colorbar(scatter, ax=ax2)
-    cbar.set_label('Final Training Loss')
+    # Normalize performance for point sizes (smaller loss = larger point)
+    min_loss = min(performance_data)
+    max_loss = max(performance_data)
+    normalized_perf = [(max_loss - loss + 0.1) / (max_loss - min_loss + 0.1) for loss in performance_data]
+    point_sizes = [50 + 150 * perf for perf in normalized_perf]  # Scale point sizes
     
-    # Add annotations
-    for i, label in enumerate(labels):
-        ax2.annotate(label, (x_data[i], y_data[i]), xytext=(5, 5), 
-                    textcoords='offset points', fontsize=8, alpha=0.8)
+    scatter = ax.scatter(x_data, y_data, c=z_data, s=point_sizes, 
+                        cmap='plasma', alpha=0.8, edgecolors='white', linewidth=0.5)
+    ax.set_xlabel('Quantization Bit-Width', fontsize=12)
+    ax.set_ylabel('Hyperparameter Combination (wd*10 + dropout)', fontsize=12)
+    ax.set_title('Performance Landscape: Quantization vs Hyperparameters\n(Color = Model Size, Size = Performance)', fontsize=14)
     
-    # Plot 3: Training efficiency (loss per step)
-    ax3 = axes[1, 0]
+    # Colorbar for model size
+    cbar = plt.colorbar(scatter, ax=ax)
+    cbar.set_label('Model Size (Parameters)', fontsize=12)
+    
+    # Add annotations for better readability (limit to avoid clutter)
+    for i, label in enumerate(labels[:15]):  # Show fewer to avoid clutter
+        ax.annotate(label, (x_data[i], y_data[i]), xytext=(5, 5), 
+                   textcoords='offset points', fontsize=8, alpha=0.7)
+    
+    # Add legend explanation for point sizes
+    ax.text(0.02, 0.98, 'Point size: Better performance = Larger size', 
+           transform=ax.transAxes, fontsize=10, verticalalignment='top',
+           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig('4_hyperparameter_analysis.png', dpi=150, bbox_inches='tight')
+    print("📊 Saved hyperparameter analysis colored by model size to: 4_hyperparameter_analysis.png")
+    plt.show()
+    plt.close()
+
+
+def plot_training_efficiency_analysis(df, training_curves_df):
+    """Individual Plot 8: Training efficiency analysis"""
+    
+    # Filter for runs with valid data
+    valid_df = df.dropna(subset=['uniform_bit_width', 'final_train_loss'])
+    
+    if valid_df.empty:
+        print("No valid data for training efficiency analysis")
+        return
+    
+    # Create single plot
+    fig, ax = plt.subplots(1, 1, figsize=(10, 8))
+    
+    # Calculate training efficiency
     efficiency_data = []
     
     for _, row in valid_df.iterrows():
@@ -514,93 +687,32 @@ def plot_hyperparameter_curves_analysis(df, training_curves_df):
     
     if efficiency_data:
         eff_df = pd.DataFrame(efficiency_data)
-        scatter = ax3.scatter(eff_df['bit_width'], eff_df['efficiency'], 
-                             c=eff_df['final_loss'], cmap='viridis', s=150, alpha=0.8)
-        ax3.set_xlabel('Quantization Bit-Width')
-        ax3.set_ylabel('Training Efficiency (loss reduction per step)')
-        ax3.set_title('Training Efficiency vs Quantization')
-        cbar = plt.colorbar(scatter, ax=ax3)
-        cbar.set_label('Final Training Loss')
-        ax3.grid(True, alpha=0.3)
+        scatter = ax.scatter(eff_df['bit_width'], eff_df['efficiency'], 
+                           c=eff_df['final_loss'], cmap='viridis', s=150, alpha=0.8)
+        ax.set_xlabel('Quantization Bit-Width', fontsize=12)
+        ax.set_ylabel('Training Efficiency (loss reduction per step)', fontsize=12)
+        ax.set_title('Training Efficiency vs Quantization Bit-Width', fontsize=14)
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label('Final Training Loss', fontsize=12)
+        ax.grid(True, alpha=0.3)
     else:
-        ax3.text(0.5, 0.5, 'Insufficient efficiency data', transform=ax3.transAxes, 
-                ha='center', va='center', fontsize=12)
-    
-    # Plot 4: Summary statistics
-    ax4 = axes[1, 1]
-    summary_stats = []
-    
-    for bit_width in bit_widths:
-        bw_data = valid_df[valid_df['uniform_bit_width'] == bit_width]
-        if not bw_data.empty:
-            mean_loss = bw_data['final_train_loss'].mean()
-            std_loss = bw_data['final_train_loss'].std()
-            min_loss = bw_data['final_train_loss'].min()
-            max_loss = bw_data['final_train_loss'].max()
-            
-            summary_stats.append({
-                'bit_width': int(bit_width),
-                'mean_loss': mean_loss,
-                'std_loss': std_loss if not np.isnan(std_loss) else 0,
-                'min_loss': min_loss,
-                'max_loss': max_loss,
-                'count': len(bw_data)
-            })
-    
-    if summary_stats:
-        stats_df = pd.DataFrame(summary_stats)
-        
-        # Bar plot with error bars
-        x_pos = range(len(stats_df))
-        bars = ax4.bar(x_pos, stats_df['mean_loss'], yerr=stats_df['std_loss'], 
-                      capsize=10, alpha=0.7, color=[bit_width_colors[bw] for bw in bit_widths])
-        
-        # Add value labels on bars
-        for i, (idx, row) in enumerate(stats_df.iterrows()):
-            ax4.text(i, row['mean_loss'] + row['std_loss'] + 0.05, 
-                    f'{row["mean_loss"]:.2f}±{row["std_loss"]:.2f}\\nn={row["count"]}',
-                    ha='center', va='bottom', fontsize=9)
-        
-        ax4.set_xlabel('Quantization Bit-Width')
-        ax4.set_ylabel('Final Training Loss')
-        ax4.set_title('Summary Statistics by Quantization Level')
-        ax4.set_xticks(x_pos)
-        ax4.set_xticklabels([f'{int(bw)}-bit' for bw in bit_widths])
-        ax4.grid(True, alpha=0.3, axis='y')
-    else:
-        ax4.text(0.5, 0.5, 'Insufficient summary data', transform=ax4.transAxes, 
-                ha='center', va='center', fontsize=12)
+        ax.text(0.5, 0.5, 'Insufficient efficiency data', transform=ax.transAxes, 
+               ha='center', va='center', fontsize=12)
     
     plt.tight_layout()
-    plt.savefig('hyperparameter_curves_analysis.png', dpi=150, bbox_inches='tight')
-    print("📊 Saved hyperparameter curves analysis to: hyperparameter_curves_analysis.png")
+    plt.savefig('5_training_efficiency_analysis.png', dpi=150, bbox_inches='tight')
+    print("📊 Saved training efficiency analysis to: 5_training_efficiency_analysis.png")
     plt.show()
+    plt.close()
+
 
 def create_data_summary_table(df, training_curves_df):
-    """Create a comprehensive summary table of the analyzed data (optimized)"""
+    """Create a comprehensive summary table of the analyzed data (DETERMINISTIC)"""
     print("\n" + "="*80)
-    print("OPTIMIZED TRAINING CURVES ANALYSIS SUMMARY")
+    print("DETERMINISTIC TRAINING CURVES ANALYSIS SUMMARY")
     print("="*80)
     
-    print(f"\nSample Size (for performance): {len(df)} runs")
-    print(f"Runs with Training Loss: {df['final_train_loss'].notna().sum()}")
-    print(f"Runs with Quantization: {df['quant_enabled'].sum()}")
-    print(f"Sampled Training Data Points: {len(training_curves_df)}")
-    print(f"Original Dataset: 504 total runs, 240k+ training points")
-    
-    # Training curve statistics
-    if not training_curves_df.empty:
-        curve_stats = training_curves_df.groupby('run_id').agg({
-            'step': ['min', 'max', 'count'],
-            'metric_value': ['min', 'max', 'mean', 'std']
-        }).round(4)
-        
-        print("\n--- Sampled Training Curve Statistics ---")
-        print(f"Average training steps per run: {curve_stats[('step', 'count')].mean():.0f}")
-        print(f"Step range: {training_curves_df['step'].min()} - {training_curves_df['step'].max()}")
-        print(f"Loss range: {training_curves_df['metric_value'].min():.4f} - {training_curves_df['metric_value'].max():.4f}")
-    
-    print("\n--- Quantization Analysis (Sample) ---")
+    print("\n--- Quantization Analysis (ALL DATA - DETERMINISTIC) ---")
     print("Bit Width Categories (excluding fixed 8-bit layers):")
     for bw in sorted(df['uniform_bit_width'].dropna().unique()):
         bw_data = df[df['uniform_bit_width'] == bw]
@@ -613,19 +725,13 @@ def create_data_summary_table(df, training_curves_df):
         bw_run_ids = bw_data['run_id'].tolist()
         bw_curves = training_curves_df[training_curves_df['run_id'].isin(bw_run_ids)]
         if not bw_curves.empty:
-            print(f"    Sample data points: {len(bw_curves)}")
-    
-    print(f"\n⚡ Performance Optimization Applied:")
-    print(f"  • Sample size reduced to {len(df)} runs (from 504)")
-    print(f"  • Step sampling every 15th point (from continuous)")
-    print(f"  • Max steps limited to 300 (from 511)")
-    print(f"  • Validation loss queries skipped")
-    print(f"  • Result: ~{len(training_curves_df)} data points vs 240k+ original")
+            print(f"    ALL data points: {len(bw_curves)}")
 
 def main():
-    """Main analysis function with training curves focus"""
+    """Main analysis function with training curves focus - DETERMINISTIC & REPRODUCIBLE"""
     print("🔍 Creating comprehensive training curves analysis...")
     print("📈 Focus: Training loss progression over time instead of just final values")
+    print("🎯 DETERMINISTIC: No random sampling - same results every run")
     print("Note: Excluding fixed 8-bit layers (transformer.emb_add, linear_out) from bit-width analysis")
     
     conn = sqlite3.connect('wandb_data.db')
@@ -633,24 +739,40 @@ def main():
     # Extract detailed configuration data
     print("\n1. Extracting detailed configuration data...")
     df = extract_detailed_config_data(conn)
+    print(df.head())
     
-    # Get training curves for all runs
+    # Get training curves for more runs
     print("2. Extracting training curves...")
-    training_curves_df = get_training_curves(conn, sample_runs=30, max_steps=300, step_interval=15)
-    print(f"   Found {len(training_curves_df)} training data points across sampled runs")
+    training_curves_df = get_training_curves(conn, max_steps=400, min_steps=100)
+    print(f"   Found {len(training_curves_df)} training data points across ALL filtered runs")
     
     # Create comprehensive data summary
     create_data_summary_table(df, training_curves_df)
     
-    # Create the three enhanced graphs with training curves
-    print("\n3. Creating Graph 1: Training Curves vs Quantization Bit-Width...")
-    plot_training_curves_vs_bitwidth(df, training_curves_df)
+    # Create individual plots one by one for better visibility
+    print("\n3a. Creating Plot 1a: Training Curves by Model Size (Subplots, Color = Bit Width)...")
+    plot_training_curves_by_model_size_subplots(df, training_curves_df)
     
-    print("\n4. Creating Graph 2: Convergence Analysis by Quantization Level...")
-    plot_convergence_analysis(df, training_curves_df)
+    print("\n3b. Creating Plot 1b: Training Curves by Bit Width (Subplots, Color = Model Size)...")
+    plot_training_curves_by_bit_width_subplots(df, training_curves_df)
     
-    print("\n5. Creating Graph 3: Comprehensive Hyperparameter & Training Analysis...")
+    print("\n3c. Creating Plot 1c: Training Curves Grouped by Model Size (Single Plot)...")
+    plot_training_curves_by_model_size(df, training_curves_df)
+    
+    print("\n3d. Creating Plot 1d: Training Curves Grouped by Bit Width (Single Plot)...")
+    plot_training_curves_by_bit_width(df, training_curves_df)
+    
+    print("\n4. Creating Plot 2: Average Convergence Curves...")
+    plot_average_convergence_curves(df, training_curves_df)
+    
+    print("\n5. Creating Plot 3: Convergence Performance Summary...")
+    plot_convergence_performance_summary(df)
+    
+    print("\n6. Creating Plot 4: Hyperparameter Analysis...")
     plot_hyperparameter_curves_analysis(df, training_curves_df)
+
+    print("\n7. Creating Plot 5: Training Efficiency Analysis...")
+    plot_training_efficiency_analysis(df, training_curves_df)
     
     # Save all data for further analysis
     df.to_csv('detailed_training_analysis_data.csv', index=False)
@@ -660,10 +782,17 @@ def main():
     
     conn.close()
     print("\n✅ Comprehensive training curves analysis complete!")
-    print("\n📊 Generated files:")
-    print("  - training_curves_vs_bitwidth.png")
-    print("  - training_convergence_analysis.png") 
-    print("  - hyperparameter_curves_analysis.png")
+    print("🎯 DETERMINISTIC: Same results guaranteed on every run (no random sampling)")
+    print("\n📊 Generated individual plot files:")
+    print("  - 1a_training_curves_by_model_size_subplots.png (subplots by model size, color = bit width)")
+    print("  - 1b_training_curves_by_bit_width_subplots.png (subplots by bit width, color = model size)")
+    print("  - 1c_training_curves_by_model_size.png (single plot grouped by model size)")
+    print("  - 1d_training_curves_by_bit_width.png (single plot grouped by bit width)")
+    print("  - 2_average_convergence_curves.png")
+    print("  - 3_convergence_performance_summary.png")
+    print("  - 4_hyperparameter_analysis.png (colored by model size)")
+    print("  - 5_training_efficiency_analysis.png")
+    print("\n📊 Generated data files:")
     print("  - detailed_training_analysis_data.csv")
     print("  - all_training_curves_data.csv")
 
