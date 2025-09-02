@@ -184,9 +184,7 @@ def measure_generation_energy(cfg, model_wrapper: QTRModelWrapper, monitor: Zeus
 
 def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
     """
-    Saves results. Results of measurements are stored alongside the configs run parameters in a folder
-    with the specific run number. The run number starts at 1 and is stored between different calls of the
-    qtransform energy command and is incremented by each call using this function.
+    Saves results. Results of measurements are stored alongside the configs run parameters in a folder.
 
     If no path is specified, the results will be printed instead.
 
@@ -196,40 +194,26 @@ def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
     if base_out_path:
 
         base_out_path = base_out_path.replace('~', expanduser('~'))
-        if not exists(base_out_path):
-            log.debug(f'Creating base energy dir: {base_out_path}')
-            makedirs(base_out_path, exist_ok=True)
-            # create file which keeps track of how many runs were done
-            with open(join(base_out_path, 'runs.txt'), 'x') as f:
-                f.write("1")
 
-        # read and increment run number
-        with open(join(base_out_path, 'runs.txt'), "r+") as f:
-            lines = f.readlines()
-            run_num = int(lines[0])
-            f.seek(0)
-            f.writelines(str(run_num + 1))
+        run_folder = f"batch-size{cfg.run.batch_size}_token{cfg.run.max_new_tokens}"
 
-        run_folder = join(base_out_path, str(run_num))
-        if not exists(run_folder):
-            log.debug(f'Creating run dir: {run_folder}')
-            makedirs(run_folder, exist_ok=True)
-            with open(join(run_folder, 'run_cfg.txt'), 'x') as f:
-                f.write(str(cfg.run))
+        run_out = join(base_out_path, run_folder)
 
-            out_path_verbose = join(run_folder, "energy_verbose.csv")
+        makedirs(run_out, exist_ok=True)
+        with open(join(run_out, 'run_cfg.txt'), 'x') as f:
+            f.write(str(cfg.run))
 
-            log.info(f'Saving results to: "{run_folder}"')
-            df_verbose.to_csv(out_path_verbose, sep=";", index=False, mode="w", header=True)
+        out_path_verbose = join(run_out, "energy_verbose.csv")
+        log.info(f'Saving results to: "{run_folder}"')
+        df_verbose.to_csv(out_path_verbose, sep=";", index=False, mode="w", header=True)
 
+        out_path_summary = join(base_out_path, "generation_energy_summary.csv")
 
-            out_path_summary = join(base_out_path, "generation_energy_summary.csv")
-
-            df_summary["run"] = run_num
-            if not exists(out_path_summary):
-                df_summary.to_csv(out_path_summary, sep=";", index=False, mode="w", header=True)
-            else:
-                df_summary.to_csv(out_path_summary, sep=";", index=False, mode="a", header=False)
+        df_summary["run"] = run_folder
+        if not exists(out_path_summary):
+            df_summary.to_csv(out_path_summary, sep=";", index=False, mode="w", header=True)
+        else:
+            df_summary.to_csv(out_path_summary, sep=";", index=False, mode="a", header=False)
     else:
         print('\n---------------\n')
         print(df_verbose)
