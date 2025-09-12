@@ -195,7 +195,7 @@ def save_results(cfg, df_verbose: DataFrame, df_summary: DataFrame) -> None:
 
         base_out_path = base_out_path.replace('~', expanduser('~'))
 
-        run_folder = f"batch-size{cfg.run.batch_size}_token{cfg.run.max_new_tokens}"
+        run_folder = f"batch-size{cfg.run.batch_size}_token{cfg.run.max_new_tokens}_temp{cfg.run.temperature}_top{cfg.run.top_k}"
 
         run_out = join(base_out_path, run_folder)
 
