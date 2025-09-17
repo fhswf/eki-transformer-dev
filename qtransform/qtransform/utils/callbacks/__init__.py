@@ -14,7 +14,6 @@ from logging import getLogger
 
 log = getLogger(__name__)
 
-
 #hydra defines their own callbacks which are called and customized based on the config.yaml file,
 #however the config they get cannot be changed
 #this is not useful when changing the from_file field
@@ -80,7 +79,7 @@ class Callbacks():
             raise TypeError()
         for callback_name, callback_cfg in callbacks_cfg.items():
             log.info(callback_name)
-            assert isinstance(callback_cfg, Union[Dict, DictConfig]), f'Config for callback: "{callback_class}" is not valid'
+            assert isinstance(callback_cfg, Union[Dict, DictConfig]), f'Config for callback: "{callback_name}" is not valid'
             callback_cfg: CallbackConfig = CallbackConfig(**callback_cfg)
             callback_class = callback_cfg.cls
             callback_args = callback_cfg.args
@@ -93,8 +92,8 @@ class Callbacks():
                 #instantiate callbacks with specified args from hydra config
                 callbacks[callback_name] = getattr(module, callback_class, None)(**callback_args)
                 log.debug(f'Constructed class: {callback_class} with args: {callback_args}')
-            except:
-                log.warning(f'Module {module.__name__ + "." + callback_class} not found', exc_info=True)
+            except Exception as e:
+                log.warning(f'Error; {e} Module {module.__name__ + "." + callback_class} not found', exc_info=True)
         return callbacks
 
     def call_on_run_start(self, cfg) -> None:

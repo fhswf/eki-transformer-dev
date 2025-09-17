@@ -53,6 +53,8 @@ def get_default_chkpt_folder() -> str:
     """
     return os.path.join(os.getenv("HOME"), *__package__.split("."), "checkpoint_dir")
 
+
+# dont use cache here as pwd from hydra could change (even though it should not)
 def get_cwd() -> str:
     cwd:str
     if GlobalHydra().is_initialized():
@@ -64,8 +66,14 @@ def get_cwd() -> str:
 def get_output_dir() -> str:
     return os.path.join(get_cwd(), "outputs")
 
-def get_debug_dir() -> str:
-    return os.path.join(get_cwd(), "debug")
+def get_output_debug_dir() -> str:
+    return os.path.join(get_output_dir(), "debug")
+
+def get_output_chkpt_dir() -> str:
+    return os.path.join(get_output_dir(), "chkpts")
+
+def get_output_exports_dir() -> str:
+    return os.path.join(get_output_dir(), "exports")
 
 #idea: generic fromfile for dataset and models
 @dataclass
@@ -136,13 +144,13 @@ def load_checkpoint(from_file: Union[Dict, DictConfig, FromFile]) -> Tuple[int, 
         from_epoch = checkpoint['epoch']
     else:
         raise NotImplementedError("epoch needs to be in checkpoint for now")
-        try:
-            i = str(filepath).index("epoch:")
-            import re
-            p = re.compile("[0-9]+")
-            from_epoch = int(p.search(str(cfg.run.from_checkpoint)[i:]).group(0))
-        except ValueError or AttributeError:
-            log.warn("Modelcheckpint does not contain epoch information")
+        # try:
+        #     i = str(filepath).index("epoch:")
+        #     import re
+        #     p = re.compile("[0-9]+")
+        #     from_epoch = int(p.search(str(cfg.run.from_checkpoint)[i:]).group(0))
+        # except ValueError or AttributeError:
+        #     log.warn("Modelcheckpint does not contain epoch information")
     return from_epoch,checkpoint
 
 def load_state_dict_proxy(model, checkpoint, **kwargs):

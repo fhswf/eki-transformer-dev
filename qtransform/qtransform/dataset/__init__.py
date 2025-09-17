@@ -1,25 +1,18 @@
 from typing import Any, Union, Dict, Callable, Tuple, List
 from omegaconf import DictConfig, open_dict
 import logging
-from torch.utils.data import Dataset, DataLoader
-from qtransform.utils.introspection import _get_module, get_classes, concat_paths, get_dtype
-import qtransform
-from qtransform import classloader
-from dataclasses import dataclass, fields, InitVar
+from torch.utils.data import DataLoader
+from qtransform.utils.introspection import get_classes, concat_paths
+from dataclasses import dataclass, InitVar
 from enum import IntEnum
-from os import listdir, makedirs
-from os.path import join, exists
+from os import makedirs
 # from qtransform.tokenizer import Tokenizer, get_tokenizer
 import datasets
 from datasets.dataset_dict import DatasetDict
 # from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 import qtransform.dataset as package_self
-from transformers import DataCollatorForLanguageModeling, DataCollatorWithPadding
 from qtransform import device_singleton
 #TokenizedDatasetWrapper
-import numpy as np
-from typing import Tuple
-import torch
 from pprint import PrettyPrinter
 
 #TODO: PrettyPrinter(indent=1).pformat(content) everywhere

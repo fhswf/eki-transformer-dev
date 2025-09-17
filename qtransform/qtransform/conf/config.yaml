@@ -81,8 +81,7 @@ from_previous_run:
 pipe: /dev/null
 
 callbacks:
-  update_from_file: 
-    cls: qtransform.utils.callbacks.from_file.FromFileInfoCallback
+  # update_from_file: 
   pickle_config: 
     cls: qtransform.utils.callbacks.pickle_job_info.PickleJobInfoCallback
     #init params of the respective callback class

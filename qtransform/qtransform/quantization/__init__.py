@@ -9,7 +9,7 @@ import pprint
 from typing import Any, List, Optional, Dict, Tuple, Union, get_args, get_origin #get_args: get raw type of wrapper -> Optional[str] is (), Dict[str, str] = (str, str)...
 from dataclasses import dataclass, fields
 from qtransform.classloader import get_data
-from qtransform.utils.introspection import get_optional_type, concat_strings
+from qtransform.utils.introspection import get_optional_type
 from enum import EnumMeta
 from brevitas.inject.enum import QuantType, FloatToIntImplType, ScalingImplType, BitWidthImplType, RestrictValueType, StatsOp
 from brevitas.jit import ScriptModule
@@ -237,7 +237,7 @@ class BaseQuant():
             raise KeyError(f'Cannot load yaml qparameters if no loaded yaml config is given')
         template_args = loaded_yaml_template.get('args')
         if template_args is None:
-            raise KeyError(f'Template {filepath} is missing property \"args\" which contains the quant parameters.')
+            raise KeyError(f'Template {loaded_yaml_template} is missing property \"args\" which contains the quant parameters.')
         #all possible config options in self.args which are not set in config
         empty_qparams = set([x.name for x in fields(args) if getattr(args, x.name, None) is None])
         not_supported_fields = set(template_args.keys()) - set([x.name for x in fields(args)])

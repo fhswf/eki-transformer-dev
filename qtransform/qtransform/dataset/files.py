@@ -1,30 +1,18 @@
 import torch
 import numpy as np
 from torch.utils.data import Dataset
-from qtransform.utils.introspection import get_classes, concat_paths, get_dtype
 from qtransform.dataset import DatasetSplits, TokenizedDatasetGenerator, DatasetSplitType, MODEL_INPUT_NAME, MODEL_LABEL_NAME, MODEL_MASK_NAME
-from qtransform.tokenizer import get_tokenizer, Tokenizer
 import os
-from logging import getLogger
-from dataclasses import fields
 from typing import Any, Union, Dict, Callable, Tuple, List
-from omegaconf import DictConfig, open_dict
+from omegaconf import DictConfig
 import logging
-from torch.utils.data import Dataset, DataLoader
-from qtransform.utils.introspection import _get_module, get_classes, concat_paths, get_dtype
-import qtransform
-from os import listdir, makedirs
-from os.path import join, exists
+from os import makedirs
 import datasets
 from datasets.dataset_dict import DatasetDict
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
-from qtransform import device_singleton
 #TokenizedDatasetWrapper
-import numpy as np
-import torch
-from pprint import PrettyPrinter
 
-log = getLogger(__name__)
+log = logging.getLogger(__name__)
 
 #TODO: it is possible to derive this class from HuggingfaceTokenizedDatasetGenerator
 class FilesTokenizedDatasetGenerator(TokenizedDatasetGenerator):

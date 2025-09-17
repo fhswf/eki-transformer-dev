@@ -3,7 +3,6 @@ from typing import Dict, List
 from torch.nn import Module
 from re import search, subn, compile, findall, match, Pattern
 from logging import getLogger
-from qtransform.utils.introspection import concat_strings
 
 log = getLogger(__name__)
 
@@ -60,7 +59,7 @@ def compile_pattern_from_layerstring(layer_dotted: str, log_errors: bool = True)
     """
     sublayers = findall(LAYER_SEPERATOR_STRING, layer_dotted)
     if len(sublayers) == 0:
-        if log_errors: log.error(f'Layer config {layers} is an empty string.')
+        if log_errors: log.error(f'Layer config {layer_dotted=} is an empty string.')
         raise ValueError
     #the string which is going to be used to filter the model's layers
     filtered_layer_string = ""
@@ -71,7 +70,7 @@ def compile_pattern_from_layerstring(layer_dotted: str, log_errors: bool = True)
         if is_regex:
             #extract actual_regex from r'actual_regex' as search is going to be done with previously iterated layers
             #end of regex ($) cannot be used, otherwise checking stops from that regex
-            filtered_layer_string = concat_strings([filtered_layer_string, is_regex.groups()[0].replace("$", ""), "\."])
+            filtered_layer_string = ''.join([filtered_layer_string, is_regex.groups()[0].replace("$", ""), "\."])
             regex_index.append(i)
         #problem when model for some reason has characters that variable names usually canno have, for example when
         #creating layer names from a string
@@ -79,7 +78,7 @@ def compile_pattern_from_layerstring(layer_dotted: str, log_errors: bool = True)
             if log_errors: log.error(f'Sublayer \"{sublayer} for layer \"{layer_dotted}\" contains special characters without being encapsulated in a regex term.')
             raise ValueError
         else:
-            filtered_layer_string = concat_strings([filtered_layer_string, sublayer, "\."])
+            filtered_layer_string = ''.join([filtered_layer_string, sublayer, "\."])
     #iteration has added one layer seperator (\.) too much
     filtered_layer_string = filtered_layer_string[:-2]
     search_filter = compile(filtered_layer_string + "$")

@@ -298,7 +298,7 @@ def pad(self,
         raise ValueError()
 
     batch_size = len(input_ids) #batch size for input_ids and labels are the same
-    assert len(labels) == batch_size, f'Batch size for input_ids ({batch_size}) and labels ({len(inpud_ids)}) are different'
+    assert len(labels) == batch_size, f'Batch size for input_ids ({batch_size}) and labels ({len(input_ids)}) are different'
 
     
     #actually pad each sample
