@@ -20,7 +20,7 @@ else
     module load lang/Tkinter/3.11.5-GCCcore-13.2.0
     # set env to be compatible with pc2
     export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
-    export PYTHONUSERBASE="$SB_PRF_HOME/.local"
+    export PYTHONUSERBASE="$WORK_HOME/.local"
     mkdir -p $PYTHONUSERBASE
     export HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache"
     mkdir -p $HF_HOME
@@ -36,7 +36,7 @@ source $WORK_HOME/venv/bin/activate
 
 pip install --upgrade pip
 # pip install git+https://github.com/fhswf/eki-transformer-dev.git@main#subdirectory=qtransform 
-pip install -e $HOME/git/eki-transformer-dev/qtransform
+pip install -e $WORK_HOME/git/eki-transformer-dev/qtransform
 
 pip list
 
