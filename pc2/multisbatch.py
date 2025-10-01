@@ -6,7 +6,7 @@ import pathlib
 
 static_args = "run=train run.epochs=4 +model.type=CHECKPOINT \
 debug=True +trace=True \
-wandb.init.project=qtransform-longer5h \
+wandb.init.project=qtransform-energybench run.export=True +run.max_iters=5000\
 " 
 # run.export=True +run.max_iters=5000 \
 
@@ -26,10 +26,89 @@ models = [
     "model=NEW_BENCH2",    
 ]
 model_config = [
-    "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
-    "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
-    "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
-    "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=128",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=128",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=128",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=128",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=128",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=128",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=128",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=128",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=128",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=128",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=128",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=128",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=128",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=128",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=128",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=128",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=128",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=128",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=128",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=128",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=128",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=128",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=128",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=128",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=128",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=128",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=128",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
 ]
 
 model_args_dropout=[
@@ -39,8 +118,8 @@ model_args_dropout=[
 ]
 
 model_args_norm_layer=[
-    "model.args.norm_layer=None",
-    #"model.args.norm_layer=BatchNormTranspose", 
+    #"model.args.norm_layer=None",
+    "model.args.norm_layer=BatchNormTranspose", 
     #"model.args.norm_layer=LayerNorm", 
     #"model.args.norm_layer=BatchNormIdPure"
 ]
@@ -56,14 +135,14 @@ optim = [
 ]
 
 quant = [
-    "quantization=qat quantization/model=SLURM_BENCH2",
-    "quantization=qat quantization/model=SLURM_BENCH3",
+    #"quantization=qat quantization/model=SLURM_BENCH2",
+    #"quantization=qat quantization/model=SLURM_BENCH3",
     "quantization=qat quantization/model=SLURM_BENCH4",
     #"quantization=qat quantization/model=SLURM_BENCH5",
     #"quantization=qat quantization/model=SLURM_BENCH6",
     #"quantization=qat quantization/model=SLURM_BENCH7",
     #"quantization=qat quantization/model=SLURM_BENCH8"
-    "",
+    #"",
 ]
 
 argument_combinations = list(product(datasets, hyperparam_combinations, models, model_config, model_args_dropout, model_args_pos_layer, model_args_norm_layer, optim, quant))
@@ -79,8 +158,9 @@ for args in argument_combinations:
         + split_args \
         + static_args.split(" ")
         #+ work_env
-    result = subprocess.run(call_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    print(f"Running call: {' '.join(call_args)}")    
+    result = subprocess.run(["which", "sbatch"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # result = subprocess.run(call_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     
-    print("call: " + str(call_args))
     print("stdout: " + str(result.stdout))
-    #print("stderr: " + str(result.stderr))
+    print("stderr: " + str(result.stderr))
