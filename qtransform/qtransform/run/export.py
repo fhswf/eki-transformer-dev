@@ -132,6 +132,12 @@ def run(cfg: DictConfig, **kwargs):
             case _:
                 log.error(f'Supported export functions: {ERROR_LOGS.keys()}')
                 raise ValueError()
+    
+        # Save the input and output data for verification purposes later
+        out_tensor = model(sample_tensor)
+        np.save(model_name + ".inp.npy", sample_tensor.detach().numpy())
+        np.save(model_name + ".out.npy", out_tensor.detach().numpy())
+        
     except Exception:
         log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)
         raise RuntimeError()

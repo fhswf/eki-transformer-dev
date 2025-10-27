@@ -6,7 +6,7 @@ import pathlib
 
 static_args = "run=train run.epochs=4 +model.type=CHECKPOINT \
 debug=True +trace=True \
-wandb.init.project=qtransform-energybench run.export=True +run.max_iters=5000\
+wandb.init.project=qtransform-energybench run.export=True +run.max_iters=100\
 " 
 # run.export=True +run.max_iters=5000 \
 
@@ -159,8 +159,8 @@ for args in argument_combinations:
         + static_args.split(" ")
         #+ work_env
     print(f"Running call: {' '.join(call_args)}")    
-    result = subprocess.run(["which", "sbatch"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # result = subprocess.run(call_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # result = subprocess.run(["which", "sbatch"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = subprocess.run(call_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     
     print("stdout: " + str(result.stdout))
     print("stderr: " + str(result.stderr))

@@ -60,6 +60,11 @@ source $WORK_HOME/venv/bin/activate
 # cd $SBHOME/git && git clone https://github.com/fhswf/eki-transformer-dev
 
 pip install --upgrade pip
+
+# update repo 
+git -C $WORK_HOME/git/eki-transformer-dev/qtransform fetch 
+git -C $WORK_HOME/git/eki-transformer-dev/qtransform pull
+
 # pip install git+https://github.com/fhswf/eki-transformer-dev.git@main#subdirectory=qtransform 
 pip install $WORK_HOME/git/eki-transformer-dev/qtransform
 pip list

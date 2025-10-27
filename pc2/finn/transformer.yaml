@@ -1,0 +1,15 @@
+# Basic accelerator configuration
+board: U280                    # Target FPGA
+shell_flow_type: vitis_alveo   # Integration flow
+synth_clk_period_ns: 10.0      # 100 MHz clock
+target_fps: 1000               # Target throughput
+
+# Output generation options
+generate_outputs:
+  - estimate_reports
+  - bitfile
+  - pynq_driver
+  - deployment_package
+  
+# Build directory
+output_dir: build_dir
