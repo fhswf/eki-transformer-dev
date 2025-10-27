@@ -66,6 +66,7 @@ def run(cfg: DictConfig, **kwargs):
      
     model.cpu()
     sample_data = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
+    #model.cpu()
     for i, data_point in enumerate(sample_data):
         # its a good idea to run some data through the model
         # TODO make calibration run configurable
