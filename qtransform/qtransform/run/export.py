@@ -64,13 +64,16 @@ def run(cfg: DictConfig, **kwargs):
     dataloader_wrapper = DataLoaderWrapper(cfg.dataset)
     eval_dataloader = dataloader_wrapper.get_loader(DatasetSplitType.EVAL)
      
+    model.cpu()
     sample_data = dataloader_wrapper.get_loader(DatasetSplitType.TRAIN)
     for i, data_point in enumerate(sample_data):
         # its a good idea to run some data through the model
         # TODO make calibration run configurable
         if i == 10:
             break
+        data_point['input_ids'].cpu()
         model(data_point['input_ids'])
+        
     sample_tensor = data_point['input_ids']
     sample_tensor.cpu()
     
