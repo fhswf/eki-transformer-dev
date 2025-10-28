@@ -278,13 +278,6 @@ class MLP(nn.Module):
         x = self.dropout(x)
         return x
 
-#dirty workaround to avoid circular import error and support preprocess_for_quantize from brevitas.graph.quantize 
-#qtransform.quantization.quant_bn could also be added into the fhswf-dev branch of brevitas
-#TODO: wait until meeting with brevitas team to see if development in main repo will add our requirements
-from importlib import import_module
-quant_bn = import_module('qtransform.quantization.quant_bn')
-CustomBatchNorm1d = getattr(quant_bn, 'CustomBatchNorm1d')
-
 
 class TransformerBlock(nn.Module):
 
@@ -312,8 +305,6 @@ class TransformerBlock(nn.Module):
             self.custom_ln2 = nn.Identity()
         elif config.norm_layer in ["BatchNorm", "InstanceNorm"]:
             self.norm_size = config.block_size
-            #self.custom_ln1 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
-            #self.custom_ln2 = CustomBatchNorm1d(self.norm_size, requires_grad=False) if config.custom_ln else nn.Identity()
         elif config.norm_layer == "None":
             self.norm_size = None
         else:

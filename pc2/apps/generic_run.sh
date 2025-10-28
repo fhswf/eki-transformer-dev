@@ -3,7 +3,7 @@
 #######################
 ### SLURM JOB CONFIG ##
 #######################
-#SBATCH -t 1:0:0
+#SBATCH -t 2:0:0
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH --cpus-per-task=16
@@ -52,11 +52,12 @@ else
     # does not work atm:
     #export OMP_NUM_THREADS=1
     #export ORT_SINGLE_THREAD=1
+
+    python3 -m venv $WORK_HOME/venv/
+    source $WORK_HOME/venv/bin/activate
   fi
 fi
 
-python3 -m venv $WORK_HOME/venv/
-source $WORK_HOME/venv/bin/activate
 # cd $SBHOME/git && git clone https://github.com/fhswf/eki-transformer-dev
 
 pip install --upgrade pip

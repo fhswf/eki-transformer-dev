@@ -30,22 +30,47 @@
 # actual app/programm #
 #######################
 
-# Setup the FPGA development environment
-# taken from linus recommendations
-ml lang/Python/3.10.4-GCCcore-11.3.0
-ml devel/Autoconf/2.71-GCCcore-11.3.0
-ml lang/Bison/3.8.2-GCCcore-11.3.0
-ml lang/flex/2.6.4-GCCcore-11.3.0
-ml compiler/GCC/11.3.0
-ml lib/pybind11/2.9.2-GCCcore-11.3.0
-ml devel/Boost/1.79.0-GCC-11.3.0
-ml lib/fmt/9.1.0-GCCcore-11.3.0
-ml fpga xilinx/xrt/2.14
-module swap xilinx/u280 xilinx/u55c
 
-# new finn plus pytohnm package
-python3.10 -m venv /dev/shm/env/
-source /dev/shm/env/bin/activate
+# Setup the python environment for model training and evaluation and export
+# check if this script is running in slurm
+if [ -z "$SLURM_JOB_ID" ]; then
+  echo "Vanilla Node execution"
+else
+  echo "This script is running inside a SLURM job with SLURM_JOB_ID=$SLURM_JOB_ID"
+  # if system is pc2: 
+  if [ -z "$PC2SYSNAME" ]; then
+    echo "Slurm execution on somthing other then pc2 not supported yet"
+  else
+    # load modules
+
+    # Setup the FPGA development environment
+    # taken from linus recommendations
+    ml lang/Python/3.10.4-GCCcore-11.3.0
+    ml devel/Autoconf/2.71-GCCcore-11.3.0
+    ml lang/Bison/3.8.2-GCCcore-11.3.0
+    ml lang/flex/2.6.4-GCCcore-11.3.0
+    ml compiler/GCC/11.3.0
+    ml lib/pybind11/2.9.2-GCCcore-11.3.0
+    ml devel/Boost/1.79.0-GCC-11.3.0
+    ml lib/fmt/9.1.0-GCCcore-11.3.0
+    ml fpga xilinx/xrt/2.14
+    module swap xilinx/u280 xilinx/u55c
+    # set env to be compatible with pc2
+    export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
+    export PYTHONUSERBASE="$WORK_HOME/.local"
+    mkdir -p $PYTHONUSERBASE
+    export HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache"
+    mkdir -p $HF_HOME
+    # does not work atm:
+    #export OMP_NUM_THREADS=1
+    #export ORT_SINGLE_THREAD=1
+    # new finn plus pytohn package
+    python3.10 -m venv /dev/shm/env/
+    source /dev/shm/env/bin/activate
+  fi
+fi
+
+# install finn plus in python env
 pip install --upgrade pip
 pip install finn-plus
 
@@ -61,22 +86,28 @@ echo "$@"
 # # Forward all command line arguments as the command line to be run as the job
 # eval "$@"
 
-# copy build.py to ramdisk
-cp build.py /dev/shm/build.py
-cd /dev/shm/
+###################
+# finn build process
+###################
+
+# copy finn build script from repo to ramdisk
+cp $WORK_HOME/git/eki-transformer-dev/pc2/apps/finn_build.py /dev/shm/build.py
 
 # copy models and other stuff to ramdisk
-cp -r $PC2DATA/hpc-prf-ekiapp/FPGA_MODELS /dev/shm/FPGA_MODELS
+cp -r $WORK_HOME/FPGA_MODELS /dev/shm/FPGA_MODELS
 
+# create dir to store build outputs and not clutter home
+cd /dev/shm/
 export FINN_HOST_BUILD_DIR=/dev/shm/finn-build
-## finnn build
-# finn run build.py
-finn run build.yaml /dev/shm/FPGA_MODELS/model.onnx --save-dir /dev/shm/finn-build --skip-onnx-checks
+
+## finnn build command  >>>TODO<<<< adjust model path and other stuff as needed
+finn run build.py /dev/shm/FPGA_MODELS/model.onnx --save-dir /dev/shm/finn-build --skip-onnx-checks
 
 # If FINN actually produced build outputs
-if [[ -d "$FINN_HOST_BUILD_DIR" && $DEBUG ]]; then
-  # Generate a (hopefully) unique name for debugging output
-  DEBUG_OUTPUT="fh-swf-build-$(hostname)-$(date +'%Y-%m-%d-%H-%M-%S').tar.gz"
+if [[ -d "$FINN_HOST_BUILD_DIR" ]]; then
+  # Generate a (hopefully) unique name for debugging output tarball
+  OUTPUT="fh-swf-build-$(hostname)-$(date +'%Y-%m-%d-%H-%M-%S').tar.gz"
   # For debugging purposes collect all build outputs from the ramdisk
-  tar -zcf "$DEBUG_OUTPUT" /dev/shm/finn-build
+  tar -zcf "$OUTPUT" /dev/shm/finn-build
+  cp "$OUTPUT" $WORK_HOME/finn-build-outputs/
 fi;
