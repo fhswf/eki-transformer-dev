@@ -43,8 +43,14 @@ else
     module load lang/Python/3.11.5-GCCcore-13.2.0
     module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
     module load lang/Tkinter/3.11.5-GCCcore-13.2.0
+
+    # use /dev/shm
+    export RAMDISK=/dev/shm
+
     # set env to be compatible with pc2
-    export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
+    # export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
+    export WORK_HOME="$RAMDISK/work"
+    mkdir -p $WORK_HOME
     export PYTHONUSERBASE="$WORK_HOME/.local"
     mkdir -p $PYTHONUSERBASE
     export HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache"
@@ -52,7 +58,7 @@ else
     # does not work atm:
     #export OMP_NUM_THREADS=1
     #export ORT_SINGLE_THREAD=1
-
+  
     python3 -m venv $WORK_HOME/venv/
     source $WORK_HOME/venv/bin/activate
   fi
@@ -62,12 +68,12 @@ fi
 
 pip install --upgrade pip
 
-# update repo 
-git -C $WORK_HOME/git/eki-transformer-dev/qtransform fetch 
-git -C $WORK_HOME/git/eki-transformer-dev/qtransform pull
+# pip install $WORK_HOME/git/eki-transformer-dev/qtransform
+# # update repo 
+# git -C $WORK_HOME/git/eki-transformer-dev/qtransform fetch 
+# git -C $WORK_HOME/git/eki-transformer-dev/qtransform pull
 
-# pip install git+https://github.com/fhswf/eki-transformer-dev.git@main#subdirectory=qtransform 
-pip install $WORK_HOME/git/eki-transformer-dev/qtransform
+pip install git+https://github.com/fhswf/eki-transformer-dev.git@main#subdirectory=qtransform 
 pip list
 
 # maybe do this to run soe stuff via env? maybe better to do this in the actual app

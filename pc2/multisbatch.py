@@ -4,9 +4,11 @@ import os
 from itertools import product
 import pathlib
 
-static_args = "run=train run.epochs=4 +model.type=CHECKPOINT \
+# one epoch, depending on dataset size and batch size. about 35393 batches for size 32
+# we run for 2000 iters as sampling
+static_args = "run=train run.epochs=1 +model.type=CHECKPOINT \
 debug=True +trace=True \
-wandb.init.project=qtransform-energybench run.export=True +run.max_iters=1000\
+wandb.init.project=qtransform-energybench run.export=True +run.max_iters=2000\
 " 
 # run.export=True +run.max_iters=5000 \
 
@@ -136,8 +138,8 @@ optim = [
 
 quant = [
     #"quantization=qat quantization/model=SLURM_BENCH2",
-    "quantization=qat quantization/model=SLURM_BENCH3",
-    # "quantization=qat quantization/model=SLURM_BENCH4",
+    # "quantization=qat quantization/model=SLURM_BENCH3",
+    "quantization=qat quantization/model=SLURM_BENCH4",
     #"quantization=qat quantization/model=SLURM_BENCH5",
     #"quantization=qat quantization/model=SLURM_BENCH6",
     #"quantization=qat quantization/model=SLURM_BENCH7",

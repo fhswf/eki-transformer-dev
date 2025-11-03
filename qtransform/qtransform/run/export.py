@@ -82,6 +82,7 @@ def run(cfg: DictConfig, **kwargs):
     #prepare_and_transform_for_export(cfg, model)
     #by default, save onnx models into current directory
     root_path = cfg.run.get('root_path', os.path.abspath('.'))
+    # checkpoint_path is a full path returned from save util function, so strop path to get filename
     filename = cfg.model.from_file.filename
     if os.path.isabs(filename):
         _, filename = os.path.split(filename)
@@ -133,6 +134,30 @@ def run(cfg: DictConfig, **kwargs):
             case _:
                 log.error(f'Supported export functions: {ERROR_LOGS.keys()}')
                 raise ValueError()
+
+        # load qonnx via the onnx eyec function to verify export
+        
+        log.info(f"Exported model to {model_path} via {ERROR_LOGS[cfg.run.export_fn]}")
+        from qonnx.core.modelwrapper import ModelWrapper
+        from qonnx.core.onnx_exec import execute_onnx
+
+        model = ModelWrapper("my-qonnx-model.onnx")
+        idict = {"in0" : np.load("in0.npy), "in1" : np.load("in1.npy")}
+        odict = execute_onnx(idict)
+        # # from onnx docs:
+        # import onnxruntime as ort
+        # import onnx
+        # onnx_model = onnx.load(path)
+        # onnx.checker.check_model(onnx_model)
+# 
+        # sess_opt = ort.SessionOptions()
+        # sess = ort.InferenceSession(path, sess_opt)
+        # input_name = sess.get_inputs()[0].name
+        # odict = sess.run(None, {input_name: inp.numpy()})[0]
+        
+        out_ort = torch.tensor(odict)
+
+        
     
         # Save the input and output data for verification purposes later
         out_tensor = model(sample_tensor)

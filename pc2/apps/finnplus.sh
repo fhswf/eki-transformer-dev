@@ -90,15 +90,22 @@ echo "$@"
 # finn build process
 ###################
 
+# create dir to store build outputs and not clutter home
+cd /dev/shm/
+
+# FINN env variables to use ramdisk for build process and to find configs and stuff
+mkdir -p $WORK_HOME/finn-build-outputs/
+mkdir -p /dev/shm/finn-config/
+mkdir -p /dev/shm/finn-build/
+export FINN_HOST_BUILD_DIR=/dev/shm/finn-build
+export FINN_BUILD_DIR=/dev/shm/finn-build
+export FINN_SETTINGS=/dev/shm/finn-config
+
 # copy finn build script from repo to ramdisk
 cp $WORK_HOME/git/eki-transformer-dev/pc2/apps/finn_build.py /dev/shm/build.py
 
 # copy models and other stuff to ramdisk
 cp -r $WORK_HOME/FPGA_MODELS /dev/shm/FPGA_MODELS
-
-# create dir to store build outputs and not clutter home
-cd /dev/shm/
-export FINN_HOST_BUILD_DIR=/dev/shm/finn-build
 
 ## finnn build command  >>>TODO<<<< adjust model path and other stuff as needed
 finn run build.py /dev/shm/FPGA_MODELS/model.onnx --save-dir /dev/shm/finn-build --skip-onnx-checks

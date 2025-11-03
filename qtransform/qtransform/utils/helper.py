@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pprint import PrettyPrinter
 from qtransform import ConfigSingleton
 from inspect import isclass,isfunction
+from qtransform.utils import ID
 
 log = logging.getLogger(__name__)
 
@@ -168,7 +169,7 @@ def save_checkpoint(model: nn.Module,
     steps: int,
     **kwargs) -> str:
     """save torch model checkpoint from training, returns path to saved file."""
-    
+    save_checkpoint.counter += 1
     cfg = ConfigSingleton().config
     dataset_name = cfg.dataset.name
     from_file = cfg.model.from_file
@@ -179,9 +180,9 @@ def save_checkpoint(model: nn.Module,
     #TODO: redo FromFile class. model_dir should be a globaly defined path (prob should not change per runtime)
     #TODO: redo FromFile filename prob does not need to be encapsulated by a class
     if cfg.model.get("model_name", None) is not None:
-        filename = f"{cfg.model.get('model_name')}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
+        filename = f"{cfg.model.get('model_name')}_{cfg.runtime.choices.dataset}_{ID}__ep:{epoch}_{save_checkpoint.counter}"
     else:
-        filename = f"{cfg.runtime.choices.model}_{dataset_name.replace('/', '__')}_{timestamp}__epoch:{epoch}"
+        filename = f"{cfg.runtime.choices.model}_{cfg.runtime.choices.dataset}_{ID}__ep:{epoch}_{save_checkpoint.counter}"
 
     if not isinstance(from_file, FromFile) and isinstance(from_file, Union[Dict, DictConfig]):
         from_file["filename"] = filename
@@ -260,11 +261,3 @@ def write_to_pipe(pipe_name: str, content: str) -> None:
         #problematic if something should be done after writing into the pipe
         with open(pipe_name, 'w') as pipe:
             pipe.write(content)
-
-
-def validate_model():
-    """
-    Passes one eval dataset sample and a random generated tensor through the model.
-    Compares model output to past model.
-    """
-    pass
