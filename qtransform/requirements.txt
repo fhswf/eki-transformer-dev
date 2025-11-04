@@ -1,7 +1,7 @@
 colorlog
 tzdata
 datasets==2.14.*
-torch==2.2.0.dev20231003+cpu
+torch==2.8.0
 tk
 hydra-core
 setuptools>=62.4
