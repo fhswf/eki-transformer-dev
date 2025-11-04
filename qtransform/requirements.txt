@@ -1,14 +1,13 @@
 colorlog
 tzdata
 datasets==2.14.*
-torch 
+torch==2.2.0.dev20231003+cpu
 tk
 hydra-core
 setuptools>=62.4
 setuptools_rust
 tiktoken
 tensorboard
-torchvision
 typing_inspect
 numpy>=1.24.1
 onnxoptimizer
