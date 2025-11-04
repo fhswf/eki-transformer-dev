@@ -1,7 +1,7 @@
 colorlog
 tzdata
 datasets==2.14.*
-torch==2.2.0.dev20231003+cpu
+torch
 tk
 hydra-core
 setuptools>=62.4
@@ -13,6 +13,7 @@ numpy>=1.24.1
 onnxoptimizer
 matplotlib
 onnxruntime-gpu #make onnx models run on CUDA
+onnxscript
 python-dateutil
 aiohttp
 pyyaml
