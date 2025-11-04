@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from pprint import PrettyPrinter
 from qtransform import ConfigSingleton
 from inspect import isclass,isfunction
-from qtransform.utils import ID
 
 log = logging.getLogger(__name__)
 
@@ -161,6 +160,10 @@ def load_state_dict_proxy(model, checkpoint, **kwargs):
         kwargs.update({"strict": strict})
     return model.load_state_dict(checkpoint, **kwargs)
 
+class CheckpointCounter():
+    """ simple function call counter """
+    counter = 0
+
 def save_checkpoint(model: nn.Module, 
     optimizer,
     timestamp:datetime, 
@@ -169,7 +172,7 @@ def save_checkpoint(model: nn.Module,
     steps: int,
     **kwargs) -> str:
     """save torch model checkpoint from training, returns path to saved file."""
-    save_checkpoint.counter += 1
+    CheckpointCounter.counter += 1
     cfg = ConfigSingleton().config
     dataset_name = cfg.dataset.name
     from_file = cfg.model.from_file
@@ -179,10 +182,13 @@ def save_checkpoint(model: nn.Module,
     quant_cfg = cfg.get('quantization', None)
     #TODO: redo FromFile class. model_dir should be a globaly defined path (prob should not change per runtime)
     #TODO: redo FromFile filename prob does not need to be encapsulated by a class
+    # import ID at runtime to avoid circular imports
+    from qtransform.utils import ID
+
     if cfg.model.get("model_name", None) is not None:
-        filename = f"{cfg.model.get('model_name')}_{cfg.runtime.choices.dataset}_{ID}__ep:{epoch}_{save_checkpoint.counter}"
+        filename = f"{cfg.model.get('model_name')}_{cfg.runtime.choices.dataset}_{ID}__ep:{epoch}_{CheckpointCounter.counter}"
     else:
-        filename = f"{cfg.runtime.choices.model}_{cfg.runtime.choices.dataset}_{ID}__ep:{epoch}_{save_checkpoint.counter}"
+        filename = f"{cfg.runtime.choices.model}_{cfg.runtime.choices.dataset}_{ID}__ep:{epoch}_{CheckpointCounter.counter}"
 
     if not isinstance(from_file, FromFile) and isinstance(from_file, Union[Dict, DictConfig]):
         from_file["filename"] = filename

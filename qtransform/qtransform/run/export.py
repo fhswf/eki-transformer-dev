@@ -14,6 +14,7 @@ from torch import nn
 from brevitas.export import export_onnx_qcdq, export_qonnx, export_brevitas_onnx
 from brevitas import nn as qnn
 from torch.onnx import export
+import onnx
 from datetime import datetime
 
 log = logging.getLogger(__name__)
@@ -136,33 +137,38 @@ def run(cfg: DictConfig, **kwargs):
                 raise ValueError()
 
         # load qonnx via the onnx eyec function to verify export
-        
-        log.info(f"Exported model to {model_path} via {ERROR_LOGS[cfg.run.export_fn]}")
-        from qonnx.core.modelwrapper import ModelWrapper
-        from qonnx.core.onnx_exec import execute_onnx
-
-        model = ModelWrapper("my-qonnx-model.onnx")
-        idict = {"in0" : np.load("in0.npy), "in1" : np.load("in1.npy")}
-        odict = execute_onnx(idict)
-        # # from onnx docs:
-        # import onnxruntime as ort
-        # import onnx
-        # onnx_model = onnx.load(path)
-        # onnx.checker.check_model(onnx_model)
-# 
-        # sess_opt = ort.SessionOptions()
-        # sess = ort.InferenceSession(path, sess_opt)
-        # input_name = sess.get_inputs()[0].name
-        # odict = sess.run(None, {input_name: inp.numpy()})[0]
-        
-        out_ort = torch.tensor(odict)
-
-        
-    
         # Save the input and output data for verification purposes later
-        out_tensor = model(sample_tensor)
+        # might be tuple with loss
+        out = model(sample_tensor)
+        out_tensor = None
+        if isinstance(out, tuple):
+            out_tensor = out[0]
+        else:
+            out_tensor = out
+
         np.save(model_name + ".inp.npy", sample_tensor.detach().numpy())
-        np.save(model_name + ".out.npy", out_tensor.detach().numpy())
+        np.save(model_name + ".torch_out.npy", out_tensor.detach().numpy())
+        
+        if cfg.run.export_fn ==  "qonnx":
+            log.info(f"Exported model to {model_path} via {ERROR_LOGS[cfg.run.export_fn]}")
+            from qonnx.core.modelwrapper import ModelWrapper
+            from qonnx.core.onnx_exec import execute_onnx
+
+            model = ModelWrapper(model_name)
+            model = ModelWrapper(onnx.shape_inference.infer_shapes(model._model_proto,strict_mode=True))
+            idict = { kwargs["input_names"][0] : np.load(model_name + ".inp.npy")}
+            odict = execute_onnx(model, idict)
+            odioct_from_torch = np.load(model_name + ".torch_out.npy")
+            # compare outputs
+            all_close = np.allclose(odict[kwargs["output_names"][0]], odioct_from_torch, atol=1e-3)
+            all_euqal = np.array_equal(odict[kwargs["output_names"][0]], odioct_from_torch)
+            if all_euqal:
+                log.info("np.array_equal from onnx execute")
+            elif all_close:
+                log.warning("np.allclose from onnx execute")
+            else:
+                log.error("onnx exported model output does not match torch model output")
+            np.save(model_name + ".onnx_out.npy", odict[kwargs["output_names"][0]])
         
     except Exception:
         log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)

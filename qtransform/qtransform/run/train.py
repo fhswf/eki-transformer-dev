@@ -257,7 +257,7 @@ def train_one_epoch(cfg: DictConfig,
         run_len = len(train_data)
     log.info(f"train_data len is {max_len}, max_iters set to {cfg.run.get('max_iters', None)}. Running training for {run_len}")
     #for i in range(1, cfg.run.max_iters+1):
-    for i, data in enumerate(train_data):
+    for i, data in enumerate(train_data, 1):
         #log.critical(tokenizer_singleton.tokenizer.decode(data[0].tolist()))
         #print(data)
         if i > run_len:
@@ -315,7 +315,7 @@ def train_one_epoch(cfg: DictConfig,
         optimizer.zero_grad(set_to_none=True)  # Zero gradients after gradient accumulation
         running_loss += loss.item() * gradient_accumulation_steps 
         #log loss
-        if i % cfg.run.log_steps_interval == cfg.run.log_steps_interval-1:
+        if i % cfg.run.log_steps_interval == 0:
             last_loss = running_loss / cfg.run.log_steps_interval # loss per batch
             log.info(f'  batch {i} step {i * cfg.dataset.dataloader.batch_size} loss: {last_loss}. time: {(time() - train_batch_time)*1000:.2f}ms')
             
@@ -395,7 +395,7 @@ def eval_model(cfg: DictConfig, device, model: nn.Module,
 
     vlosses = torch.zeros(run_len+1)
     # TODO use cfg.run.eval_iters for eval iter limits when we need it
-    for i, vdata in enumerate(eval_data):
+    for i, vdata in enumerate(eval_data, 1):
         if i > run_len:
             break
 
