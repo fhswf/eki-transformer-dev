@@ -113,6 +113,7 @@ def run(cfg: DictConfig, **kwargs):
         dynamic_axes={'input' : {0 : 'batch_size'},    # variable length axes
                     'output' : {0 : 'batch_size'}})
     """
+    # https://docs.pytorch.org/docs/2.7/onnx_torchscript.html#torch.onnx.export
     kwargs = {
         "input_names" :['input', 'offsets'],   # the model's input names
         "output_names" : ['output'],         # the model's output names
@@ -121,7 +122,8 @@ def run(cfg: DictConfig, **kwargs):
         "opset_version": cfg.run.opset_version,  
         "export_params": True,  
         "do_constant_folding": True,
-        "dynamo": False
+        "dynamo": False,
+        "optimize": False
     }
     try:
         shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
