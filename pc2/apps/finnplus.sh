@@ -55,18 +55,25 @@ else
     ml lib/fmt/9.1.0-GCCcore-11.3.0
     ml fpga xilinx/xrt/2.14
     module swap xilinx/u280 xilinx/u55c
-    # set env to be compatible with pc2
-    export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
+
+   # set env to be compatible with pc2
+    export DATASET_ROOT_PATH="$PC2PFS/hpc-prf-ekiapp/maxkm/.qtransform/datasets"
+
+    # use /dev/shm
+    export RAMDISK=/dev/shm
+    export WORK_HOME="$RAMDISK/work"
+    mkdir -p $WORK_HOME
     export PYTHONUSERBASE="$WORK_HOME/.local"
     mkdir -p $PYTHONUSERBASE
     export HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache"
     mkdir -p $HF_HOME
+
     # does not work atm:
     #export OMP_NUM_THREADS=1
     #export ORT_SINGLE_THREAD=1
-    # new finn plus pytohn package
-    python3.10 -m venv /dev/shm/env/
-    source /dev/shm/env/bin/activate
+    # new finn plus python package
+    python3 -m venv $WORK_HOME/venv/
+    source $WORK_HOME/venv/bin/activate
   fi
 fi
 
@@ -90,25 +97,25 @@ echo "$@"
 # finn build process
 ###################
 
-# create dir to store build outputs and not clutter home
-cd /dev/shm/
+# # create dir to store build outputs and not clutter home
+# cd /dev/shm/
 
 # FINN env variables to use ramdisk for build process and to find configs and stuff
 mkdir -p $WORK_HOME/finn-build-outputs/
-mkdir -p /dev/shm/finn-config/
-mkdir -p /dev/shm/finn-build/
+mkdir -p $WORK_HOME/finn-config/
+mkdir -p $WORK_HOME/finn-build/
 export FINN_HOST_BUILD_DIR=/dev/shm/finn-build
 export FINN_BUILD_DIR=/dev/shm/finn-build
 export FINN_SETTINGS=/dev/shm/finn-config
 
 # copy finn build script from repo to ramdisk
-cp $WORK_HOME/git/eki-transformer-dev/pc2/apps/finn_build.py /dev/shm/build.py
+cp $MY_HOME/git/eki-transformer-dev/pc2/finn/* $WORK_HOME/finn-config/
 
 # copy models and other stuff to ramdisk
-cp -r $WORK_HOME/FPGA_MODELS /dev/shm/FPGA_MODELS
+cp -r $MY_HOME/FPGA_MODELS $WORK_HOME/FPGA_MODELS
 
 ## finnn build command  >>>TODO<<<< adjust model path and other stuff as needed
-finn run build.py /dev/shm/FPGA_MODELS/model.onnx --save-dir /dev/shm/finn-build --skip-onnx-checks
+finn run build.py $WORK_HOME/FPGA_MODELS/model.onnx --save-dir $WORK_HOME/finn-build --skip-onnx-checks
 
 # If FINN actually produced build outputs
 if [[ -d "$FINN_HOST_BUILD_DIR" ]]; then

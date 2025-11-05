@@ -8,7 +8,7 @@ import pathlib
 # we run for 2000 iters as sampling
 static_args = "run=train run.epochs=1 +model.type=CHECKPOINT \
 debug=True +trace=True \
-wandb.init.project=qtransform-energybench run.export=True +run.max_iters=2000\
+wandb.init.project=qtransform-energybench run.export=True +run.max_iters=100\
 " 
 # run.export=True +run.max_iters=5000 \
 
@@ -69,20 +69,20 @@ model_config = [
     # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
     # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=256",
     "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
-    "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
-    "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
-    "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
-    "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
-    "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    #"model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    #"model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
+    #"model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    #"model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
+    #"model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=256",
     # "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
     # "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
     # "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=128 model.args.block_size=512",
-    "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
-    "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
-    "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
-    "model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
-    "model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
-    "model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    #"model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    #"model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    #"model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=512",
+    #"model.args.n_layer=1 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    #"model.args.n_layer=2 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
+    #"model.args.n_layer=3 model.args.n_head=4 model.args.n_embd=512 model.args.block_size=512",
     
     # "model.args.n_layer=1 model.args.n_head=6 model.args.n_embd=128 model.args.block_size=128",
     # "model.args.n_layer=2 model.args.n_head=6 model.args.n_embd=128 model.args.block_size=128",

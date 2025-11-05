@@ -3,7 +3,7 @@
 #######################
 ### SLURM JOB CONFIG ##
 #######################
-#SBATCH -t 2:0:0
+#SBATCH -t 0:7:0
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH --cpus-per-task=16
@@ -44,11 +44,11 @@ else
     module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
     module load lang/Tkinter/3.11.5-GCCcore-13.2.0
 
+    # set env to be compatible with pc2
+    export DATASET_ROOT_PATH="$PC2PFS/hpc-prf-ekiapp/maxkm/.qtransform/datasets"
+
     # use /dev/shm
     export RAMDISK=/dev/shm
-
-    # set env to be compatible with pc2
-    # export WORK_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
     export WORK_HOME="$RAMDISK/work"
     mkdir -p $WORK_HOME
     export PYTHONUSERBASE="$WORK_HOME/.local"
@@ -83,5 +83,5 @@ pip list
 #   echo "QTRANSFORM_RUN_XYZ set"
 # fi
 
-echo qtransform $* dataset.root_path=$WORK_HOME/.qtransform/datasets
-qtransform $* dataset.root_path=$WORK_HOME/.qtransform/datasets
+echo qtransform $* dataset.root_path=$DATASET_ROOT_PATH
+qtransform $* dataset.root_path=$DATASET_ROOT_PATH

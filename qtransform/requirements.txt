@@ -26,7 +26,8 @@ sentencepiece
 tabulate
 wandb
 fsspec[http]<=2023.10.0,>=2023.1.0 #for datasets package
-git+https://github.com/fhswf/brevitas.git@fhswf-dev
+#git+https://github.com/fhswf/brevitas.git@fhswf-dev
 #git+https://github.com/iksnagreb/brevitas.git@34c350afde0a69b7a39b13eb4748b979bdae1eff
-git+https://github.com/iksnagreb/qonnx.git@finn/pull/901
-git+https://github.com/iksnagreb/finn.git@v0.10/merge/attention
+#git+https://github.com/iksnagreb/qonnx.git@finn/pull/901
+#git+https://github.com/iksnagreb/finn.git@v0.10/merge/attention
+git+github.com/eki-project/finn-plus.git/@dev
