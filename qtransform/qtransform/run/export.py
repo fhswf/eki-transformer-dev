@@ -120,7 +120,8 @@ def run(cfg: DictConfig, **kwargs):
         #                'output' : {0 : 'batch_size'}},
         "opset_version": cfg.run.opset_version,  
         "export_params": True,  
-        "do_constant_folding": True
+        "do_constant_folding": True,
+        "dynamo": False
     }
     try:
         shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
