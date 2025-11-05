@@ -1,6 +1,7 @@
 colorlog
 tzdata
-datasets==2.14.*
+datasets
+# ==2.14.*
 torch
 tk
 hydra-core
