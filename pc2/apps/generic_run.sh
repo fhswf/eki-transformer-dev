@@ -3,7 +3,7 @@
 #######################
 ### SLURM JOB CONFIG ##
 #######################
-#SBATCH -t 0:7:0
+#SBATCH -t 0:30:0
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH --cpus-per-task=16
@@ -74,6 +74,8 @@ pip install --upgrade pip
 # git -C $WORK_HOME/git/eki-transformer-dev/qtransform pull
 
 pip install git+https://github.com/fhswf/eki-transformer-dev.git@main#subdirectory=qtransform 
+finn deps update
+finn test
 pip list
 
 # maybe do this to run soe stuff via env? maybe better to do this in the actual app
