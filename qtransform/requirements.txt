@@ -25,7 +25,7 @@ tokenizers>=0.13.3,<0.19
 sentencepiece
 tabulate
 wandb
-fsspec[http]<=2023.10.0,>=2023.1.0 #for datasets package
+fsspec[http]
 #git+https://github.com/fhswf/brevitas.git@fhswf-dev
 #git+https://github.com/iksnagreb/brevitas.git@34c350afde0a69b7a39b13eb4748b979bdae1eff
 #git+https://github.com/iksnagreb/qonnx.git@finn/pull/901
