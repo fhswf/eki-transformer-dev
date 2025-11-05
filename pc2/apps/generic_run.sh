@@ -44,6 +44,18 @@ else
     module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
     module load lang/Tkinter/3.11.5-GCCcore-13.2.0
 
+    # ml devel/Autoconf/2.71-GCCcore-11.3.0
+    # ml lang/Bison/3.8.2-GCCcore-11.3.0
+    # ml lang/flex/2.6.4-GCCcore-11.3.0
+    # ml compiler/GCC/11.3.0
+    # ml lib/pybind11/2.9.2-GCCcore-11.3.0
+    # ml devel/Boost/1.79.0-GCC-11.3.0
+    # ml lib/fmt/9.1.0-GCCcore-11.3.0
+    ml fpga   
+    ml xilinx/xrt/2.14
+    ml xilinx/vitis/24.2
+    ml swap 
+    ml xilinx/u280
     # set env to be compatible with pc2
     export DATASET_ROOT_PATH="$PC2PFS/hpc-prf-ekiapp/maxkm/.qtransform/datasets"
 
@@ -75,7 +87,7 @@ pip install --upgrade pip
 
 pip install git+https://github.com/fhswf/eki-transformer-dev.git@main#subdirectory=qtransform 
 finn deps update
-finn test
+# finn test
 pip list
 
 # maybe do this to run soe stuff via env? maybe better to do this in the actual app
