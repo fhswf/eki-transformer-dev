@@ -92,13 +92,6 @@ def run(cfg: DictConfig, **kwargs):
     model_path = concat_paths([root_path, model_name])
     
     # start export
-    log.info("exporting... " + model_name)
-    # export params and logs 
-    ERROR_LOGS = {
-        "qonnx": f'{export_qonnx.__module__}.{export_qonnx.__name__}',
-        "qcdq": f'{export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__}',
-        "onnx": f'{export.__module__}.{export.__name__}'
-    }
     """
     export function maps to torch onnx export:
     # Export the model
@@ -127,7 +120,14 @@ def run(cfg: DictConfig, **kwargs):
     }
 
         
-    def export_model(_sample_tensor, _model_path, _model_name):
+    def export_model(model, _sample_tensor, _model_path, _model_name, kwargs):
+        log.info("exporting... " + model_name)
+        # export params and logs 
+        ERROR_LOGS = {
+            "qonnx": f'{export_qonnx.__module__}.{export_qonnx.__name__}',
+            "qcdq": f'{export_onnx_qcdq.__module__}.{export_onnx_qcdq.__name__}',
+            "onnx": f'{export.__module__}.{export.__name__}'
+        }
         try:
             shape = _sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
             match cfg.run.export_fn:
@@ -164,11 +164,11 @@ def run(cfg: DictConfig, **kwargs):
                 model = ModelWrapper(onnx.shape_inference.infer_shapes(model._model_proto,strict_mode=True))
                 idict = { kwargs["input_names"][0] : np.load(_model_name + ".inp.npy")}
                 odict = execute_onnx(model, idict)
-                odioct_from_torch = np.load(_model_name + ".torch_out.npy")
+                odict_from_torch = np.load(_model_name + ".torch_out.npy")
                 # compare outputs
-                all_close = np.allclose(odict[kwargs["output_names"][0]], odioct_from_torch, atol=1e-3)
-                all_euqal = np.array_equal(odict[kwargs["output_names"][0]], odioct_from_torch)
-                if all_euqal:
+                all_close = np.allclose(odict[kwargs["output_names"][0]], odict_from_torch, atol=1e-3)
+                all_equal = np.array_equal(odict[kwargs["output_names"][0]], odict_from_torch)
+                if all_equal:
                     log.info("np.array_equal from onnx execute")
                 elif all_close:
                     log.warning("np.allclose from onnx execute")
@@ -195,14 +195,14 @@ def run(cfg: DictConfig, **kwargs):
         # multi_compare_model(model, onnx_model, execute_onnx, sample_data)
         # if kwargs does not contain dynamic axes create an additional export with batch size = 1 
         
-    export_model(sample_tensor, model_path, model_name)
+    export_model(model, sample_tensor, model_path, model_name, kwargs)
     if "dynamic_axes" not in kwargs:
         # create additional export with batch size 1
         log.info("Creating additional export with batch size = 1")
         # modify sample tensor to batch size 1
         sample_tensor_bs1 = sample_tensor[0:1,:]
         model_path_bs1 = model_path.replace(".onnx", "_bs1.onnx")
-        export_model(sample_tensor_bs1, model_path_bs1, model_name.replace(".onnx", "_bs1.onnx"))
+        export_model(model, sample_tensor_bs1, model_path_bs1, model_name.replace(".onnx", "_bs1.onnx"), kwargs)
         
     log.info("exporting done.")
 
