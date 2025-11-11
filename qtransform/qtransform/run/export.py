@@ -196,7 +196,7 @@ def run(cfg: DictConfig, **kwargs):
         # if kwargs does not contain dynamic axes create an additional export with batch size = 1 
         
     export_model(sample_tensor, model_path, model_name)
-    if "dynamic_axes" not in kwargs::
+    if "dynamic_axes" not in kwargs:
         # create additional export with batch size 1
         log.info("Creating additional export with batch size = 1")
         # modify sample tensor to batch size 1

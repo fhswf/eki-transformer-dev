@@ -53,25 +53,9 @@ if __name__ == "__main__":
     if batch_dim != 1:
         print("Original batch size: " + str(batch_dim))
         print("Setting batch size to 1 in model graph...")
-        try:
-            import onnx
-            def change_input_dim(model):
-                """ traverse through the graph, follow all transposes and divide all 
-                    batch dims inputs by the original batch size, so we end up by 1"""
-                # Use some symbolic name not used for any other dimension => sym_batch_dim = "N"
-                _batch_dim_divisor = batch_dim 
-                # The following code changes the first dimension of every input to be batch-dim
-                
-                    
-            model = ModelWrapper(onnx.load(model_name))
-            model.save(model_name + ".bak")
-            model.transform(change_input_dim)
-            model.save(model_name)
-
-                  
-        except Exception as e:
-            print("Could not change batch size to 1 in model graph, error: " + str(e))
-            exit(1)
+        # TODO
+        print("Could not change batch size to 1 in model graph, error: " + str(e))
+        exit(1)
     # Read the input value range information for the dataset from the parameters
     # Note: Consider calibrating this on the fly from the dataset
     input_range = tuple(np.array([ -100, +100 ]).T)
