@@ -1,99 +1,142 @@
-# YAML for saving experiment metrics
 import yaml
-# Pandas to handle the reports as table, i.e., DataFrame
 import pandas as pd
-# For loading the sample input to query the input dimensions
 import numpy as np
+import os
 
-# Range information structure for seeding the range analysis for converting
-# quantized activations to MultiThreshold
+import onnx
+from qonnx.core.modelwrapper import ModelWrapper
 from qonnx.util.range_analysis import RangeInfo
-
-# FINN dataflow builder
 import finn.builder.build_dataflow as build
-# FINN dataflow builder configuration
 import finn.builder.build_dataflow_config as build_cfg
 
-# Seeding RNGs for reproducibility
-from utils import seed
-
 # Custom build steps required to streamline and convert the attention operator
-from build_steps import (
+from finn.builder.custom_step_library.transformer import (
     prepare_graph,
-    step_streamline,
+    set_fifo_depths,
+    set_target_parallelization,
+    step_apply_folding_config,
     step_convert_attention_to_hw,
+    step_convert_depth_wise_to_hw,
     step_convert_elementwise_binary_to_hw,
     step_convert_lookup_to_hw,
     step_convert_split_concat_to_hw,
-    step_convert_depth_wise_to_hw,
     step_replicate_streams,
-    set_target_parallelization,
-    set_fifo_depths,
-    step_apply_folding_config,
-    node_by_node_rtlsim,  # noqa: Maybe unused, only for debugging
-    node_by_node_cppsim,
+    step_streamline,
 )
 
-# Script entrypoint
 if __name__ == "__main__":
-    # Open the configuration file
-    with open("params.yaml") as file:
-        # Load the configuration from yaml format
-        params = yaml.safe_load(file)
-    # Seed all RNGs
-    seed(params["seed"])
 
     # Extract sequence length and embedding dimension from the verification
-    # sample inputs
-    _, seq_len, emb_dim = np.load("outputs/inp.npy").shape
+    model_name = os.path.basename(os.environ["CALL_MODEL_NAME"])
+    # check if input tensor has more then 2 dimensions
+    in_shape = np.load(model_name + ".inp.npy").shape
+    print("Input shape: " + str(in_shape))
+    # here we assume embbeddings to be computed in the model graph, first dim is alway batch size
+    if len(in_shape) == 2:
+        batch_dim, seq_len = in_shape
+        # try and extract emb_dim from model graph. emb should de the last dim of the first layer in the model
+        # look for the first node in the graph of type "Gather" and get its last dim:
+        try:
+            model = ModelWrapper(onnx.load(model_name))
+            gather_nodes = model.get_nodes_by_op_type("Gather")
+            first_gather_node = gather_nodes[0]
+            emb_dim = model.get_tensor_shape(first_gather_node.input[1])[-1]
+            print("Extracted emb_dim from model graph: " + str(emb_dim))
+        except:
+            emb_dim = 256
+            print("Could not extract emb_dim from model graph, using default: " + str(emb_dim))
+    else:
+        batch_dim, seq_len, emb_dim = in_shape
+    
+    # we can only handle batch size 1 for now.
+    # convert all inputs in onnx graph to batch size 1
+    if batch_dim != 1:
+        print("Original batch size: " + str(batch_dim))
+        print("Setting batch size to 1 in model graph...")
+        try:
+            import onnx
+            def change_input_dim(model):
+                """ traverse through the graph, follow all transposes and divide all 
+                    batch dims inputs by the original batch size, so we end up by 1"""
+                # Use some symbolic name not used for any other dimension => sym_batch_dim = "N"
+                _batch_dim_divisor = batch_dim 
+                # The following code changes the first dimension of every input to be batch-dim
+                
+                    
+            model = ModelWrapper(onnx.load(model_name))
+            model.save(model_name + ".bak")
+            model.transform(change_input_dim)
+            model.save(model_name)
+
+                  
+        except Exception as e:
+            print("Could not change batch size to 1 in model graph, error: " + str(e))
+            exit(1)
     # Read the input value range information for the dataset from the parameters
     # Note: Consider calibrating this on the fly from the dataset
-    input_range = tuple(np.array([params["build"]["range"]]).T)
+    input_range = tuple(np.array([ -100, +100 ]).T)
     # Construct the seed range information of the input tensor
-    range_info = RangeInfo(shape=(1, seq_len, emb_dim), range=input_range)
-
-    # Create a configuration for building the scaled dot-product attention
-    # operator to a hardware accelerator
+    if len(in_shape) == 2:
+        range_info = RangeInfo(shape=(32, seq_len), range=input_range)
+    else:
+        range_info = RangeInfo(shape=(32, seq_len, emb_dim), range=input_range)
+    print("Using range_info: " + str(range_info))
     cfg = build_cfg.DataflowBuildConfig(
-        # Unpack the build configuration parameters
-        **params["build"]["finn"],
-        # Print all warnings and compiler output to stdout
         verbose=True,
-        # Generate and keep the intermediate outputs including reports
-        generate_outputs=[
-            build_cfg.DataflowOutputType.ESTIMATE_REPORTS,
-            build_cfg.DataflowOutputType.STITCHED_IP,
-            build_cfg.DataflowOutputType.PYNQ_DRIVER,
-            build_cfg.DataflowOutputType.BITFILE,
-            build_cfg.DataflowOutputType.DEPLOYMENT_PACKAGE,
-        ],
-        # Steps after which verification should be run
+        folding_config_file="folding.yaml",
+        specialize_layers_config_file="specialize_layers.json",
+        standalone_thresholds=True,
+        max_multithreshold_bit_width=16,
+        mvau_wwidth_max=2048,
+        # not sure if we need to set this higher or weere the limit is
+        target_fps= 100,
+        output_dir=os.environ["FINN_BUILD_DIR"],
+        # use finn branch feature multi-fpga support
+        
+        # # Multi-FPGA specific configuration options
+        # num_fpgas: int = 2
+        # # The number of ports per device - this might change in meaning,
+        # # depending on the communication kernel used
+        # ports_per_device: int = 2
+        # # What strategy to use to partition the dataflow graph
+        # partition_strategy: PartitioningStrategy = PartitioningStrategy.RESOURCE_UTILIZATION
+        # # Tells the flow what topology to use. This determines the transformation
+        # # that creates the network metadata necessary for kernel packing
+        # topology: MFTopology = MFTopology.CHAIN
+        # # What kind of kernel is used to communicate in the network
+        # communication_kernel: MFCommunicationKernel = MFCommunicationKernel.AURORA
+        # # How much a FPGA can be utilized at max. The solver will fail if it
+        # # cannot comply with this limitation
+        # max_utilization: float = 0.85
+        # # How much resources of a single FPGA should be used ideally. Used in some objective
+        # # functions.
+        # ideal_utilization: float = 0.75
+
+        # Number of synthesis workers to run in parallel    
+        # Determines how many synthesis processes can run in parallel. Keep in mind
+        # that very roughly estimated, one synthesis should be able to use up to 100 GB RAM,
+        # (sometimes more) depending on the model and version of Vivado. For example on a
+        # 512 GB node, you can run roughly 4 Synthesis in parallel.
+        # Defaults to 1, in order not to crash local computers with OOM errors
+        # parallel_synthesis_workers: int = 1
+        
+        
         verify_steps=[
-            # Verify the model after converting to the FINN onnx dialect
-            build_cfg.VerificationStepType.QONNX_TO_FINN_PYTHON,
-            # Verify the model again using python mode after the default
-            # streamlining step
-            build_cfg.VerificationStepType.STREAMLINED_PYTHON,
-            # Verify the model again after tidy up transformations, right before
-            # converting to HLS
+            # In this custom flow, VerificationStepType is repurposed as follows:
+            # Enables "tidied_up_python" (before lowering) verification in step_prepare_graph
             build_cfg.VerificationStepType.TIDY_UP_PYTHON,
-            # Verify the model after generating C++ HLS and applying folding
-            build_cfg.VerificationStepType.FOLDED_HLS_CPPSIM
-            # No RTL Simulation support for now
+            # Enables "lowered_python" (after lowering) and "prepared_graph_python"
+            # (after QONNX to FINN conversion) verification in step_prepare_graph
+            build_cfg.VerificationStepType.QONNX_TO_FINN_PYTHON,
+            # Enables "streamlined_python" verification after custom step_streamline
+            build_cfg.VerificationStepType.STREAMLINED_PYTHON,
+            # Enables "folded_hls_cppsim" verification after custom step_apply_folding_config
+            build_cfg.VerificationStepType.FOLDED_HLS_CPPSIM,
+            # Enables RTL simulation of default steps contained in the flow:
+            build_cfg.VerificationStepType.NODE_BY_NODE_RTLSIM,  # after step_hw_ipgen
+            build_cfg.VerificationStepType.STITCHED_IP_RTLSIM,  # after step_create_stitched_ip
         ],
-        # File with test inputs for verification
-        verify_input_npy="outputs/inp.npy",
-        # File with expected test outputs for verification
-        verify_expected_output_npy="outputs/out.npy",
-        # Output full context dump for verification steps
-        verify_save_full_context=True,
-        # Save the intermediate model graphs
-        save_intermediate_models=True,
-        # Avoid RTL simulation for setting the FIFO sizes
-        auto_fifo_strategy=build_cfg.AutoFIFOSizingMethod.CHARACTERIZE,
-        # Do not automatically set FIFO sizes as this requires RTL simulation
-        # not implemented for the attention operator
-        auto_fifo_depths=False,
+        
         # Build steps to execute
         steps=[
             # Prepares the QONNX graph to be consumed by FINN: Cleanup, lowering
@@ -106,73 +149,79 @@ if __name__ == "__main__":
             # hardware, including cleanup and data layout squeezing
             step_convert_attention_to_hw,
             # Convert the elementwise binary operations to hardware operators.
-            # These include for example adding residual branches and positional
-            # encoding
+            # These include for example adding residual branches and positional encoding
             step_convert_elementwise_binary_to_hw,
-            # Convert Lookup layers, e.g., token embedding, to hardware custom
-            # operators
+            # Convert Lookup layers, e.g., token embedding, to hardware custom operators
             step_convert_lookup_to_hw,
             # Convert Split and Concat operators to hardware, e.g., splits
             # contained in the GLU activation
             step_convert_split_concat_to_hw,
             # Convert depth-wise convolution MatMuls to VVUs
             step_convert_depth_wise_to_hw,
-            # Properly replicate the stream feeding the query, key and value
-            # projections
+            # Properly replicate the stream feeding the query, key and value projections
             step_replicate_streams,
             # Convert most other layers supported by FINN to HW operators
             "step_convert_to_hw",
             # Specialize HW layer implementations as either HLS or RTL
             "step_specialize_layers",
             "step_create_dataflow_partition",
-            # Set the folding configuration to meet the cycles per sequence
-            # target
+            # Set the folding configuration to meet the cycles per sequence target
             set_target_parallelization(seq_len, emb_dim),
-            # Apply folding configuration, specifying hardware implementation
-            # details
-            # Note: This triggers a verification step
+            # Apply folding configuration, specifying hardware implementation details
             step_apply_folding_config,
             "step_minimize_bit_width",
-            # The ScaledDotProductAttention custom op does not define any
-            # estimates
+            # The ScaledDotProductAttention custom op does not define any estimates
             "step_generate_estimate_reports",
             "step_hw_codegen",
             "step_hw_ipgen",
-            # Set the attention- and residual-related FIFO depths insert FIFOs
-            # and apply folding configuration once again
-            # Note: Implement all FIFOs with a depth at least as deep as the
-            # sequence length in URAM.
-            set_fifo_depths(seq_len, emb_dim, uram_threshold=seq_len),
-            # Run additional node-by-node verification in RTL simulation of the
-            # model before creating the stitched IP
-            # Note: end-to-end verification of the stitched IP in RTL simulation
-            # is still not possible due to missing float IPs
-            node_by_node_cppsim,
-            # Only for debugging for now, does not work if "vivado" style
-            # StreamingFIFOs are used
-            # node_by_node_rtlsim,
             "step_create_stitched_ip",
-            # Attention does currently not support RTL simulation due to missing
-            # float IPs.
-            # "step_measure_rtlsim_performance",
-            "step_out_of_context_synthesis",
+            "step_measure_rtlsim_performance",
+            "step_out_of_context_synthesis",  # for synthesis results (e.g. utilization)
             "step_synthesize_bitfile",
-            "step_make_pynq_driver",
+            "step_make_driver",
             "step_deployment_package",
-        ]
-    )
+            # MutliFPA Steps
+            # "step_make_multifpga"
+        ],
 
+        # Generate and keep the intermediate outputs including reports
+        generate_outputs=[
+            build_cfg.DataflowOutputType.ESTIMATE_REPORTS,
+            build_cfg.DataflowOutputType.STITCHED_IP,
+            build_cfg.DataflowOutputType.PYNQ_DRIVER,
+            build_cfg.DataflowOutputType.BITFILE,
+            build_cfg.DataflowOutputType.DEPLOYMENT_PACKAGE,
+        ],
+ 
+        # File with test inputs for verification
+        verify_input_npy= model_name + ".inp.npy",
+        # File with expected test outputs for verification
+        verify_expected_output_npy= model_name + ".onnx_out.npy",
+        # Output full context dump for verification steps
+        verify_save_full_context=True,
+        # Save the intermediate model graphs
+        save_intermediate_models=True,
+        # Avoid RTL simulation for setting the FIFO sizes
+        auto_fifo_strategy=build_cfg.AutoFIFOSizingMethod.CHARACTERIZE,
+        # Do not automatically set FIFO sizes as this requires RTL simulation
+        # not implemented for the attention operator
+        auto_fifo_depths=False,
+        # Build steps to execute
+    )
+    # get model name from environment variable $CALL_MODEL_NAME
+    
     # Run the build process on the dummy attention operator graph
-    build.build_dataflow_cfg("outputs/model.onnx", cfg)
+    print("Starting FINN build process... " + str(model_name) + " "  + str(cfg))
+    build.build_dataflow_cfg(model_name, cfg)
 
     # Collect and aggregate build metrics like resource utilization
     # Open the report file
-    with open(params["build"]["metrics"]["report"]) as file:
+    with open("outputs/build/report/post_synth_resources.json") as file:
         # Load the JSON formatted report
         report = pd.read_json(file, orient="index")
     # Filter the reported rows according to some regex filter rule
     report = report.filter(
-        regex=params["build"]["metrics"]["filter"], axis="rows"
+        regex="(top)", axis="rows"
     )
     # Generate a summary of the total resources
     summary = report.sum()

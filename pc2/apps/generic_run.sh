@@ -64,6 +64,7 @@ else
     export WORK_HOME="$RAMDISK/work"
     mkdir -p $WORK_HOME
     export PYTHONUSERBASE="$WORK_HOME/.local"
+    export FINN_DEPS=$WORK_HOME/finn-deps
     mkdir -p $PYTHONUSERBASE
     export HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache"
     mkdir -p $HF_HOME

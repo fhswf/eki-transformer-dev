@@ -7,9 +7,10 @@ import pathlib
 # one epoch, depending on dataset size and batch size. about 35393 batches for size 32
 # we run for 2000 iters as sampling
 static_args = "run=train run.epochs=1 +model.type=CHECKPOINT \
-debug=True +trace=True \
+debug=True \
 wandb.init.project=qtransform-energybench run.export=True +run.max_iters=100\
 " 
+#  # +trace=True \
 # run.export=True +run.max_iters=5000 \
 
 # done in slurm specific batch script

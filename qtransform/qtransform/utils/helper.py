@@ -186,9 +186,9 @@ def save_checkpoint(model: nn.Module,
     from qtransform.utils import ID
 
     if cfg.model.get("model_name", None) is not None:
-        filename = f"{cfg.model.get('model_name')}_{cfg.runtime.choices.dataset}_{ID}__ep:{epoch}_{CheckpointCounter.counter}"
+        filename = f"{cfg.model.get('model_name')}_{cfg.runtime.choices.dataset}_{ID}__ep{epoch}_{CheckpointCounter.counter}"
     else:
-        filename = f"{cfg.runtime.choices.model}_{cfg.runtime.choices.dataset}_{ID}__ep:{epoch}_{CheckpointCounter.counter}"
+        filename = f"{cfg.runtime.choices.model}_{cfg.runtime.choices.dataset}_{ID}__ep{epoch}_{CheckpointCounter.counter}"
 
     if not isinstance(from_file, FromFile) and isinstance(from_file, Union[Dict, DictConfig]):
         from_file["filename"] = filename

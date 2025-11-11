@@ -125,72 +125,86 @@ def run(cfg: DictConfig, **kwargs):
         "dynamo": False,
         "optimize": False
     }
-    try:
-        shape = sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
-        match cfg.run.export_fn:
-            case "qonnx":
-                export_qonnx(model, shape, export_path=model_path, **kwargs)
-                # export_qonnx(model, shape, export_path="attention.onnx", **kwargs)
-            case "qcdq":
-                export_onnx_qcdq(model, shape, export_path=model_path, **kwargs)
-            case "onnx":
-                export(model, shape, model_path, **kwargs)
-            case _:
-                log.error(f'Supported export functions: {ERROR_LOGS.keys()}')
-                raise ValueError()
 
-        # load qonnx via the onnx eyec function to verify export
-        # Save the input and output data for verification purposes later
-        # might be tuple with loss
-        out = model(sample_tensor)
-        out_tensor = None
-        if isinstance(out, tuple):
-            out_tensor = out[0]
-        else:
-            out_tensor = out
-
-        np.save(model_name + ".inp.npy", sample_tensor.detach().numpy())
-        np.save(model_name + ".torch_out.npy", out_tensor.detach().numpy())
         
-        if cfg.run.export_fn ==  "qonnx":
-            log.info(f"Exported model to {model_path} via {ERROR_LOGS[cfg.run.export_fn]}")
-            from qonnx.core.modelwrapper import ModelWrapper
-            from qonnx.core.onnx_exec import execute_onnx
+    def export_model(_sample_tensor, _model_path, _model_name):
+        try:
+            shape = _sample_tensor.clone().detach() #avoid warning from torch, unsure if detaching shape is going to be detrimental
+            match cfg.run.export_fn:
+                case "qonnx":
+                    export_qonnx(model, shape, export_path=_model_path, **kwargs)
+                    # export_qonnx(model, shape, export_path="attention.onnx", **kwargs)
+                case "qcdq":
+                    export_onnx_qcdq(model, shape, export_path=_model_path, **kwargs)
+                case "onnx":
+                    export(model, shape, _model_path, **kwargs)
+                case _:
+                    log.error(f'Supported export functions: {ERROR_LOGS.keys()}')
+                    raise ValueError()
 
-            model = ModelWrapper(model_name)
-            model = ModelWrapper(onnx.shape_inference.infer_shapes(model._model_proto,strict_mode=True))
-            idict = { kwargs["input_names"][0] : np.load(model_name + ".inp.npy")}
-            odict = execute_onnx(model, idict)
-            odioct_from_torch = np.load(model_name + ".torch_out.npy")
-            # compare outputs
-            all_close = np.allclose(odict[kwargs["output_names"][0]], odioct_from_torch, atol=1e-3)
-            all_euqal = np.array_equal(odict[kwargs["output_names"][0]], odioct_from_torch)
-            if all_euqal:
-                log.info("np.array_equal from onnx execute")
-            elif all_close:
-                log.warning("np.allclose from onnx execute")
+            # load qonnx via the onnx eyec function to verify export
+            # Save the input and output data for verification purposes later
+            # might be tuple with loss
+            out = model(_sample_tensor)
+            out_tensor = None
+            if isinstance(out, tuple):
+                out_tensor = out[0]
             else:
-                log.error("onnx exported model output does not match torch model output")
-            np.save(model_name + ".onnx_out.npy", odict[kwargs["output_names"][0]])
+                out_tensor = out
+
+            np.save(_model_name + ".inp.npy", _sample_tensor.detach().numpy())
+            np.save(_model_name + ".torch_out.npy", out_tensor.detach().numpy())
+            
+            if cfg.run.export_fn ==  "qonnx":
+                log.info(f"Exported model to {_model_path} via {ERROR_LOGS[cfg.run.export_fn]}")
+                from qonnx.core.modelwrapper import ModelWrapper
+                from qonnx.core.onnx_exec import execute_onnx
+
+                model = ModelWrapper(_model_name)
+                model = ModelWrapper(onnx.shape_inference.infer_shapes(model._model_proto,strict_mode=True))
+                idict = { kwargs["input_names"][0] : np.load(_model_name + ".inp.npy")}
+                odict = execute_onnx(model, idict)
+                odioct_from_torch = np.load(_model_name + ".torch_out.npy")
+                # compare outputs
+                all_close = np.allclose(odict[kwargs["output_names"][0]], odioct_from_torch, atol=1e-3)
+                all_euqal = np.array_equal(odict[kwargs["output_names"][0]], odioct_from_torch)
+                if all_euqal:
+                    log.info("np.array_equal from onnx execute")
+                elif all_close:
+                    log.warning("np.allclose from onnx execute")
+                else:
+                    log.error("onnx exported model output does not match torch model output")
+                np.save(_model_name + ".onnx_out.npy", odict[kwargs["output_names"][0]])
+            
+        except Exception:
+            log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)
+            raise RuntimeError()
         
-    except Exception:
-        log.error(f"Export via {ERROR_LOGS[cfg.run.export_fn]} failed, reason", exc_info=True)
-        raise RuntimeError()
-    
-    
-    # these step sare to verify model outpus matches onnx export
-    # TODO switch onnx execute function when model gets converted by fin before export 
-    from qonnx.core.onnx_exec import execute_onnx
-    from qonnx.core.modelwrapper import ModelWrapper as QModelWrapper
-    onnx_model = QModelWrapper(model_path)
-    # run infer shapes on graph just in case?
-    from onnx.shape_inference import infer_shapes
-    onnx_model = infer_shapes(onnx_model._model_proto)
-    # reasign necessary?
-    onnx_model = QModelWrapper(onnx_model)
-    # run comparson
-    # multi_compare_model(model, onnx_model, execute_onnx, sample_data)
-   
+        
+        # these step sare to verify model outpus matches onnx export
+        # TODO switch onnx execute function when model gets converted by fin before export 
+        from qonnx.core.onnx_exec import execute_onnx
+        from qonnx.core.modelwrapper import ModelWrapper as QModelWrapper
+        onnx_model = QModelWrapper(model_path)
+        # run infer shapes on graph just in case?
+        from onnx.shape_inference import infer_shapes
+        onnx_model = infer_shapes(onnx_model._model_proto)
+        # reasign necessary?
+        onnx_model = QModelWrapper(onnx_model)
+        # run comparson
+        # multi_compare_model(model, onnx_model, execute_onnx, sample_data)
+        # if kwargs does not contain dynamic axes create an additional export with batch size = 1 
+        
+    export_model(sample_tensor, model_path, model_name)
+    if "dynamic_axes" not in kwargs::
+        # create additional export with batch size 1
+        log.info("Creating additional export with batch size = 1")
+        # modify sample tensor to batch size 1
+        sample_tensor_bs1 = sample_tensor[0:1,:]
+        model_path_bs1 = model_path.replace(".onnx", "_bs1.onnx")
+        export_model(sample_tensor_bs1, model_path_bs1, model_name.replace(".onnx", "_bs1.onnx"))
+        
+    log.info("exporting done.")
 
 def search_for_weight(model, module: nn.Module)->(bool, str):
     paramname = None

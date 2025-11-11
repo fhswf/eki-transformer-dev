@@ -3,67 +3,31 @@ import subprocess
 import os
 from itertools import product
 import pathlib
+import argparse
 
-static_args = "run=train run.epochs=4 +model.type=CHECKPOINT \
-debug=True +trace=True \
-wandb.init.project=qtransform-energybench run.export=True +run.max_iters=500\
-" 
-# run.export=True +run.max_iters=5000 \
+static_args = ""  
 
-# done in slurm specific batch script
-# work_env = ["dataset.root_path=$WORK_HOME/.qtransform/datasets"]
-
-datasets = [
-    "dataset=tsV2 tokenizer=hf tokenizer.encoding=fhswf/BPE_GPT2_TinyStoriesV2_cleaned_2048"
+# Default models list (used if no CLI argument provided)
+default_models = [
+    "qonnx_NEW_BENCH2_tsV2_251105-15:52:58-defiant-feel__ep:1_1.onnx",    
 ]
 
-hyperparam_combinations =  [
-    "dataset.dataloader.batch_size=32", 
-    # "dataset.dataloader.batch_size=8"
-]
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Process FPGA models with sbatch')
+parser.add_argument('--model', '-m', type=str, 
+                    help='Model file to process (overwrites default models list)')
+args = parser.parse_args()
 
-models = [
-    "model=NEW_BENCH2",    
-]
-model_config = [
-    "model.args.n_layer=4 model.args.n_head=4 model.args.n_embd=256 model.args.block_size=256",
-]
+# Use CLI model if provided, otherwise use default models
+if args.model:
+    models = [args.model]
+else:
+    models = default_models
 
-model_args_dropout=[
-    "model.args.dropout=0.0", 
-    #"model.args.dropout=0.1", 
-    #"model.args.dropout=0.2"
-]
 
-model_args_norm_layer=[
-    #"model.args.norm_layer=None",
-    "model.args.norm_layer=BatchNormTranspose", 
-    #"model.args.norm_layer=LayerNorm", 
-    #"model.args.norm_layer=BatchNormIdPure"
-]
+models = [model for model in models]
 
-model_args_pos_layer=[
-    "model.args.pos_layer=learned"
-]
-
-optim = [
-    #"optim.args.weight_decay=0.0",
-    #"optim.args.weight_decay=0.1",
-    "optim.args.weight_decay=0.2",    
-]
-
-quant = [
-    #"quantization=qat quantization/model=SLURM_BENCH2",
-    #"quantization=qat quantization/model=SLURM_BENCH3",
-    "quantization=qat quantization/model=SLURM_BENCH4",
-    #"quantization=qat quantization/model=SLURM_BENCH5",
-    #"quantization=qat quantization/model=SLURM_BENCH6",
-    #"quantization=qat quantization/model=SLURM_BENCH7",
-    #"quantization=qat quantization/model=SLURM_BENCH8"
-    #"",
-]
-
-argument_combinations = list(product(datasets, hyperparam_combinations, models, model_config, model_args_dropout, model_args_pos_layer, model_args_norm_layer, optim, quant))
+argument_combinations = list(product(models))
 for args in argument_combinations:
     split_args = []
     for group in args:
@@ -71,8 +35,7 @@ for args in argument_combinations:
     # split_args = list(args)
     call_args = \
         ["sbatch"] \
-        + ["--export=WANDB_API_KEY="+os.environ["wandbkey"]] \
-        + [ os.path.join(os.path.dirname(os.path.abspath(__file__)), "apps/generic_run.sh")] \
+        + [ os.path.join(os.path.dirname(os.path.abspath(__file__)), "apps/finnplus.sh")] \
         + split_args \
         + static_args.split(" ")
         #+ work_env
