@@ -75,6 +75,8 @@ if __name__ == "__main__":
         # not sure if we need to set this higher or weere the limit is
         target_fps= 100,
         output_dir=os.environ["FINN_BUILD_DIR"],
+        board="U55C",  # U280, U55C, 
+        shell_flow_type="vitis_alveo",
         # use finn branch feature multi-fpga support
         
         # # Multi-FPGA specific configuration options
@@ -103,7 +105,6 @@ if __name__ == "__main__":
         # 512 GB node, you can run roughly 4 Synthesis in parallel.
         # Defaults to 1, in order not to crash local computers with OOM errors
         # parallel_synthesis_workers: int = 1
-        
         
         verify_steps=[
             # In this custom flow, VerificationStepType is repurposed as follows:
@@ -193,6 +194,20 @@ if __name__ == "__main__":
         # Build steps to execute
     )
     # get model name from environment variable $CALL_MODEL_NAME
+    
+    # Attempt to work around onnxruntime issue on Slurm-managed clusters:
+    # See https://github.com/microsoft/onnxruntime/issues/8313
+    # This seems to happen only when assigned CPU cores are not contiguous
+    import onnxruntime as ort
+    _default_session_options = ort.capi._pybind_state.get_default_session_options()
+
+    def get_default_session_options_new():
+        """Return specific default session options for onnxruntime."""
+        _default_session_options.inter_op_num_threads = 1
+        _default_session_options.intra_op_num_threads = 1
+        return _default_session_options
+
+    ort.capi._pybind_state.get_default_session_options = get_default_session_options_new
     
     # Run the build process on the dummy attention operator graph
     print("Starting FINN build process... " + str(model_name) + " "  + str(cfg))

@@ -6,7 +6,7 @@
 #SBATCH -t 1:0:0
 #SBATCH -N 1
 #SBATCH -n 1
-
+#SBATCH -q express
 #SBATCH --cpus-per-task=16
 #SBATCH --mem 128G
 
