@@ -3,10 +3,12 @@
 #######################
 ### SLURM JOB CONFIG ##
 #######################
-#SBATCH -t 3:0:0
+#SBATCH -t 1:0:0
 #SBATCH -N 1
 #SBATCH -n 1
-#SBATCH --exclusive
+
+#SBATCH --cpus-per-task=16
+#SBATCH --mem 128G
 
 #SBATCH -J "qtransform-fpga"
 # default is the normal partition, see Node Types and Partitions for PC2 options are "normal" "gpu" and  "dgx" "fpga"
@@ -25,7 +27,7 @@
 # ram disk: /dev/shm/
 
 #######################
-# actual app/programm #
+# actual app/programm # -exclusive
 #######################
 
 
@@ -81,7 +83,8 @@ fi
 
 # install finn plus in python env
 pip install --upgrade pip
-pip install finn-plus
+# pip install finn-plus
+pip install git+https://github.com/eki-project/finn-plus.git@transformer
 
 # update finn plus
 echo "Running finn plus update and config list"
@@ -145,6 +148,7 @@ if [[ -d "$FINN_HOST_BUILD_DIR" ]]; then
   OUTPUT_NAME="${MODEL_NAME}_finn_build_outputs_$(date +%Y%m%d_%H%M%S).tar.gz"
   echo "Collecting finn build outputs into $OUTPUT_NAME"
   # For debugging purposes collect all build outputs from the ramdisk
-  tar -zcvf --force-local "./$OUTPUT_NAME" "$FINN_HOST_BUILD_DIR"
-  cp "./$OUTPUT_NAME" $MY_HOME/finn-build-outputs/
+  tar -zcvf "$OUTPUT_NAME" "$FINN_HOST_BUILD_DIR"
+  mkdir -p $MY_HOME/finn-build-outputs/
+  cp "$OUTPUT_NAME" $MY_HOME/finn-build-outputs/
 fi;

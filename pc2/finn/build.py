@@ -61,9 +61,9 @@ if __name__ == "__main__":
     input_range = tuple(np.array([ -100, +100 ]).T)
     # Construct the seed range information of the input tensor
     if len(in_shape) == 2:
-        range_info = RangeInfo(shape=(32, seq_len), range=input_range)
+        range_info = RangeInfo(shape=(1, seq_len), range=input_range)
     else:
-        range_info = RangeInfo(shape=(32, seq_len, emb_dim), range=input_range)
+        range_info = RangeInfo(shape=(1, seq_len, emb_dim), range=input_range)
     print("Using range_info: " + str(range_info))
     cfg = build_cfg.DataflowBuildConfig(
         verbose=True,
@@ -198,18 +198,21 @@ if __name__ == "__main__":
     print("Starting FINN build process... " + str(model_name) + " "  + str(cfg))
     build.build_dataflow_cfg(model_name, cfg)
 
-    # Collect and aggregate build metrics like resource utilization
-    # Open the report file
-    with open("outputs/build/report/post_synth_resources.json") as file:
-        # Load the JSON formatted report
-        report = pd.read_json(file, orient="index")
-    # Filter the reported rows according to some regex filter rule
-    report = report.filter(
-        regex="(top)", axis="rows"
-    )
-    # Generate a summary of the total resources
-    summary = report.sum()
-    # Dump the metrics dictionary as yaml
-    with open("resources.yaml", "w") as file:
-        # Convert the dataframe to a dictionary which can be dumped into YAML
-        yaml.safe_dump(summary.to_dict(), file)
+    if os.path.exists("finn-build/report/post_synth_resources.json"):
+        # Collect and aggregate build metrics like resource utilization
+        # Open the report file
+        with open("finn-build/report/post_synth_resources.json") as file:
+            # Load the JSON formatted report
+            report = pd.read_json(file, orient="index")
+        # Filter the reported rows according to some regex filter rule
+        report = report.filter(
+            regex="(top)", axis="rows"
+        )
+        # Generate a summary of the total resources
+        summary = report.sum()
+        # Dump the metrics dictionary as yaml
+        with open("resources.yaml", "w") as file:
+            # Convert the dataframe to a dictionary which can be dumped into YAML
+            yaml.safe_dump(summary.to_dict(), file)
+    else:     
+        print("No synthesis report found, finn-build/report/post_synth_resources.json")
