@@ -12,7 +12,7 @@ from qtransform import device_singleton
 from brevitas import nn as qnn
 from brevitas.quant_tensor import QuantTensor
 from typing import Tuple, Optional
-from einops import rearrange
+# from einops import rearrange
 
 __all__ = ['EltwiseAdd', 'SinPosEmb', 'BinPosEmb']
 
