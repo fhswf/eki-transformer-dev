@@ -6,16 +6,16 @@ layers:
   # Model input (embeddings)
   ##########################
 
-transformer.r'w[t]e': 
-  quantize: True
-  layer_type: Embedding
-  quantizers: 
-    weight: 
-      #type: weight
-      #order of overriding: default_quantizer, then template, then args
-      default_quantizer: Int8WeightPerTensorFloat
-      args:
-        bit_width: 16 # 32 is too big
+  transformer.wte: 
+    quantize: True
+    layer_type: Embedding
+    quantizers: 
+      weight: 
+        #type: weight
+        #order of overriding: default_quantizer, then template, then args
+        default_quantizer: Int8WeightPerTensorFloat
+        args:
+          bit_width: 16 # 32 is too big
 
 # positional embeddings dont need quant around weight tensor
   # transformer.r'wpe': 
