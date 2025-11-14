@@ -2,7 +2,7 @@ import os
 import re
 import time
 import numpy as np
-from typing import Any
+from typing import Any, Tuple
 import omegaconf
 from omegaconf import DictConfig, open_dict, OmegaConf
 from qtransform.classloader import get_data

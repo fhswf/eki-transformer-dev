@@ -20,11 +20,12 @@ from finn.builder.custom_step_library.transformer import (
     step_convert_elementwise_binary_to_hw,
     step_convert_lookup_to_hw,
     step_convert_split_concat_to_hw,
-    step_replicate_streams
+    step_replicate_streams,
+    step_streamline
 )
 from finn.builder.build_dataflow_steps import (
     step_qonnx_to_finn,
-    step_streamline,
+    # step_streamline,
     step_tidy_up
 )
 

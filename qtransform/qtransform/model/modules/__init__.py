@@ -11,6 +11,8 @@ from brevitas.nn.quant_layer import QuantNonLinearActLayer as QuantNLAL
 from qtransform import device_singleton
 from brevitas import nn as qnn
 from brevitas.quant_tensor import QuantTensor
+from typing import Tuple, Optional
+from einops import rearrange
 
 __all__ = ['EltwiseAdd', 'SinPosEmb', 'BinPosEmb']
 
@@ -151,6 +153,7 @@ class BatchNormTranspose(nn.Module):
         x = self.bn(torch.transpose(input, dim0=-1, dim1=-2))
         return self.id(torch.transpose(x, dim0=-1, dim1=-2))
     
+"""
 class QuantMultiheadAttention(qnn.QuantMultiheadAttention):
     """
     Quantized Multihead Attention Layer from Brevitas with modified transpose and split head sexpost parameter.
@@ -260,7 +263,8 @@ class QuantMultiheadAttention(qnn.QuantMultiheadAttention):
     #     def set_bias(proj_name, value):
     #         bias_name = f'{prefix}{proj_name}_proj.bias'
     #         state_dict[bias_name] = value
-    
+"""
+
 class InstanceNorm(nn.InstanceNorm1d):
     """
     Boilerplate class to enable specifying InstanceNorm instead of InstanceNorm1d
