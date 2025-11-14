@@ -150,7 +150,117 @@ class BatchNormTranspose(nn.Module):
     def forward(self, input, *args, **kwargs):
         x = self.bn(torch.transpose(input, dim0=-1, dim1=-2))
         return self.id(torch.transpose(x, dim0=-1, dim1=-2))
+    
+class QuantMultiheadAttention(qnn.QuantMultiheadAttention):
+    """
+    Quantized Multihead Attention Layer from Brevitas with modified transpose and split head sexpost parameter.
+    """
+    def __init__(self, split_heads=False, **kwargs):
+        super().__init__(**kwargs)
+        self.split_heads = split_heads
+        # Quantized softmax normalization of the attention weights
 
+    def forward(self, query: Tensor, key: Tensor, value: Tensor,  
+                key_padding_mask: Optional[Tensor] = None, 
+                need_weights: bool = True, attn_mask: Optional[Tensor] = None, 
+                average_attn_weights: bool = True) \
+        -> Tuple[Tensor, Optional[Tensor]]:
+            
+        if key_padding_mask is not None:
+            raise NotImplementedError("key_padding_mask is not implemented in this custom QuantMultiheadAttention")
+        if need_weights:
+            log.warning("need_weights is not tested")
+        if average_attn_weights:
+            log.warning("average_attn_weights is not tested")
+            
+        # Apply input projections to query, key and value tensors
+        query = self.q_proj(query)
+        key = self.k_proj(key)
+        value = self.v_proj(value)
+
+        # Scale of the scaled dot-product related to the embedding dimension
+        scale = self.embed_dim ** -0.5
+
+        # No mask means all zeros mask
+        if attn_mask is None:
+            attn_mask = 0
+
+        # Collect outputs of the attention heads as a list of tensors to be
+        # concatenated - for batched heads, this is a single entry list
+        heads = []
+        # Number of heads and embedding dimension per head
+        h, d = self.num_heads, self.embed_dim // self.num_heads
+
+        # There are two styles of implementing the attention heads: Via the
+        # batch dimension (most common) or via split/concat (for our backend)
+        if self.split_heads:
+            # Split query, key and value tensors along the embedding dimension
+            # to have the heads as a list of tensors
+            queries = torch.split(query, query.shape[-1] // h, dim=-1)
+            keys = torch.split(key, key.shape[-1] // h, dim=-1)
+            values = torch.split(value, value.shape[-1] // h, dim=-1)
+            # Process each head individually...
+            for query, key, value in zip(queries, keys, values):
+                # scale * (query @ key.T) = (scale * query) @ key.T
+                query = scale * query
+                # Transpose embedding and sequence dimension of the key tensor
+                key = key.transpose(-1, -2)
+                # Scaled dot product of query and key, masked and normalized to
+                # get the attention weights
+                weights = F.softmax(self.softmax_input_quant(torch.matmul(query, key) + attn_mask), dim=-1)
+                if self.dropout > 0.0:
+                    weights = F.dropout(weights, p=self.dropout)
+                weights = self.attn_output_weights_quant(weights)
+                # Multiply attention weights to the values and rearrange the
+                # heads back into the embedding dimension
+                heads.append(torch.matmul(weights, value))
+        else:
+            # Rearrange the query, key and value tensors to have heads as part
+            # of the batch dimension
+            query = rearrange(query, "b s (h d) -> b h s d", h=h, d=d)
+            key = rearrange(key, "b s (h d) -> b h d s", h=h, d=d)
+            value = rearrange(value, "b s (h d) -> b h s d", h=h, d=d)
+            # scale * (query @ key.T) = (scale * query) @ key.T
+            query = scale * query
+            # Scaled dot product of query and key, masked and normalized to get
+            # the attention weights
+
+            weights = F.softmax(self.softmax_input_quant(torch.matmul(query, key) + attn_mask), dim=-1)
+            if self.dropout > 0.0:
+                weights = F.dropout(weights, p=self.dropout)
+            weights = self.attn_output_weights_quant(weights)
+            # weights = self.softmax(torch.matmul(query, key) + attn_mask)
+            # Multiply attention weights to the values and rearrange the heads
+            # back into the embedding dimension
+            heads = [
+                rearrange(torch.matmul(weights, value), "b h s d -> b s (h d)")
+            ]
+
+        if not need_weights:
+            # Apply output projection to the product of attention weights and values
+            return self.out_proj(torch.concat(heads, dim=-1)), None
+        else:
+            if split_heads:
+                # Stack attention weights along a new dimension
+                weights = torch.cat(weights)
+            else:
+                # Rearrange attention weights to have heads as a separate dimension
+                if average_attn_weights:
+                    weights = torch.mean(weights, dim=1)
+                else:
+                    weights = rearrange(
+                        weights, "b h s d -> b s (d h)"
+                    )
+            return self.out_proj(torch.concat(heads, dim=-1)), weights
+    
+    
+    # def _load_from_state_dict(
+    #         self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys,
+    #         error_msgs):
+    #     def set_bias(proj_name, value):
+    #         bias_name = f'{prefix}{proj_name}_proj.bias'
+    #         state_dict[bias_name] = value
+    
 class InstanceNorm(nn.InstanceNorm1d):
     """
     Boilerplate class to enable specifying InstanceNorm instead of InstanceNorm1d

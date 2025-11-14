@@ -107,6 +107,11 @@ class BrevitasQuantizer(Quantizer):
         if hasattr(log,"trace"): log.trace(f'Custom quantizers for layer {layer_cfg.name}: {quantizers}')
         layer_name: str = layer_cfg.name
 
+        # special treatment for MultiHeadAttention layers:
+        # use QuantMultiheadAttention from our modules instead of brevitas version
+        # TODO
+        # if re.search(r'multiheadattention', layer_type, re.IGNORECASE):
+    
         #use merge_bn for batchnorm, ignore brevitas classes
         if re.search(r'batchnorm', layer_type, re.IGNORECASE):
             merge_bn_name = layer_cfg.args.get('merge_bn', '')

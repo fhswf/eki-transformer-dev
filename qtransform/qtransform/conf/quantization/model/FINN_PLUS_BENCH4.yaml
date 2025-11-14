@@ -6,7 +6,7 @@ layers:
   # Model input (embeddings)
   ##########################
 
-transformer.r'wte': 
+transformer.wte: 
   quantize: True
   layer_type: Embedding
   quantizers: 
