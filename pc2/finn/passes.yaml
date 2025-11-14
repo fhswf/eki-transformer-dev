@@ -1,0 +1,80 @@
+# Import additional python modules dynamically before running the pass manager
+# with the sequence of ONNX IR passes
+imports: [ adhoc_passes ]
+# Reference data for verification and analysis: Inputs, expected outputs, ...
+reference:
+  inp: [ qonnx_NEW_BENCH2_tsV2_251111-15-32-46-ragged-bell__ep1_1_bs1.onnx.inp.npy ]
+  out: [ qonnx_NEW_BENCH2_tsV2_251111-15-32-46-ragged-bell__ep1_1_bs1.onnx.onnx_out.npy ]
+# Configuration of the model checker pass: Options according to the ONNX IR
+# reference: https://onnx.ai/ir-py/api/ir_passes_common.html
+model_checker:
+  full_check: true
+# Configuration of the shape inference pass: Options according to the ONNX IR
+# reference: https://onnx.ai/ir-py/api/ir_passes_common.html
+shape_inference: { }
+# Configuration ONNX Runtime used for model evaluation during verification and
+# analysis passes - see the ONNX Runtime API documentation for details:
+#   https://onnxruntime.ai/docs/api/python/api_summary.html#inferencesession
+onnxruntime:
+  # Execution providers for accelerated inference
+  providers:
+    - - CPUExecutionProvider
+      - { }
+  # Produce a full execution context dump
+  full_context_dump: false
+# # Configuration of model verification methods
+# verify:
+#   # Tolerance-based verification, parameters passed to np.allclose(...)
+#   tolerance:
+#     atol: 0.5
+#   # Metric-based verification
+#   metrics:
+#     # Maximum Absolute Error over all outputs
+#     max_abs_error: [ 0.0, 0.5 ]
+#     # Number of mispredictions by taking the argmax along the final axis
+#     count_mispredictions: [ 0, 0 ]
+# Configuration of logging and verbosity
+logging:
+  # Enable all passes to print a message when entering/leaving
+  verbose: false
+  # Name to use for checkpoints - or to disable checkpointing
+  checkpoint: false
+  # Keeps intermediate models after each pass - path to some logging directory
+  keep_intermediates: false
+# Sequence of transformation, annotation and streamlining passes to apply to the
+# exported ONNX model
+passes:
+  # Model preparation passes: Enabled QONNX operators and make sure the model is
+  # in a valid state and has shape annotations for all tensors
+  - import-qonnx
+  - shape-inference
+  - checker
+  - verify
+  # Operator lowering and inlining passes: Prepare the graph for streamlining
+  # and hardware mapping
+  - inline-qonnx
+  - inline-batchnorm
+  - inline-gemm
+  - lower-conv
+  - lower-pooling
+  - shape-inference
+  - checker
+  - verify
+  # Quantizer to threshold conversion and streamlining: Propagate scales, biases
+  # and shape/layout transformations to uncover the underlying integer compute
+  - streamline-thresholds
+  - streamline
+  - checker
+  - verify
+  # Custom and ad hoc passes to ensure FINN-compatibility: These are specific to
+  # the models, exploiting some known properties/structure
+  - decompose-thresholds
+  - tidyup
+  - MoveMulPastTranspose
+  - tidyup
+  - MoveSplitPastElementwise
+  - tidyup
+  - unbroadcast
+  - tidyup
+  - checker
+  - verify

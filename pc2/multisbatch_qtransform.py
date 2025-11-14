@@ -8,7 +8,7 @@ import pathlib
 # we run for 2000 iters as sampling
 static_args = "run=train run.epochs=1 +model.type=CHECKPOINT \
 debug=True \
-wandb.init.project=qtransform-energybench run.export=True +run.max_iters=100\
+wandb.init.project=qtransform-energybench run.export=True +run.max_iters=100 +trace=True\
 " 
 #  # +trace=True \
 # run.export=True +run.max_iters=5000 \
@@ -140,7 +140,7 @@ optim = [
 quant = [
     #"quantization=qat quantization/model=SLURM_BENCH2",
     # "quantization=qat quantization/model=SLURM_BENCH3",
-    "quantization=qat quantization/model=SLURM_BENCH4",
+    "quantization=qat quantization/model=FINN_PLUS_BENCH4",
     #"quantization=qat quantization/model=SLURM_BENCH5",
     #"quantization=qat quantization/model=SLURM_BENCH6",
     #"quantization=qat quantization/model=SLURM_BENCH7",
