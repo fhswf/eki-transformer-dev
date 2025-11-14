@@ -155,9 +155,7 @@ class BatchNormTranspose(nn.Module):
     
 """
 class QuantMultiheadAttention(qnn.QuantMultiheadAttention):
-    """
     #Quantized Multihead Attention Layer from Brevitas with modified transpose and split head sexpost parameter.
-    """
     def __init__(self, split_heads=False, **kwargs):
         super().__init__(**kwargs)
         self.split_heads = split_heads
