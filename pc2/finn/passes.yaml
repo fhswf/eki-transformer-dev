@@ -3,8 +3,8 @@
 imports: [ adhoc_passes ]
 # Reference data for verification and analysis: Inputs, expected outputs, ...
 reference:
-  inp: [ qonnx_NEW_BENCH2_tsV2_251111-15-32-46-ragged-bell__ep1_1_bs1.onnx.inp.npy ]
-  out: [ qonnx_NEW_BENCH2_tsV2_251111-15-32-46-ragged-bell__ep1_1_bs1.onnx.onnx_out.npy ]
+  inp: [ inp.npy ]
+  out: [ out.npy ]
 # Configuration of the model checker pass: Options according to the ONNX IR
 # reference: https://onnx.ai/ir-py/api/ir_passes_common.html
 model_checker:

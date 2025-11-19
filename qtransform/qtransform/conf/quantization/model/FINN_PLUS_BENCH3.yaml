@@ -95,7 +95,7 @@ layers:
       input: 
         default_quantizer: Int8ActPerTensorFloat
         args:
-          bit_width: 4
+          bit_width: 3
       # output Left empty on purpose to be None
       output:
     #args:
@@ -108,7 +108,7 @@ layers:
       input: 
         default_quantizer: Int8ActPerTensorFloat
         args:
-          bit_width: 4
+          bit_width: 3
       # output Left empty on purpose to be None
       output: 
     #args:
@@ -190,17 +190,17 @@ layers:
       weight:
         default_quantizer: Int8WeightPerTensorFloat
         args:
-          bit_width: 4
+          bit_width: 3
       input:
         default_quantizer: Int8ActPerTensorFloat
         args:
-          bit_width: 4
+          bit_width: 3
       # either: use input_quant=Int8ActPerTensorFloat as an input quantizer for reusing the same scaler as the weight quantizer
       # or: use a bias quantizer with its own scaling: e.g. bias_quant=Int8BiasPerTensorFloatInternalScaling
       bias:
         default_quantizer: Int8Bias
         args:
-          bit_width: 4
+          bit_width: 3
     args:
       return_quant_tensor: True
 
@@ -211,7 +211,7 @@ layers:
       act:
         default_quantizer: Uint8ActPerTensorFloat
         args:
-          bit_width: 4
+          bit_width: 3
       input:
       #  default_quantizer: Int8ActPerTensorFloat
       #  args:
@@ -226,7 +226,7 @@ layers:
       weight:
         default_quantizer: Int8WeightPerTensorFloat
         args:
-          bit_width: 4
+          bit_width: 3
       # input already quantizewd from activation layer output
       input:
       #  default_quantizer: Int8ActPerTensorFloat
@@ -241,7 +241,7 @@ layers:
       bias:
         default_quantizer: Int8Bias
         args:
-          bit_width: 4
+          bit_width: 3
     args:
       return_quant_tensor: True
 
@@ -264,47 +264,47 @@ layers:
       in_proj_input_quant:
         default_quantizer: Int8ActPerTensorFloat
         args: 
-          bit_width: 4
+          bit_width: 3
       in_proj_weight_quant:
         default_quantizer: Int8WeightPerTensorFloat
         args: 
-          bit_width: 4
+          bit_width: 3
       in_proj_bias_quant:
         default_quantizer: Int32Bias
         args: 
-          bit_width: 4        
+          bit_width: 3        
       #softmax_input_quant=None,
       attn_output_weights_quant:
         default_quantizer: Int8ActPerTensorFloat
         args: 
-            bit_width: 4
+            bit_width: 3
       q_scaled_quant:
         type: act
         default_quantizer: Int8ActPerTensorFloat
         args: 
-          bit_width: 4
+          bit_width: 3
       k_transposed_quant:
         type: act
         default_quantizer: Int8ActPerTensorFloat
         args: 
-          bit_width: 4
+          bit_width: 3
       v_quant:
         type: act
         default_quantizer: Int8ActPerTensorFloat
         args: 
-          bit_width: 4
+          bit_width: 3
       out_proj_input_quant:
         default_quantizer: Int8ActPerTensorFloat
         args: 
-          bit_width: 4
+          bit_width: 3
       out_proj_weight_quant:
         default_quantizer: Int8WeightPerTensorFloat
         args: 
-          bit_width: 4
+          bit_width: 3
       out_proj_bias_quant:
         default_quantizer: Int32Bias
         args: 
-          bit_width: 4
+          bit_width: 3
       out_proj_output_quant:
         #none
     ## extra args:

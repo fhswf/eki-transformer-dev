@@ -3,7 +3,7 @@
 #######################
 ### SLURM JOB CONFIG ##
 #######################
-#SBATCH -t 0:30:0
+#SBATCH -t 3:00:0
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH --cpus-per-task=16

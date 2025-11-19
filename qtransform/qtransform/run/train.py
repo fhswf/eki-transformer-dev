@@ -8,10 +8,12 @@ from torch import optim
 from torch.optim import lr_scheduler
 from torch.utils import data as torch_data #prevent naming conflict with data from dataloaders
 from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
+from datetime import datetime, timedelta
 import torch.nn.functional as F
 from pprint import PrettyPrinter
 from time import time
+import subprocess
+import re
 from qtransform.utils import save_checkpoint
 from qtransform.tokenizer.tokenizer_singleton import tokenizer_singleton
 from qtransform import device_singleton
@@ -29,6 +31,101 @@ log = logging.getLogger(__name__)
 def warn_once(logger: logging.Logger, msg: str):
     logger.warning(msg)
 
+def get_slurm_job_info():
+    """Get SLURM job information including time limits"""
+    slurm_job_id = os.environ.get('SLURM_JOB_ID')
+    if not slurm_job_id:
+        return None
+    
+    try:
+        # Get job information using scontrol
+        result = subprocess.run(['scontrol', 'show', 'job', slurm_job_id], 
+                              capture_output=True, text=True, check=True)
+        output = result.stdout
+        
+        # Parse time limit (format: days-hours:minutes:seconds or hours:minutes:seconds)
+        time_limit_match = re.search(r'TimeLimit=(\S+)', output)
+        if not time_limit_match:
+            return None
+            
+        time_limit_str = time_limit_match.group(1)
+        
+        # Parse start time
+        start_time_match = re.search(r'StartTime=(\S+)', output)
+        if not start_time_match:
+            return None
+            
+        start_time_str = start_time_match.group(1)
+        
+        # Convert time limit to seconds
+        if time_limit_str == 'UNLIMITED':
+            time_limit_seconds = float('inf')
+        else:
+            time_limit_seconds = parse_slurm_time(time_limit_str)
+            
+        # Parse start time to datetime
+        start_time = datetime.strptime(start_time_str, '%Y-%m-%dT%H:%M:%S')
+        
+        return {
+            'job_id': slurm_job_id,
+            'time_limit_seconds': time_limit_seconds,
+            'start_time': start_time,
+            'time_limit_str': time_limit_str
+        }
+    except (subprocess.CalledProcessError, ValueError, AttributeError) as e:
+        log.warning(f"Failed to get SLURM job info: {e}")
+        return None
+
+def parse_slurm_time(time_str):
+    """Parse SLURM time format to seconds"""
+    if '-' in time_str:
+        # Format: days-hours:minutes:seconds
+        days_part, time_part = time_str.split('-', 1)
+        days = int(days_part)
+        hours, minutes, seconds = map(int, time_part.split(':'))
+        return days * 86400 + hours * 3600 + minutes * 60 + seconds
+    else:
+        # Format: hours:minutes:seconds
+        parts = time_str.split(':')
+        if len(parts) == 3:
+            hours, minutes, seconds = map(int, parts)
+            return hours * 3600 + minutes * 60 + seconds
+        elif len(parts) == 2:
+            minutes, seconds = map(int, parts)
+            return minutes * 60 + seconds
+        else:
+            return int(parts[0]) * 60  # assume minutes
+
+def should_stop_training(slurm_info, buffer_minutes=10):
+    """Check if training should stop due to approaching SLURM time limit"""
+    if not slurm_info or slurm_info['time_limit_seconds'] == float('inf'):
+        return False
+        
+    current_time = datetime.now()
+    elapsed_seconds = (current_time - slurm_info['start_time']).total_seconds()
+    remaining_seconds = slurm_info['time_limit_seconds'] - elapsed_seconds
+    buffer_seconds = buffer_minutes * 60
+    
+    return remaining_seconds <= buffer_seconds
+
+def get_remaining_time_info(slurm_info):
+    """Get remaining time information for logging"""
+    if not slurm_info or slurm_info['time_limit_seconds'] == float('inf'):
+        return None
+        
+    current_time = datetime.now()
+    elapsed_seconds = (current_time - slurm_info['start_time']).total_seconds()
+    remaining_seconds = slurm_info['time_limit_seconds'] - elapsed_seconds
+    
+    elapsed_str = str(timedelta(seconds=int(elapsed_seconds)))
+    remaining_str = str(timedelta(seconds=int(remaining_seconds)))
+    
+    return {
+        'elapsed': elapsed_str,
+        'remaining': remaining_str,
+        'remaining_seconds': remaining_seconds
+    }
+
 def run(cfg: DictConfig):
     """ launches training with provided config"""
     log.info("================")
@@ -36,6 +133,19 @@ def run(cfg: DictConfig):
     log.info("================")
     timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
     log.info(f"time is: {timestamp}")
+    
+    # Check if running in SLURM and get job information
+    slurm_info = get_slurm_job_info()
+    if slurm_info:
+        log.info(f"Running in SLURM job {slurm_info['job_id']}")
+        log.info(f"Job time limit: {slurm_info['time_limit_str']}")
+        log.info(f"Job started at: {slurm_info['start_time']}")
+        if slurm_info['time_limit_seconds'] != float('inf'):
+            end_time = slurm_info['start_time'] + timedelta(seconds=slurm_info['time_limit_seconds'])
+            log.info(f"Job will end at: {end_time}")
+    else:
+        log.info("Not running in SLURM environment")
+    
     torch.autograd.set_detect_anomaly(True)
     #torch.backends.cudnn.allow_tf32 = True # allow tf32 on cudnn
     ## note: float16 data type will automatically use a GradScaler
@@ -117,7 +227,8 @@ def run(cfg: DictConfig):
         eval_data_loader=eval_dataloader,
         optimizer=optimizer, 
         scheduler=scheduler, 
-        timestamp=timestamp
+        timestamp=timestamp,
+        slurm_info=slurm_info
     )
     # maybe subsequent jobs can be managed by hydra in the future?
     # when this paradigm comes up more frequently we have to make this a thing ....
@@ -147,7 +258,7 @@ def run(cfg: DictConfig):
         export.run(cfg, **kwargs)
 
 def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, device, train_data_loader: torch_data.DataLoader, eval_data_loader: torch_data.DataLoader,
-           optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime) -> Any:
+           optimizer: optim.Optimizer, scheduler: lr_scheduler.LRScheduler, timestamp: datetime, slurm_info: dict = None) -> Any:
     """ training over epochs with periodic logging and saving"""
     #print(model)
     mini_run = False
@@ -172,6 +283,12 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
         warn_once(log, f'Warmup epochs are larger than epochs to run, causing scheduler to never adjust learning rate.')
     # training loop
     for epoch in epochs_to_run:
+        # Check if we should stop due to SLURM time limit
+        buffer_minutes = cfg.run.get('slurm_time_buffer_minutes', 10)  # Default 10 minutes buffer
+        if slurm_info and should_stop_training(slurm_info, buffer_minutes):
+            log.warning("Approaching SLURM time limit. Stopping training early...")
+            return last_checkpoint
+            
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
         #dataloader always returns the same tensors after each epoch because it is casted inside of function call
         #therefore, cast it before training
@@ -185,10 +302,15 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
                 row_limit = 10
             with profile(activities=activities, **cfg.run.profile.args) as prof:
                 with record_function(f'TRAIN EPOCH {epoch}'):
-                    last_loss, train_steps = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
+                    last_loss, train_steps, early_stop = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler, slurm_info)
             log.info(f'\n{prof.key_averages().table(sort_by="cpu_time_total", row_limit=row_limit)}')
         else:
-            last_loss, train_steps = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler)
+            last_loss, train_steps, early_stop = train_one_epoch(cfg, device, model, train_data_loader, optimizer, mini_run, eval_data_loader, epoch, timestamp, scheduler, slurm_info)
+        
+        # Check if early stopping was triggered
+        if early_stop:
+            log.warning("Early stopping triggered during epoch due to SLURM time limit")
+            break
 
         if epoch % cfg.run.eval_epoch_interval == cfg.run.eval_epoch_interval-1 and eval_data_loader is not None:
             losses, mean = eval_model(cfg, device, model, eval_data_loader)
@@ -232,7 +354,8 @@ def train_one_epoch(cfg: DictConfig,
         epoch: int = -1,
         timestamp = None,
         scheduler = None,
-        ) -> Any:
+        slurm_info: dict = None,
+        ) -> Tuple[Any, int, bool]:
     """ training loop over steps/batches """
     model.train() #if it was quantized, it could have been set to eval
     last_loss = 0
@@ -258,6 +381,17 @@ def train_one_epoch(cfg: DictConfig,
     log.info(f"train_data len is {max_len}, max_iters set to {cfg.run.get('max_iters', None)}. Running training for {run_len}")
     #for i in range(1, cfg.run.max_iters+1):
     for i, data in enumerate(train_data, 1):
+        # Check SLURM time limit every 10 batches to avoid too frequent checks
+        if slurm_info and i % 10 == 0:
+            time_info = get_remaining_time_info(slurm_info)
+            if time_info and i % 100 == 0:  # Log time info every 100 batches
+                log.info(f"SLURM job time - Elapsed: {time_info['elapsed']}, Remaining: {time_info['remaining']}")
+            
+            buffer_minutes = cfg.run.get('slurm_time_buffer_minutes', 10)  # Default 10 minutes buffer
+            if should_stop_training(slurm_info, buffer_minutes):
+                log.warning(f"SLURM time limit approaching at batch {i}. Stopping training...")
+                return last_loss, i, True  # Return early stop flag
+            
         #log.critical(tokenizer_singleton.tokenizer.decode(data[0].tolist()))
         #print(data)
         if i > run_len:
@@ -365,7 +499,7 @@ def train_one_epoch(cfg: DictConfig,
                 new_lr = scheduler.get_last_lr()[0]
                 log.info(f'New learning rate: {new_lr}')
 
-    return last_loss, i
+    return last_loss, i, False  # No early stop
 
 @torch.no_grad()
 def eval_model(cfg: DictConfig, device, model: nn.Module, 

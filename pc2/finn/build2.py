@@ -21,21 +21,22 @@ from finn.builder.custom_step_library.transformer import (
     step_convert_lookup_to_hw,
     step_convert_split_concat_to_hw,
     step_replicate_streams,
-    step_streamline
+    # step_streamline
 )
 from finn.builder.build_dataflow_steps import (
     step_qonnx_to_finn,
-    # step_streamline,
+    step_streamline,
     step_tidy_up
 )
 
+import adhoc_steps
 
 if __name__ == "__main__":
 
     # Extract sequence length and embedding dimension from the verification
     model_name = os.path.basename(os.environ["CALL_MODEL_NAME"])
     # check if input tensor has more then 2 dimensions
-    in_shape = np.load(model_name + ".inp.npy").shape
+    in_shape = np.load("inp.npy").shape
     print("Input shape: " + str(in_shape))
     # here we assume embbeddings to be computed in the model graph, first dim is alway batch size
     if len(in_shape) == 2:
@@ -135,31 +136,40 @@ if __name__ == "__main__":
             step_qonnx_to_finn,
             step_tidy_up,
             step_streamline,
-            step_convert_attention_to_hw,
-            # Convert the elementwise binary operations to hardware operators.
-            # These include for example adding residual branches and positional encoding
-            step_convert_elementwise_binary_to_hw,
-            # Convert Lookup layers, e.g., token embedding, to hardware custom operators
-            step_convert_lookup_to_hw,
-            # Convert Split and Concat operators to hardware, e.g., splits
-            # contained in the GLU activation
-            step_convert_split_concat_to_hw,
-            # Convert depth-wise convolution MatMuls to VVUs
-            step_convert_depth_wise_to_hw,
-            # Properly replicate the stream feeding the query, key and value projections
-            step_replicate_streams,
-            # Convert most other layers supported by FINN to HW operators
-            "step_convert_to_hw",
-            # Specialize HW layer implementations as either HLS or RTL
-            "step_specialize_layers",
-            "step_create_dataflow_partition",
-            # Set the folding configuration to meet the cycles per sequence target
-            set_target_parallelization(seq_len, emb_dim),
-            # Apply folding configuration, specifying hardware implementation details
-            step_apply_folding_config,
+           
+            adhoc_steps.step_convert_to_hw,
+            
+             # step_convert_attention_to_hw,
+            # # Convert the elementwise binary operations to hardware operators.
+            # # These include for example adding residual branches and positional encoding
+            # step_convert_elementwise_binary_to_hw,
+            # # Convert Lookup layers, e.g., token embedding, to hardware custom operators
+            # step_convert_lookup_to_hw,
+            # # Convert Split and Concat operators to hardware, e.g., splits
+            # # contained in the GLU activation
+            # step_convert_split_concat_to_hw,
+            # # Convert depth-wise convolution MatMuls to VVUs
+            # step_convert_depth_wise_to_hw,
+            # # Properly replicate the stream feeding the query, key and value projections
+            # step_replicate_streams,
+            # # Convert most other layers supported by FINN to HW operators
+            # "step_convert_to_hw",
+            # # Specialize HW layer implementations as either HLS or RTL
+            
             "step_minimize_bit_width",
+            "step_create_dataflow_partition",
+            "step_specialize_layers",
+            adhoc_steps.step_set_folding,
+            "step_minimize_bit_width"
+            
+            # # Set the folding configuration to meet the cycles per sequence target
+            # set_target_parallelization(seq_len, emb_dim),
+            # Apply folding configuration, specifying hardware implementation details
+            # step_apply_folding_config,
+            
             # The ScaledDotProductAttention custom op does not define any estimates
             "step_generate_estimate_reports",
+            "step_insert_dwc",
             "step_hw_codegen",
             "step_hw_ipgen",
             "step_create_stitched_ip",
@@ -182,9 +192,9 @@ if __name__ == "__main__":
         ],
  
         # File with test inputs for verification
-        verify_input_npy= model_name + ".inp.npy",
+        verify_input_npy= "inp.npy",
         # File with expected test outputs for verification
-        verify_expected_output_npy= model_name + ".onnx_out.npy",
+        verify_expected_output_npy= "out.npy",
         # Output full context dump for verification steps
         verify_save_full_context=True,
         # Save the intermediate model graphs

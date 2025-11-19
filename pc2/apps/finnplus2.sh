@@ -7,12 +7,12 @@
 #SBATCH -N 1
 #SBATCH -n 1
 # -q express
-#SBATCH --cpus-per-task=16
-#SBATCH --mem 128G
-# --exclusive
+# --cpus-per-task=16
+# --mem 128G
+#SBATCH --exclusive
 #SBATCH -J "qtransform-fpga"
 # default is the normal partition, see Node Types and Partitions for PC2 options are "normal" "gpu" and  "dgx" "fpga"
-#SBATCH -p normal
+#SBATCH -p fpga
 #SBATCH -A hpc-prf-ekiapp
 #SBATCH --mail-type FAIL
 #SBATCH --mail-user kuhmichel.max@fh-swf.de
@@ -136,18 +136,24 @@ ls -lash $WORK_HOME
 # TODO change paths names in passes.yaml
 # sed ...
 
-# # copy passes.yaml to ramdisk
-# cp $MY_HOME/git/eki-transformer-dev/pc2/finn/passes.yaml $WORK_HOME/
-# # copy adhoc_passes.py to ramdisk
-# cp $MY_HOME/git/eki-transformer-dev/pc2/finn/adhoc_passes.py $WORK_HOME/
-# echo "MODEL_NAME is set to $MODEL_NAME"
-# onnx-passes -c passes.yaml -o streamlined.onnx $MODEL_NAME
-# rm $MODEL_NAME
-# mv streamlined.onnx $MODEL_NAME
+# copy passes.yaml to ramdisk
+cp $MY_HOME/git/eki-transformer-dev/pc2/finn/passes.yaml $WORK_HOME/
+# copy adhoc_passes.py to ramdisk
+cp $MY_HOME/git/eki-transformer-dev/pc2/finn/adhoc_passes.py $WORK_HOME/
+echo "MODEL_NAME is set to $MODEL_NAME"
+# rename input and output files to generic names expected by finn plus streamline
+mv ${MODEL_NAME}.inp.npy inp.npy
+mv ${MODEL_NAME}.onnx_out.npy out.npy
+onnx-passes -c passes.yaml -o streamlined.onnx $MODEL_NAME
+rm $MODEL_NAME
+mv streamlined.onnx $MODEL_NAME
+
+# copy adhoc_steps.py to ramdisk
+cp $MY_HOME/git/eki-transformer-dev/pc2/finn/adhoc_steps.py $WORK_HOME/
 
 # ## finnn build command with settings build config and models on the ramdisk
 # finn run build 
-CALL_MODEL_NAME=$MODEL_NAME finn run build.py
+CALL_MODEL_NAME=$MODEL_NAME finn run build2.py
 
 ls -lash $WORK_HOME 
 echo "$WORK_HOME/finn-build"
