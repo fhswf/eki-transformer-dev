@@ -238,6 +238,10 @@ def run(cfg: DictConfig):
         log.info(f'Updating from_file for rerun')
         cfg.model.from_file.filename = last_checkpoint
         cfg.model.from_file.model_dir = None
+        
+    if cfg.run.get("export") and not last_checkpoint:
+        log.error(f"Cannot export model, no checkpoint saved during training {last_checkpoint=}")
+        
     if cfg.run.get("export") and last_checkpoint:
         from qtransform.run import export
         from hydra import compose
@@ -283,11 +287,6 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
         warn_once(log, f'Warmup epochs are larger than epochs to run, causing scheduler to never adjust learning rate.')
     # training loop
     for epoch in epochs_to_run:
-        # Check if we should stop due to SLURM time limit
-        buffer_minutes = cfg.run.get('slurm_time_buffer_minutes', 10)  # Default 10 minutes buffer
-        if slurm_info and should_stop_training(slurm_info, buffer_minutes):
-            log.warning("Approaching SLURM time limit. Stopping training early...")
-            return last_checkpoint
             
         log.info(f"EPOCH: {epoch}/{cfg.run.epochs}")
         #dataloader always returns the same tensors after each epoch because it is casted inside of function call
@@ -336,6 +335,20 @@ def train(model_wrapper: DynamicCheckpointQTRModelWrapper, cfg: DictConfig, devi
                 epoch=epoch, 
                 metrics=last_loss, 
                 steps=train_steps * cfg.dataset.dataloader.batch_size)
+            
+        # Check if we should stop due to SLURM time limit
+        buffer_minutes = cfg.run.get('slurm_time_buffer_minutes', 10)  # Default 10 minutes buffer
+        if slurm_info and should_stop_training(slurm_info, buffer_minutes):
+            log.warning("Approaching SLURM time limit. Stopping training early...")
+            last_checkpoint: str = save_checkpoint(
+                model=model, 
+                optimizer=optimizer, 
+                timestamp=timestamp, 
+                epoch=epoch, 
+                metrics=last_loss, 
+                steps=train_steps * cfg.dataset.dataloader.batch_size)
+            return last_checkpoint
+        
         # advance learning rate
         if cfg.run.scheduler_step_type == 'epoch':
             if scheduler is not None:
