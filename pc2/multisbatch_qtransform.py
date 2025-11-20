@@ -6,9 +6,9 @@ import pathlib
 
 # one epoch, depending on dataset size and batch size. about 35393 batches for size 32
 # we run for 2000 iters as sampling
-static_args = "run=train run.epochs=1 +model.type=CHECKPOINT \
+static_args = "run=train run.epochs=2 +model.type=CHECKPOINT \
 debug=True \
-wandb.init.project=qtransform-multifpga run.export=True +run.max_iters=50000 +trace=True\
+wandb.init.project=qtransform-multifpga2 run.export=True +run.max_iters=35393 +trace=True\
 " 
 #  # +trace=True \
 # run.export=True +run.max_iters=5000 \

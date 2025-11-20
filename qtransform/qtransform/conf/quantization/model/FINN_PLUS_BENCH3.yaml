@@ -325,7 +325,7 @@ layers:
       input: 
         default_quantizer: Int8ActPerTensorFloat
         args:
-          bit_width: 8
+          bit_width: 16
       output:
         default_quantizer: Int8ActPerTensorFloat
         args:
