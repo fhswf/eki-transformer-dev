@@ -160,7 +160,7 @@ if __name__ == "__main__":
             "step_create_dataflow_partition",
             "step_specialize_layers",
             adhoc_steps.step_set_folding,
-            "step_minimize_bit_width"
+            "step_minimize_bit_width",
             
             # # Set the folding configuration to meet the cycles per sequence target
             # set_target_parallelization(seq_len, emb_dim),

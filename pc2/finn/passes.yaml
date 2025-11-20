@@ -38,9 +38,10 @@ logging:
   # Enable all passes to print a message when entering/leaving
   verbose: false
   # Name to use for checkpoints - or to disable checkpointing
-  checkpoint: false
+  checkpoint: "checkpoint.onnx"  
   # Keeps intermediate models after each pass - path to some logging directory
-  keep_intermediates: false
+  keep_intermediates: "onnx_passes_intermediates"
+  # keep_intermediate: false
 # Sequence of transformation, annotation and streamlining passes to apply to the
 # exported ONNX model
 passes:

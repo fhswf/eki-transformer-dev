@@ -8,7 +8,7 @@ import pathlib
 # we run for 2000 iters as sampling
 static_args = "run=train run.epochs=1 +model.type=CHECKPOINT \
 debug=True \
-wandb.init.project=qtransform-energybench run.export=True +run.max_iters=50000 +trace=True\
+wandb.init.project=qtransform-multifpga run.export=True +run.max_iters=50000 +trace=True\
 " 
 #  # +trace=True \
 # run.export=True +run.max_iters=5000 \

@@ -53,9 +53,13 @@ else
     ml lib/pybind11/2.9.2-GCCcore-11.3.0
     ml devel/Boost/1.79.0-GCC-11.3.0
     ml lib/fmt/9.1.0-GCCcore-11.3.0
-    ml fpga xilinx/xrt/2.14
+    # ml fpga xilinx/xrt/2.14
+    ml fpga xilinx/xrt/2.16
     ml lib/gurobi/1203
-    module swap xilinx/u280 xilinx/u55c
+    # module swap xilinx/u280 xilinx/u55c
+    # module swap xilinx/vitis/2022.2
+    module swap xilinx/u55c
+    module swap xilinx/vitis/2024.2
     module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
     # my home
     export MY_HOME="$HOME"
