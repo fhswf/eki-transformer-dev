@@ -14,7 +14,7 @@
 #SBATCH -A hpc-prf-ekiapp
 #SBATCH --mail-type FAIL
 #SBATCH --mail-user kuhmichel.max@fh-swf.de
-#SBATCH --gres=gpu:a100:1
+#SBATCH --gres=gpu:h100:1
 
 # launch script with :
 # sbatch name_of_this_file.sh
