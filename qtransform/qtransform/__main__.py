@@ -77,6 +77,20 @@ def main():
     #this is an issue with our implementation of callbacks currently
     exit_code=0
     
+    # check if onnxruntime is installed and disable stupid threading behavior when in slurm
+    if "onnxruntime" in sys.modules and ("SLURM_JOB_ID" in os.environ):     
+        import onnxruntime as ort
+        _default_session_options = ort.capi._pybind_state.get_default_session_options()
+
+        def get_default_session_options_new():
+            """Return specific default session options for onnxruntime."""
+            _default_session_options.inter_op_num_threads = 1
+            _default_session_options.intra_op_num_threads = 1
+            return _default_session_options
+
+        ort.capi._pybind_state.get_default_session_options = get_default_session_options_new
+
+    
     try:
         # TODO we cloud make this dynamic by importing by module name via a string 
         match cfg.run.command: 

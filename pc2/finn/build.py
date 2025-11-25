@@ -54,7 +54,7 @@ if __name__ == "__main__":
         print("Original batch size: " + str(batch_dim))
         print("Setting batch size to 1 in model graph...")
         # TODO
-        print("Could not change batch size to 1 in model graph, error: " + str(e))
+        print("Could not change batch size to 1 in model graph")
         exit(1)
     # Read the input value range information for the dataset from the parameters
     # Note: Consider calibrating this on the fly from the dataset

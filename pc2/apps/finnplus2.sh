@@ -12,7 +12,7 @@
 #SBATCH --exclusive
 #SBATCH -J "qtransform-fpga"
 # default is the normal partition, see Node Types and Partitions for PC2 options are "normal" "gpu" and  "dgx" "fpga"
-#SBATCH -p fpga
+#SBATCH -p normal
 #SBATCH -A hpc-prf-ekiapp
 #SBATCH --mail-type FAIL
 #SBATCH --mail-user kuhmichel.max@fh-swf.de
@@ -44,38 +44,38 @@ else
     # load modules
 
     # Setup the FPGA development environment
-    
-    ml lang/Python/3.10.4-GCCcore-11.3.0
-    ml devel/Autoconf/2.71-GCCcore-11.3.0
-    ml lang/Bison/3.8.2-GCCcore-11.3.0
-    ml lang/flex/2.6.4-GCCcore-11.3.0
-    ml compiler/GCC/11.3.0
-    ml lib/pybind11/2.9.2-GCCcore-11.3.0
-    ml devel/Boost/1.79.0-GCC-11.3.0
-    ml lib/fmt/9.1.0-GCCcore-11.3.0
+    module load lang
+    module load lib
+    module load tools
+    module load devel
+    ml lang/Python/3.11.3-GCCcore-12.3.0
     # ml fpga xilinx/xrt/2.14
-    ml fpga xilinx/xrt/2.16
-    ml lib/gurobi/1203
+    #ml fpga/xilinx/xrt/2.16
     # module swap xilinx/u280 xilinx/u55c
     # module swap xilinx/vitis/2022.2
-    module swap xilinx/u55c
-    module swap xilinx/vitis/2024.2
-    module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
+    #ml fpga/xilinx/u55c/u55c_gen3x16_xdma_3_202210_1
+    #ml fpga/xilinx/vitis/2024.2
+
+    module load fpga
+    module load xilinx/xrt/2.16
+    module load xilinx/u55c
+    module swap xilinx/vitis/24.2
     # my home
     export MY_HOME="$HOME"
     export RAMDISK=/dev/shm
     export PFS_HOME="$PC2PFS/hpc-prf-ekiapp/maxkm"
     # set env to be compatible with pc2
     export DATASET_ROOT_PATH="$PC2PFS/hpc-prf-ekiapp/maxkm/.qtransform/datasets"
-    echo "$PC2PFS"
+    pwd
     # use /dev/shm
     export WORK_HOME="$RAMDISK/work"
-    #export HOME=$WORK_HOME
+    # export HOME=$WORK_HOME
     mkdir -p $WORK_HOME
     export PYTHONUSERBASE="$WORK_HOME/.local"
     mkdir -p $PYTHONUSERBASE
     export HF_HOME="$PC2PFS/hpc-prf-ekiapp/hf_cache"
     mkdir -p $HF_HOME
+    echo "$HF_HOME will be used for dataset storage"
 
     # does not work atm:
     #export OMP_NUM_THREADS=1
@@ -86,6 +86,14 @@ else
   fi
 fi
 
+
+
+# FINN env variables to use ramdisk for build process and to find configs and stuff
+mkdir -p $WORK_HOME/finn-build/
+export FINN_HOST_BUILD_DIR=$WORK_HOME/finn-build
+export FINN_BUILD_DIR=$WORK_HOME/finn-build
+export FINN_DEPS=$WORK_HOME/finn-deps
+
 # install finn plus in python env
 pip install --upgrade pip
 # pip install finn-plus
@@ -94,6 +102,7 @@ pip install git+https://github.com/DeepCowProductions/finn-plus.git@transformer-
 # update finn plus
 echo "Running finn plus update and config list"
 finn deps update
+exit 0
 # check install
 # echo "Running finn test"
 # finn test
@@ -133,9 +142,6 @@ cp -r  $MY_HOME/git/eki-transformer-dev/pc2/finn/* $WORK_HOME/
 
 #change to work home
 cd $WORK_HOME
-
-ls -lash $WORK_HOME
-
 # call addtional streamline 
 # TODO change paths names in passes.yaml
 # sed ...
@@ -159,9 +165,6 @@ cp $MY_HOME/git/eki-transformer-dev/pc2/finn/adhoc_steps.py $WORK_HOME/
 # finn run build 
 CALL_MODEL_NAME=$MODEL_NAME finn run build2.py
 
-ls -lash $WORK_HOME 
-echo "$WORK_HOME/finn-build"
-ls -lash $WORK_HOME/finn-build
 echo "FINN build process finished $FINN_HOST_BUILD_DIR."
 ls -lash $FINN_HOST_BUILD_DIR
 

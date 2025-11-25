@@ -54,7 +54,6 @@ else
     ml fpga   
     ml xilinx/xrt/2.14
     ml xilinx/vitis/24.2
-    ml swap 
     ml xilinx/u280
     # set env to be compatible with pc2
     export DATASET_ROOT_PATH="$PC2PFS/hpc-prf-ekiapp/maxkm/.qtransform/datasets"
