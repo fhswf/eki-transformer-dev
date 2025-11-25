@@ -43,51 +43,49 @@ else
   else
     # load modules
 
-    # Setup the FPGA development environment
-    # otus
-    module load lang
-    module load lib
-    module load tools
-    module load devel
-    # ml lang/Python/3.11.3-GCCcore-12.3.0
-    # ml lang/Python-bundle-PyPI/2023.06-GCCcore-12.3.0
-    # #ml devel/M4/1.4.19-GCCcore-12.3.0
-    # #ml devel/Autoconf/2.71-GCCcore-12.3.0
-    # ml lang/Bison
-    # ml lang/flex
-    # ml devel/Boost/1.82.0-GCC-12.3.0
-    # ml lib/pybind11/2.11.1-GCCcore-12.3.0
-    # ml devel/protobuf-python/4.24.0-GCCcore-12.3.0
-    # ml lib/gurobi/1201
-    # ml lang/Python/3.11.3-GCCcore-12.3.0
-    # # ml fpga xilinx/xrt/2.14
-    # #ml fpga/xilinx/xrt/2.16
-    # # module swap xilinx/u280 xilinx/u55c
-    # # module swap xilinx/vitis/2022.2
-    # #ml fpga/xilinx/u55c/u55c_gen3x16_xdma_3_202210_1
-    # #ml fpga/xilinx/vitis/2024.2
-    # ml lang/Python/3.10.4-GCCcore-11.3.0
-    # module load fpga
-    # module load xilinx/xrt/2.16
-    # module load xilinx/u55c
+    # n2
+    module load lang/Python/3.10.4-GCCcore-11.3.0
+    module load devel/Autoconf/2.71-GCCcore-11.3.0
+    module load lang/Bison/3.8.2-GCCcore-11.3.0
+    module load lang/flex/2.6.4-GCCcore-11.3.0
+    module load lib/pybind11/2.9.2-GCCcore-11.3.0
+    module load devel/Boost/1.79.0-GCC-11.3.0
+    module load lib/fmt/9.1.0-GCCcore-11.3.0
+    module load compiler/GCC/11.3.0
+    # 2.14 22.2
+    module load fpga
+    module load xilinx/xrt/2.14
+    # 2.16 24.2
+    # module load xilinx/xrt/2.16 
     # module swap xilinx/vitis/24.2
 
-    # noctua
-    ml lang/Python/3.10.4-GCCcore-11.3.0
-    ml devel/ncurses/6.4
-    ml devel/Autoconf/2.71-GCCcore-11.3.0
-    ml lang/Bison/3.8.2-GCCcore-11.3.0
-    ml lang/flex/2.6.4-GCCcore-11.3.0
-    ml compiler/GCC/11.3.0
-    ml lib/pybind11/2.9.2-GCCcore-11.3.0
-    ml devel/Boost/1.79.0-GCC-11.3.0
-    ml lib/fmt/9.1.0-GCCcore-11.3.0
-    ml fpga xilinx/xrt/2.16
-    ml lib/gurobi/1203
-    module load xilinx/u55c
-    module load xilinx/vitis/22.2
-    module load xilinx/vivado/22.2
+    # Setup the FPGA development environment
+    # otus
+    # module load lang
+    # module load lib
+    # module load tools
+    # module load devel
+    # ml lang/Python/3.10.4-GCCcore-11.3.0
+    # ml devel/ncurses/6.4
+    # ml devel/Autoconf/2.71-GCCcore-11.3.0
+    # ml lang/Bison/3.8.2-GCCcore-11.3.0
+    # ml lang/flex/2.6.4-GCCcore-11.3.0
+    # ml compiler/GCC/11.3.0
+    # ml lib/pybind11/2.9.2-GCCcore-11.3.0
+    # ml devel/Boost/1.79.0-GCC-11.3.0
+    # ml lib/fmt/9.1.0-GCCcore-11.3.0
+    # ml fpga xilinx/xrt/2.16
+    # ml lib/gurobi/1203
+    # module load xilinx/u55c
+    # module load xilinx/vitis/22.2
+    # module load xilinx/vivado/22.2
+
+
+    # uni
     module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
+
+    ulimit -s unlimited
+
     # my home
     export MY_HOME="$HOME"
     export RAMDISK=/dev/shm
