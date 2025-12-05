@@ -116,10 +116,10 @@ if __name__ == "__main__":
             # Enables "streamlined_python" verification after custom step_streamline
             build_cfg.VerificationStepType.STREAMLINED_PYTHON,
             # Enables "folded_hls_cppsim" verification after custom step_apply_folding_config
-            build_cfg.VerificationStepType.FOLDED_HLS_CPPSIM,
+            #build_cfg.VerificationStepType.FOLDED_HLS_CPPSIM,
             # Enables RTL simulation of default steps contained in the flow:
-            build_cfg.VerificationStepType.NODE_BY_NODE_RTLSIM,  # after step_hw_ipgen
-            build_cfg.VerificationStepType.STITCHED_IP_RTLSIM,  # after step_create_stitched_ip
+            #build_cfg.VerificationStepType.NODE_BY_NODE_RTLSIM,  # after step_hw_ipgen
+            #build_cfg.VerificationStepType.STITCHED_IP_RTLSIM,  # after step_create_stitched_ip
         ],
         
         # Build steps to execute
@@ -160,7 +160,7 @@ if __name__ == "__main__":
             "step_hw_codegen",
             "step_hw_ipgen",
             "step_create_stitched_ip",
-            "step_measure_rtlsim_performance",
+            # "step_measure_rtlsim_performance",
             "step_out_of_context_synthesis",  # for synthesis results (e.g. utilization)
             "step_synthesize_bitfile",
             "step_make_driver",

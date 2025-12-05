@@ -3,16 +3,16 @@
 #######################
 ### SLURM JOB CONFIG ##
 #######################
-#SBATCH -t 4:0:0
+#SBATCH -t 16:0:0
 #SBATCH -N 1
 #SBATCH -n 1
 # -q express
-#SBATCH --cpus-per-task=16
-#SBATCH --mem 128G
-# --exclusive
+# --cpus-per-task=16
+# --mem 128G
+#SBATCH --exclusive
 #SBATCH -J "qtransform-fpga"
 # default is the normal partition, see Node Types and Partitions for PC2 options are "normal" "gpu" and  "dgx" "fpga"
-#SBATCH -p normal
+#SBATCH -p fpga
 #SBATCH -A hpc-prf-ekiapp
 #SBATCH --mail-type FAIL
 #SBATCH --mail-user kuhmichel.max@fh-swf.de
@@ -44,6 +44,11 @@ else
     # load modules
 
     # n2
+    module load lang
+    module load lib
+    module load tools
+    module load devel
+    module load lang/Python-bundle-PyPI/2023.06-GCCcore-12.3.0
     module load lang/Python/3.10.4-GCCcore-11.3.0
     module load devel/Autoconf/2.71-GCCcore-11.3.0
     module load lang/Bison/3.8.2-GCCcore-11.3.0
@@ -52,19 +57,16 @@ else
     module load devel/Boost/1.79.0-GCC-11.3.0
     module load lib/fmt/9.1.0-GCCcore-11.3.0
     module load compiler/GCC/11.3.0
-    # 2.14 22.2
     module load fpga
+    # 2.14 22.2
     module load xilinx/xrt/2.14
     # 2.16 24.2
-    # module load xilinx/xrt/2.16 
-    # module swap xilinx/vitis/24.2
+    
+    #module load xilinx/xrt/2.16 
+    #module swap xilinx/vitis/24.2
 
     # Setup the FPGA development environment
     # otus
-    # module load lang
-    # module load lib
-    # module load tools
-    # module load devel
     # ml lang/Python/3.10.4-GCCcore-11.3.0
     # ml devel/ncurses/6.4
     # ml devel/Autoconf/2.71-GCCcore-11.3.0
@@ -75,14 +77,14 @@ else
     # ml devel/Boost/1.79.0-GCC-11.3.0
     # ml lib/fmt/9.1.0-GCCcore-11.3.0
     # ml fpga xilinx/xrt/2.16
-    # ml lib/gurobi/1203
-    # module load xilinx/u55c
+    ml lib/gurobi/1201
+    module load xilinx/u55c
     # module load xilinx/vitis/22.2
     # module load xilinx/vivado/22.2
 
 
     # uni
-    module load tools/git/2.41.0-GCCcore-12.3.0-nodocs
+    module load tools/git/2.41.0-GCCcore-11.3.0-nodocs
 
     ulimit -s unlimited
 
@@ -108,9 +110,25 @@ else
     # new finn plus python package
     python3 -m venv $WORK_HOME/venv/
     source $WORK_HOME/venv/bin/activate
+    python3 -m pip install --upgrade pip
   fi
 fi
 
+
+# check needed bin and libs
+which vivado || (echo "vivado not found, please check module load xilinx/vivado" && exit 1)
+which vitis || (echo "vitis not found, please check module load xilinx/vitis" && exit 1)
+which xrt || (echo "xrt not found, please check module load xilinx/xrt" && exit 1)
+which python3.10-config || (echo "python3.10-config not found, please check module load lang/Python/3.10.4-GCCcore-11.3.0" && exit 1)
+# xsi_bind.cpp:11:10: fatal error: pybind11/pybind11.h: No such file or directory not found error
+# check lib path
+pip install pybind11
+PYBIND11_PATH=$(python3 -m pybind11 --includes | sed 's/-I//g' | cut -d' ' -f1)
+if [ -z "$PYBIND11_PATH" ]; then
+  echo "pybind11 include path not found, please check module load lib/pybind11/2.9.2-GCCcore-11.3.0"
+else
+  echo "pybind11 include path found: $PYBIND11_PATH"
+fi
 
 # also this helps with vitis: setenv XILINX_LOCAL_USER_DATA no 
 # from https://github.com/Xilinx/finn/issues/1215
